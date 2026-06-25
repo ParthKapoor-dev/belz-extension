@@ -1,24 +1,38 @@
-// belz design tokens for the extension — injected UI + DevTools panel.
+// Design tokens for the extension — injected UI + DevTools panel.
 //
-// Mirrors @belzabar/design (the single source of truth): one dark theme,
-// axiom-style blue accent, sharp corners, hairline borders, no gradients.
-// The extension build (bun build) bundles @belzabar/design/tokens directly.
+// One dark theme, axiom-style blue accent, sharp corners, hairline borders,
+// no gradients. Hex values inlined — no external token package dependency.
 
-import { palette } from "@belzabar/design/tokens";
+const palette = {
+  ink: "#0c0d0f",
+  surface: "#101113",
+  surface2: "#16181b",
+  line: "#1f2123",
+  line2: "#2a2d30",
+  fg: "#e6e7e8",
+  fgMuted: "#9ba1a6",
+  fgFaint: "#5c6166",
+  accent: "#3b82f6",
+  accentHover: "#5b9bff",
+  accentFg: "#08090a",
+  danger: "#f85149",
+  warning: "#d29922",
+  success: "#3fb950",
+};
 
 /** Token palette (hex) for inline styles. */
 export const T = {
-  ink: palette.ink, // overlay / deepest
-  surface: palette.surface, // panels, modals
-  surface2: palette.surface2, // raised rows, inputs, hover
-  line: palette.line, // hairline border
-  line2: palette.line2, // stronger border
-  fg: palette.fg, // primary text
-  fgMuted: palette.fgMuted, // secondary text
-  fgFaint: palette.fgFaint, // hints
-  accent: palette.accent, // signature blue
+  ink: palette.ink,
+  surface: palette.surface,
+  surface2: palette.surface2,
+  line: palette.line,
+  line2: palette.line2,
+  fg: palette.fg,
+  fgMuted: palette.fgMuted,
+  fgFaint: palette.fgFaint,
+  accent: palette.accent,
   accentHover: palette.accentHover,
-  accentFg: palette.accentFg, // text on accent
+  accentFg: palette.accentFg,
   danger: palette.danger,
   warning: palette.warning,
   success: palette.success,
