@@ -30,6 +30,13 @@
         font-family: var(--mono); font-size: 12px;
       }
       body { display: flex; flex-direction: column; }
+      @keyframes focus-pulse {
+        0%, 100% { box-shadow: inset 0 0 0 0 transparent; }
+        30%, 70% { box-shadow: inset 0 0 0 3px #3b82f6; }
+      }
+      body.focus-flash {
+        animation: focus-pulse 900ms ease-in-out;
+      }
 
       .toolbar {
         display: flex; align-items: center; gap: 8px;

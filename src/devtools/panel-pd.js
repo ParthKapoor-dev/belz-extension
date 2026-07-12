@@ -327,4 +327,36 @@ chrome.devtools.network.onNavigated.addListener(() => {
   loadState(0);
 });
 
+// ---- focus-hint shortcut --------------------------------------------------
+// Background writes a session flag when Ctrl+Shift+P fires. When the flag
+// targets us we re-fetch the tree (like a refresh click) and pulse the panel
+// so the user sees the panel react.
+const FOCUS_STORAGE_KEY = 'sdExtensionPanelFocusV1';
+const FOCUS_TARGET = 'pd';
+const FOCUS_MAX_AGE_MS = 60_000;
+
+function reactToFocusFlag(value) {
+  if (!value || value.target !== FOCUS_TARGET) return;
+  if (Date.now() - (value.ts || 0) > FOCUS_MAX_AGE_MS) return;
+  loadState(0);
+  document.body.classList.add('focus-flash');
+  setTimeout(() => document.body.classList.remove('focus-flash'), 900);
+}
+
+(function watchFocusFlag() {
+  const store = (chrome.storage && chrome.storage.session) || (chrome.storage && chrome.storage.local);
+  if (!store) return;
+  const areaName = chrome.storage.session ? 'session' : 'local';
+  store.get(FOCUS_STORAGE_KEY, (result) => {
+    if (result && result[FOCUS_STORAGE_KEY]) reactToFocusFlag(result[FOCUS_STORAGE_KEY]);
+  });
+  if (chrome.storage.onChanged && chrome.storage.onChanged.addListener) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== areaName) return;
+      const change = changes[FOCUS_STORAGE_KEY];
+      if (change && change.newValue) reactToFocusFlag(change.newValue);
+    });
+  }
+})();
+
 loadState(0);

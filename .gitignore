@@ -4,6 +4,8 @@ bun.lockb
 
 # Build output
 dist/
+build/
+dist-pack/
 
 # Logs
 *.log

@@ -94,7 +94,8 @@ export const EDITOR_SETTING_DEFINITIONS = [
 ];
 
 const settingListeners = new Set();
-let cachedSettings = null;
+let cachedSettings = { ...DEFAULT_SETTINGS };
+let hydrated = false;
 
 function sanitizeSettingValue(key, value) {
   if (key === 'titleUpdater'
@@ -143,31 +144,30 @@ function sanitizeSettings(input) {
   return next;
 }
 
-function readFromStorage() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) {
-      return { ...DEFAULT_SETTINGS };
-    }
-
-    const parsed = JSON.parse(raw);
-    return sanitizeSettings(parsed);
-  } catch (error) {
-    console.error('Failed to load extension settings:', error);
-    return { ...DEFAULT_SETTINGS };
-  }
+// chrome.storage.local is the durable, extension-wide store. The prior
+// localStorage-based build persisted per-origin, so each designer host had a
+// separate copy — moving to chrome.storage means options page, content scripts,
+// devtools panel, and background all share one live view.
+function chromeStorage() {
+  return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local
+    ? chrome.storage.local
+    : null;
 }
 
-function writeToStorage(settings) {
+function migrateFromLocalStorage() {
   try {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  } catch (error) {
-    console.error('Failed to persist extension settings:', error);
+    const raw = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(SETTINGS_STORAGE_KEY)
+      : null;
+    if (!raw) return null;
+    localStorage.removeItem(SETTINGS_STORAGE_KEY);
+    return JSON.parse(raw);
+  } catch {
+    return null;
   }
 }
 
 function notifySettingsChange() {
-  if (!cachedSettings) return;
   const snapshot = { ...cachedSettings };
   for (const listener of settingListeners) {
     try {
@@ -178,11 +178,63 @@ function notifySettingsChange() {
   }
 }
 
-export function loadSettings() {
-  if (!cachedSettings) {
-    cachedSettings = readFromStorage();
+function applyStoredValue(stored) {
+  cachedSettings = sanitizeSettings(stored);
+  hydrated = true;
+  notifySettingsChange();
+}
+
+function hydrate() {
+  const storage = chromeStorage();
+  if (!storage) {
+    // No chrome.storage — likely a stale test harness. Fall back to defaults
+    // and mark hydrated so subscribers don't wait forever.
+    hydrated = true;
+    return;
   }
+  storage.get(SETTINGS_STORAGE_KEY, (result) => {
+    const stored = result && result[SETTINGS_STORAGE_KEY];
+    if (stored && typeof stored === 'object') {
+      applyStoredValue(stored);
+      return;
+    }
+    // First run in this browser profile — try the pre-migration localStorage
+    // copy, then persist it to chrome.storage so the migration is one-shot.
+    const legacy = migrateFromLocalStorage();
+    if (legacy) {
+      applyStoredValue(legacy);
+      storage.set({ [SETTINGS_STORAGE_KEY]: cachedSettings });
+      return;
+    }
+    hydrated = true;
+    notifySettingsChange();
+  });
+
+  if (chrome.storage.onChanged && chrome.storage.onChanged.addListener) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local' || !changes[SETTINGS_STORAGE_KEY]) return;
+      const next = changes[SETTINGS_STORAGE_KEY].newValue;
+      if (!next || typeof next !== 'object') return;
+      cachedSettings = sanitizeSettings(next);
+      notifySettingsChange();
+    });
+  }
+}
+
+hydrate();
+
+function writeToStorage(settings) {
+  const storage = chromeStorage();
+  if (!storage) return;
+  storage.set({ [SETTINGS_STORAGE_KEY]: settings });
+}
+
+export function loadSettings() {
   return { ...cachedSettings };
+}
+
+export function isSettingsHydrated() {
+  return hydrated;
 }
 
 export function saveSettings(nextSettings) {
@@ -193,27 +245,23 @@ export function saveSettings(nextSettings) {
 }
 
 export function getSetting(key) {
-  const settings = loadSettings();
-  return Boolean(settings[key]);
+  return Boolean(cachedSettings[key]);
 }
 
 export function setSetting(key, value) {
-  const settings = loadSettings();
   if (!Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key)) {
-    return settings;
+    return { ...cachedSettings };
   }
 
   const normalizedValue = sanitizeSettingValue(key, value);
-  if (settings[key] === normalizedValue) {
-    return settings;
+  if (cachedSettings[key] === normalizedValue) {
+    return { ...cachedSettings };
   }
 
-  const next = {
-    ...settings,
+  return saveSettings({
+    ...cachedSettings,
     [key]: normalizedValue
-  };
-
-  return saveSettings(next);
+  });
 }
 
 export function subscribeSettings(listener) {

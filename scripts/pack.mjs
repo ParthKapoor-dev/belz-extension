@@ -40,7 +40,7 @@ const version = versionArg ?? manifest.version;
 execSync('node scripts/build.mjs', { cwd: root, stdio: 'inherit' });
 
 // 2. Files every packaged tree needs (besides the manifest, written per-browser).
-const SHARED = ['dist', 'devtools.html', 'panel.html', 'panel-pd.html', 'fonts'];
+const SHARED = ['dist', 'devtools.html', 'panel.html', 'panel-pd.html', 'options.html', 'fonts'];
 
 /** Copy the shared payload into build/<target>/. */
 function stage(target) {

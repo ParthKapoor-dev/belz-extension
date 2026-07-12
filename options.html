@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>belz-extension settings</title>
+    <style>
+      :root {
+        --ink: #08090a;
+        --surface: #101113;
+        --surface2: #16181b;
+        --line: #1f2123;
+        --line2: #2a2d30;
+        --fg: #e6e7e8;
+        --fg-muted: #9ba1a6;
+        --fg-faint: #5c6166;
+        --accent: #3b82f6;
+        --accent-hover: #5b9bff;
+        --accent-fg: #08090a;
+        --danger: #f85149;
+        --success: #3fb950;
+        --mono: 'Berkeley Mono', 'IoskeleyMono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: var(--ink);
+        color: var(--fg);
+        font-family: var(--mono);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .page {
+        max-width: 780px;
+        margin: 0 auto;
+        padding: 40px 24px 96px;
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        padding-bottom: 24px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 32px;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      header .subtitle {
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      section.sites h2 {
+        margin: 0 0 6px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      section.sites p.hint {
+        margin: 0 0 20px;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .add-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 24px;
+      }
+      .add-row input {
+        flex: 1;
+        background: var(--surface);
+        border: 1px solid var(--line2);
+        color: var(--fg);
+        font-family: var(--mono);
+        font-size: 13px;
+        padding: 8px 12px;
+        outline: none;
+      }
+      .add-row input:focus {
+        border-color: var(--accent);
+      }
+      .add-row input::placeholder {
+        color: var(--fg-faint);
+      }
+      .add-row button {
+        background: var(--accent);
+        color: var(--accent-fg);
+        border: none;
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 600;
+        padding: 8px 18px;
+        cursor: pointer;
+      }
+      .add-row button:hover {
+        background: var(--accent-hover);
+      }
+      .add-row button:disabled {
+        background: var(--line2);
+        color: var(--fg-faint);
+        cursor: not-allowed;
+      }
+      #error {
+        color: var(--danger);
+        font-size: 12px;
+        margin: -16px 0 20px;
+        min-height: 18px;
+      }
+      .host-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .host-list li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 16px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .host-list li:last-child {
+        border-bottom: none;
+      }
+      .host-list .host {
+        flex: 1;
+        font-size: 14px;
+        color: var(--fg);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .host-list button.revoke {
+        background: transparent;
+        border: none;
+        color: var(--danger);
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        padding: 4px 8px;
+      }
+      .host-list button.revoke:hover {
+        color: var(--accent-hover);
+      }
+      .empty {
+        color: var(--fg-muted);
+        font-style: italic;
+        padding: 24px 0;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <h1>belz-extension settings</h1>
+        <div class="subtitle">Sites</div>
+      </header>
+      <section class="sites">
+        <h2>Allowed sites</h2>
+        <p class="hint">
+          Add hostnames where the extension is allowed to inject its content
+          scripts. Each grant is scoped to <code>https://&lt;host&gt;/*</code>
+          and asks for permission at Add time. Revoke returns the permission
+          and unregisters the scripts immediately.
+        </p>
+        <form class="add-row" id="add-form">
+          <input
+            id="add-input"
+            type="text"
+            placeholder="nsm-dev.nc.verifi.dev"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="add-btn" type="submit">Add</button>
+        </form>
+        <div id="error"></div>
+        <ul class="host-list" id="host-list"></ul>
+        <div class="empty" id="empty">No sites yet — add one above.</div>
+      </section>
+    </div>
+    <script src="dist/options.js"></script>
+  </body>
+</html>

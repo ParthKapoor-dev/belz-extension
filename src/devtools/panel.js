@@ -38,7 +38,8 @@ const detailTabs = Array.from(document.querySelectorAll('.detail-tabs button'));
 const toastEl = document.getElementById('toast');
 
 // ---- state ----------------------------------------------------------------
-const entries = []; // chronological (oldest-first), mirrors DOM order
+const entries = []; // chronological (oldest-first by har.startedDateTime), mirrors DOM order
+const seen = new Set(); // dedup key = request.url + '|' + har.startedDateTime
 const uuidToName = new Map();
 const uuidToCategory = new Map();
 let nextId = 1;
@@ -160,14 +161,17 @@ function transferSize(har) {
   return -1;
 }
 
-// Group an HTTP status into a colour bucket (#9).
+// Group an HTTP status into a colour bucket (#9). A finished entry with
+// status 0 is a cancel/error — DevTools delivers it via onRequestFinished (or
+// includes it in the HAR log) only after it terminates, so status 0 here means
+// "did not complete", not "still in flight".
 function statusGroup(status) {
-  if (!status) return 'pending';
+  if (status === 0 || status == null) return 'error';
   if (status >= 500) return 'srverr';
   if (status >= 400) return 'clienterr';
   if (status >= 300) return 'redir';
   if (status >= 200) return 'ok';
-  return 'pending';
+  return 'error';
 }
 
 function el(tag, props, ...kids) {
@@ -396,7 +400,7 @@ function paintName(entry) {
   entry.nameCell.className = 'name s-' + entry.statusGroup + (name ? '' : ' pending');
   entry.nameCell.textContent = name || entry.uuid.slice(0, 12) + '…';
   entry.nameCell.title = name
-    ? name + '  ·  click to open in draft'
+    ? name + '  ·  click to see details'
     : entry.uuid + '  (resolving…)';
 }
 
@@ -404,7 +408,7 @@ function paintCategory(entry) {
   const cat = uuidToCategory.get(entry.uuid);
   entry.categoryCell.className = cat ? 'category' : 'category pending';
   entry.categoryCell.textContent = cat || '…';
-  entry.categoryCell.title = cat ? cat + '  ·  click to open in draft' : '';
+  entry.categoryCell.title = cat ? cat + '  ·  click to see details' : '';
 }
 
 function setOffline(off) {
@@ -464,11 +468,35 @@ async function flushBelzFetch() {
 }
 
 // ---- request capture ------------------------------------------------------
+function harKey(har) {
+  const url = (har && har.request && har.request.url) || '';
+  return url + '|' + (har.startedDateTime || '');
+}
+
+// Find the chronological insert index for a new entry. entries[] is kept
+// sorted by har.startedDateTime ascending — ISO 8601 sorts lexicographically.
+function insertIndexFor(started) {
+  let i = entries.length;
+  while (i > 0 && (entries[i - 1].har.startedDateTime || '') > started) i--;
+  return i;
+}
+
+function renumberRows() {
+  for (let i = 0; i < entries.length; i++) {
+    const cell = entries[i].rowEl && entries[i].rowEl.firstChild;
+    if (cell) cell.textContent = String(i + 1);
+  }
+}
+
 function onRequest(har) {
   if (!recording) return;
   const req = har && har.request;
   const info = req ? classifyChainUrl(req.url) : null;
   if (!info) return;
+
+  const key = harKey(har);
+  if (seen.has(key)) return;
+  seen.add(key);
 
   const status = (har.response && har.response.status) || 0;
   const entry = {
@@ -489,21 +517,31 @@ function onRequest(har) {
     categoryCell: null
   };
 
-  // Follow the tail like the real Network tab if already scrolled to bottom.
+  // Follow the tail like the real Network tab if already scrolled to bottom
+  // AND the new entry is being appended at the end (i.e. it started after
+  // everything already visible). Backfilled entries inserted mid-list
+  // shouldn't jump the scroll.
   const atBottom =
     listPane.scrollTop + listPane.clientHeight >= listPane.scrollHeight - 4;
+  const insertAt = insertIndexFor(har.startedDateTime || '');
+  const isAppend = insertAt === entries.length;
+  entries.splice(insertAt, 0, entry);
+  renderRow(entry, insertAt);
+  renumberRows();
 
-  entries.push(entry);
-  renderRow(entry);
-
-  if (atBottom) listPane.scrollTop = listPane.scrollHeight;
+  if (atBottom && isAppend) listPane.scrollTop = listPane.scrollHeight;
 
   // Name: definition fetches carry it in their body — read it instantly.
-  if (info.kind === 'fetch') {
-    har.getContent((body) => {
-      const name = extractMethodNameFromChainResponse(body || '');
-      if (name) learnName(info.uuid, name);
-    });
+  // HAR entries from getHAR() lack a working getContent(); belz web fills in.
+  if (info.kind === 'fetch' && typeof har.getContent === 'function') {
+    try {
+      har.getContent((body) => {
+        const name = extractMethodNameFromChainResponse(body || '');
+        if (name) learnName(info.uuid, name);
+      });
+    } catch {
+      /* backfill entries: no content available */
+    }
   }
   // Name (for execute) + category for every row come from belz web.
   if (needsBelz(info.uuid)) {
@@ -514,28 +552,27 @@ function onRequest(har) {
   // Cap the table — drop the oldest rows.
   while (entries.length > MAX_ROWS) {
     const old = entries.shift();
-    if (old && old.rowEl && old.rowEl.parentNode) old.rowEl.remove();
-    if (old && old.id === selectedId) closeDetail();
+    if (old) {
+      seen.delete(harKey(old.har));
+      if (old.rowEl && old.rowEl.parentNode) old.rowEl.remove();
+      if (old.id === selectedId) closeDetail();
+    }
   }
   countEl.textContent = String(entries.length);
 }
 
-function renderRow(entry) {
+function renderRow(entry, insertAt) {
   emptyEl.classList.add('hidden');
 
-  const srCell = el('td', { className: 'sr' }, String(entry.id));
+  // # cell text is set by renumberRows() after insertion; placeholder here.
+  const srCell = el('td', { className: 'sr' }, '');
 
   const nameCell = el('td', null);
   const categoryCell = el('td', null);
   entry.nameCell = nameCell;
   entry.categoryCell = categoryCell;
-  // Clicking the name or category opens the method in draft (#6).
-  const openFromCell = (e) => {
-    e.stopPropagation();
-    enqueueOpen(entry);
-  };
-  nameCell.addEventListener('click', openFromCell);
-  categoryCell.addEventListener('click', openFromCell);
+  // Clicking name or category opens the request-details side panel (via the
+  // row-level handler below). Only the Actions "Open" button opens draft mode.
 
   const copyCurlBtn = iconButton(ICON_COPY, 'Copy as cURL', (btn) => {
     try {
@@ -564,10 +601,15 @@ function renderRow(entry) {
     openBtn
   );
 
+  const statusText = entry.status
+    ? String(entry.status)
+    : entry.statusGroup === 'error'
+      ? 'canceled'
+      : '—';
   const statusBadge = el(
     'span',
     { className: 'sbadge ' + entry.statusGroup },
-    entry.status ? String(entry.status) : '—'
+    statusText
   );
   const statusCell = el('td', null, statusBadge);
 
@@ -629,7 +671,13 @@ function renderRow(entry) {
   paintCategory(entry);
   applyRowFilter(entry);
 
-  rowsEl.appendChild(row);
+  const idx = typeof insertAt === 'number' ? insertAt : entries.length - 1;
+  const next = entries[idx + 1];
+  if (next && next.rowEl && next.rowEl.parentNode === rowsEl) {
+    rowsEl.insertBefore(row, next.rowEl);
+  } else {
+    rowsEl.appendChild(row);
+  }
 }
 
 // ---- filter ---------------------------------------------------------------
@@ -801,6 +849,7 @@ function renderDetail() {
 // ---- clearing -------------------------------------------------------------
 function clearAll() {
   entries.length = 0;
+  seen.clear();
   rowsEl.replaceChildren();
   countEl.textContent = '0';
   emptyEl.classList.remove('hidden');
@@ -881,5 +930,65 @@ chrome.devtools.network.onNavigated.addListener(() => {
   if (!preserveLog) clearAll();
 });
 
+// ---- focus-hint shortcut --------------------------------------------------
+// Neither Chrome nor Firefox lets an extension open or switch DevTools panels
+// from a keyboard shortcut. Background writes a session flag when Ctrl+Shift+A
+// fires; if this panel is loaded, react by scrolling to newest + pulsing the
+// row + focusing the search field. If the flag was set before the panel
+// loaded, we still see it on startup (up to a minute old) and react then.
+const FOCUS_STORAGE_KEY = 'sdExtensionPanelFocusV1';
+const FOCUS_TARGET = 'ad';
+const FOCUS_MAX_AGE_MS = 60_000;
+
+function reactToFocusFlag(value) {
+  if (!value || value.target !== FOCUS_TARGET) return;
+  if (Date.now() - (value.ts || 0) > FOCUS_MAX_AGE_MS) return;
+  listPane.scrollTop = listPane.scrollHeight;
+  const last = entries[entries.length - 1];
+  if (last && last.rowEl) {
+    last.rowEl.classList.add('focus-flash');
+    setTimeout(() => {
+      if (last.rowEl) last.rowEl.classList.remove('focus-flash');
+    }, 900);
+  }
+  if (filterInput && typeof filterInput.focus === 'function') filterInput.focus();
+}
+
+(function watchFocusFlag() {
+  const store = (chrome.storage && chrome.storage.session) || (chrome.storage && chrome.storage.local);
+  if (!store) return;
+  const areaName = chrome.storage.session ? 'session' : 'local';
+  store.get(FOCUS_STORAGE_KEY, (result) => {
+    if (result && result[FOCUS_STORAGE_KEY]) reactToFocusFlag(result[FOCUS_STORAGE_KEY]);
+  });
+  if (chrome.storage.onChanged && chrome.storage.onChanged.addListener) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== areaName) return;
+      const change = changes[FOCUS_STORAGE_KEY];
+      if (change && change.newValue) reactToFocusFlag(change.newValue);
+    });
+  }
+})();
+
+// Backfill from the browser's own capture. DevTools defers loading panel.html
+// until the user first clicks our tab, so any AD chain request fired between
+// "DevTools opened" and "user picked AD Network" would otherwise be lost.
+// getHAR() reads the same log the built-in Network tab uses, so this closes
+// the gap and matches the Network tab's ordering.
+function backfillFromHar() {
+  try {
+    chrome.devtools.network.getHAR((log) => {
+      if (!log || !Array.isArray(log.entries)) return;
+      const sorted = log.entries.slice().sort((a, b) =>
+        (a.startedDateTime || '').localeCompare(b.startedDateTime || '')
+      );
+      for (const har of sorted) onRequest(har);
+    });
+  } catch {
+    /* getHAR unavailable — live listener still catches everything from now on */
+  }
+}
+
 detectEnv();
+backfillFromHar();
 loadEnvRegistry();
