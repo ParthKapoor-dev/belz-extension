@@ -5,7 +5,7 @@
 // (b) a set of registered content scripts the background worker reconciles
 // against this same list. See src/background.js for the reconcile loop.
 
-const HOSTS_STORAGE_KEY = 'sdExtensionHostsV1';
+import { HOSTS_STORAGE_KEY } from './config/storage-keys.js';
 
 const listEl = document.getElementById('host-list');
 const emptyEl = document.getElementById('empty');

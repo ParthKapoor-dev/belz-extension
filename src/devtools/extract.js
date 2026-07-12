@@ -7,9 +7,12 @@
 // method name can be read straight out of that response body. An `execute`
 // response carries no name — those uuids are resolved out-of-band via belz web.
 
-const CHAIN_PATH_RE = /\/rest\/api\/automation\/chain\//i;
+import { CHAIN_PATH_RE } from '../config/endpoints.js';
+
 const EXECUTE_RE = /\/chain\/(?:test\/)?execute\//i;
 const UUID_GLOBAL_RE = /[0-9a-f]{32}/gi;
+
+export { CHAIN_PATH_RE };
 
 /**
  * Classify an AD chain request URL.

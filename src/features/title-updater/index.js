@@ -1,6 +1,7 @@
 import { state } from '../../core/state.js';
 import { extractMethodName, extractPageName } from '../../utils/dom.js';
 import { subscribeObserver } from '../../core/observer.js';
+import { AD_ROUTE_PREFIX, PD_ROUTE_PREFIX } from '../../config/routes.js';
 
 let unsubscribe = null;
 
@@ -10,10 +11,10 @@ export function updateTitle() {
   let name = null;
   let prefix = '';
 
-  if (pathname.startsWith('/automation-designer/')) {
+  if (pathname.startsWith(AD_ROUTE_PREFIX)) {
     name = extractMethodName();
     prefix = 'AD';
-  } else if (pathname.startsWith('/ui-designer/')) {
+  } else if (pathname.startsWith(PD_ROUTE_PREFIX)) {
     name = extractPageName();
     prefix = 'PD';
   }

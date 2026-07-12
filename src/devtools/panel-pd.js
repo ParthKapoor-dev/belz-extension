@@ -331,7 +331,8 @@ chrome.devtools.network.onNavigated.addListener(() => {
 // Background writes a session flag when Ctrl+Shift+P fires. When the flag
 // targets us we re-fetch the tree (like a refresh click) and pulse the panel
 // so the user sees the panel react.
-const FOCUS_STORAGE_KEY = 'sdExtensionPanelFocusV1';
+import { FOCUS_STORAGE_KEY } from '../config/storage-keys.js';
+
 const FOCUS_TARGET = 'pd';
 const FOCUS_MAX_AGE_MS = 60_000;
 

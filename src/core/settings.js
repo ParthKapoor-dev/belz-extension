@@ -1,4 +1,4 @@
-const SETTINGS_STORAGE_KEY = 'sdExtensionSettingsV1';
+import { SETTINGS_STORAGE_KEY } from '../config/storage-keys.js';
 
 export const TEXTAREA_EDITOR_LANGUAGE_OPTIONS = [
   'auto',
