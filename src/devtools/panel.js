@@ -930,6 +930,46 @@ chrome.devtools.network.onNavigated.addListener(() => {
   if (!preserveLog) clearAll();
 });
 
+// ---- focus-hint shortcut --------------------------------------------------
+// Neither Chrome nor Firefox lets an extension open or switch DevTools panels
+// from a keyboard shortcut. Background writes a session flag when Ctrl+Shift+A
+// fires; if this panel is loaded, react by scrolling to newest + pulsing the
+// row + focusing the search field. If the flag was set before the panel
+// loaded, we still see it on startup (up to a minute old) and react then.
+const FOCUS_STORAGE_KEY = 'sdExtensionPanelFocusV1';
+const FOCUS_TARGET = 'ad';
+const FOCUS_MAX_AGE_MS = 60_000;
+
+function reactToFocusFlag(value) {
+  if (!value || value.target !== FOCUS_TARGET) return;
+  if (Date.now() - (value.ts || 0) > FOCUS_MAX_AGE_MS) return;
+  listPane.scrollTop = listPane.scrollHeight;
+  const last = entries[entries.length - 1];
+  if (last && last.rowEl) {
+    last.rowEl.classList.add('focus-flash');
+    setTimeout(() => {
+      if (last.rowEl) last.rowEl.classList.remove('focus-flash');
+    }, 900);
+  }
+  if (filterInput && typeof filterInput.focus === 'function') filterInput.focus();
+}
+
+(function watchFocusFlag() {
+  const store = (chrome.storage && chrome.storage.session) || (chrome.storage && chrome.storage.local);
+  if (!store) return;
+  const areaName = chrome.storage.session ? 'session' : 'local';
+  store.get(FOCUS_STORAGE_KEY, (result) => {
+    if (result && result[FOCUS_STORAGE_KEY]) reactToFocusFlag(result[FOCUS_STORAGE_KEY]);
+  });
+  if (chrome.storage.onChanged && chrome.storage.onChanged.addListener) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== areaName) return;
+      const change = changes[FOCUS_STORAGE_KEY];
+      if (change && change.newValue) reactToFocusFlag(change.newValue);
+    });
+  }
+})();
+
 // Backfill from the browser's own capture. DevTools defers loading panel.html
 // until the user first clicks our tab, so any AD chain request fired between
 // "DevTools opened" and "user picked AD Network" would otherwise be lost.

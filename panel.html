@@ -191,6 +191,13 @@
       tbody tr.selected {
         background: #1d3a66;
       }
+      @keyframes focus-pulse {
+        0%, 100% { background: transparent; }
+        30%, 70% { background: rgba(59, 130, 246, 0.35); }
+      }
+      tbody tr.focus-flash {
+        animation: focus-pulse 900ms ease-in-out;
+      }
       /* Method name — colour tracks the status group (#9). */
       td.name {
         font-weight: 600;
