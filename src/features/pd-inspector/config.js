@@ -7,7 +7,8 @@
 //
 // Everything is served cookie-authed, same-origin, by the deployable endpoint.
 
-const DEPLOYABLE = '/rest/api/public/pagedesigner/deployable/pages';
+import { PD_DEPLOYABLE_PATH as DEPLOYABLE } from '../../config/endpoints.js';
+import { PAGES_ROUTE_PREFIX } from '../../config/routes.js';
 
 /** @typedef {{ host: string, path: string, env: string }} PageContext */
 
@@ -23,9 +24,10 @@ function envFromHost(host) {
  * @returns {PageContext | null}
  */
 export function getPageContext() {
-  const m = location.pathname.match(/^\/pages\/(.+?)\/?$/);
-  if (!m) return null;
-  return { host: location.host, path: m[1], env: envFromHost(location.host) };
+  if (!location.pathname.startsWith(PAGES_ROUTE_PREFIX)) return null;
+  const path = location.pathname.slice(PAGES_ROUTE_PREFIX.length).replace(/\/$/, '');
+  if (!path) return null;
+  return { host: location.host, path, env: envFromHost(location.host) };
 }
 
 /**

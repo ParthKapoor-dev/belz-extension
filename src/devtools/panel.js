@@ -1,9 +1,13 @@
 // "AD Network" DevTools panel.
 //
 // A custom Network-tab-style panel scoped to Automation Designer "chain"
-// requests. It reads the network traffic DevTools already records (no page
-// overhead, no fetch/XHR patching) and adds what the real Network tab cannot:
-// the human-readable AD method name and its service category.
+// requests. Two capture pipelines feed the list:
+//   1. chrome.devtools.network — the log DevTools already records, replayed
+//      on init via getHAR() and streamed live via onRequestFinished. Zero
+//      page overhead, but only sees COMPLETED requests.
+//   2. pending-capture.js — a fetch/XHR wrapper injected into the inspected
+//      page via inspectedWindow.eval. Reports in-flight requests so we can
+//      show pending rows the same way the OG Network tab does.
 //
 // Name + category come from two sources:
 //   - definition fetches  -> the name is in the recorded response body
@@ -14,9 +18,21 @@ import {
   extractMethodNameFromChainResponse
 } from './extract.js';
 import { createJsonView } from './json-tree.js';
+import { startPendingCapture } from './pending-capture.js';
+import {
+  getCurrentEnv,
+  toStaffPortalUrl,
+  detectEnv,
+  loadEnvRegistry
+} from './ad-env.js';
+import {
+  BELZ_WEB_RESOLVE,
+  BELZ_WEB_AD_NAMES,
+  BELZ_AUTOFILL_PARAM
+} from '../config/endpoints.js';
+import { FOCUS_STORAGE_KEY } from '../config/storage-keys.js';
 
 const MAX_ROWS = 300;
-const BELZ_WEB = 'http://localhost:65535';
 const BELZ_DEBOUNCE_MS = 250;
 const BELZ_RETRY_MS = 4000;
 
@@ -48,7 +64,6 @@ let preserveLog = false;
 let filterText = '';
 let selectedId = null;
 let activeTab = 'headers';
-let currentEnv = 'nsm-dev';
 let currentCopyText = '';
 
 const pendingUuids = new Set();
@@ -59,80 +74,7 @@ let belzRetryTimer = null;
 const openQueue = [];
 let openProcessing = false;
 
-// ---- env detection --------------------------------------------------------
-// The belz CLI config is the source of truth for which envs exist and which
-// host each one lives on, so we fetch that map from belz web (`/api/envs`).
-// This is what makes the panel work for ANY project the user has configured
-// (NSM, YieldSec, …) instead of only NSM. `envByHost` is the loaded registry;
-// the regex fallbacks below cover the moment before it loads / when belz web
-// is unreachable.
-const envByHost = new Map(); // lowercase hostname -> belz env name
-
-function loadEnvRegistry() {
-  fetch(BELZ_WEB + '/api/envs')
-    .then((r) => (r.ok ? r.json() : null))
-    .then((data) => {
-      if (!data || !Array.isArray(data.envs)) return;
-      envByHost.clear();
-      for (const e of data.envs) {
-        if (e && typeof e.host === 'string' && e.host && typeof e.name === 'string') {
-          envByHost.set(e.host.toLowerCase(), e.name);
-        }
-      }
-      setOffline(false);
-      detectEnv(); // re-resolve now that the real host→env mapping is known
-    })
-    .catch(() => {
-      /* belz web down — keep the built-in host rules below */
-    });
-}
-
-// Maps the inspected window's hostname to a belz env name. Public-portal hosts
-// collapse to the same env as their staff portal — the AD method behind them is
-// the same entity, and the designer only lives on the staff portal.
-function envFromHost(host) {
-  if (typeof host !== 'string') return currentEnv || 'nsm-dev';
-  const h = host.toLowerCase();
-
-  // 1. Exact match against the configured envs (project-agnostic).
-  const fromRegistry = envByHost.get(h);
-  if (fromRegistry) return fromRegistry;
-
-  // 2. Built-in fallbacks for before the registry loads / belz web is down.
-  const nsm = h.match(/^(nsm-(?:dev|qa|uat))(?:-public)?\./);
-  if (nsm) return nsm[1];
-  if (h === 'staff-nss-stage.verifi-nc.com') return 'nsm-stage';
-  if (h === 'staff-nss.verifi-nc.com') return 'nsm-prod';
-  if (h === 'yieldsec.expertly.cloud') return 'ys-demo';
-  if (h === 'yieldsec.qa.expertly.cloud') return 'ys-qa';
-  if (h === 'yieldsec.stage.expertly.cloud') return 'ys-stage';
-  if (h === 'yieldsec.expertly.com') return 'ys-prod';
-  return currentEnv || 'nsm-dev';
-}
-
-// AD/PD designer routes live ONLY on staff portals — the public portal serves
-// the operator app, not the designer. For NSM the public host is the staff host
-// with a `-public` modifier, so strip it; for other projects belz web already
-// returns the configured staff URL, so this is a no-op there.
-function toStaffPortalUrl(url) {
-  try {
-    const u = new URL(url);
-    u.hostname = u.hostname.replace(/^(nsm-(?:dev|qa|uat))-public\./i, '$1.');
-    return u.toString();
-  } catch {
-    return url;
-  }
-}
-
-function detectEnv() {
-  try {
-    chrome.devtools.inspectedWindow.eval('location.hostname', (result) => {
-      currentEnv = envFromHost(result);
-    });
-  } catch {
-    /* keep previous env */
-  }
-}
+// Env detection + host→env resolution moved to ./ad-env.js.
 
 // ---- small helpers --------------------------------------------------------
 function formatBytes(n) {
@@ -250,10 +192,10 @@ function buildCurl(har) {
 // via belz web (same /api/resolve the "open in draft" action uses).
 async function copySlackLink(entry, btn) {
   try {
-    const res = await fetch(BELZ_WEB + '/api/resolve', {
+    const res = await fetch(BELZ_WEB_RESOLVE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: entry.uuid, env: currentEnv })
+      body: JSON.stringify({ text: entry.uuid, env: getCurrentEnv() })
     });
     const data = await res.json();
     if (!res.ok || !data.resolved || typeof data.editUrl !== 'string') {
@@ -325,10 +267,10 @@ async function processOpenQueue() {
   if (!entry) return;
   openProcessing = true;
   try {
-    const res = await fetch(BELZ_WEB + '/api/resolve', {
+    const res = await fetch(BELZ_WEB_RESOLVE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: entry.uuid, env: currentEnv })
+      body: JSON.stringify({ text: entry.uuid, env: getCurrentEnv() })
     });
     const data = await res.json();
     if (!res.ok || !data.resolved || typeof data.editUrl !== 'string') {
@@ -342,7 +284,7 @@ async function processOpenQueue() {
       try {
         url +=
           (url.includes('?') ? '&' : '?') +
-          '_belz_autofill=' +
+          BELZ_AUTOFILL_PARAM + '=' +
           encodeURIComponent(btoa(body));
       } catch {
         /* body not Latin1 — open without autofill */
@@ -436,10 +378,10 @@ async function flushBelzFetch() {
   if (uuids.length === 0) return;
 
   try {
-    const res = await fetch(BELZ_WEB + '/api/ad-names', {
+    const res = await fetch(BELZ_WEB_AD_NAMES, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uuids, env: currentEnv })
+      body: JSON.stringify({ uuids, env: getCurrentEnv() })
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
@@ -771,7 +713,7 @@ function renderDetail() {
         ['Request URL', entry.url],
         ['HTTP method', entry.httpMethod],
         ['Status', entry.status || '—'],
-        ['Env', currentEnv]
+        ["Env", getCurrentEnv()]
       ]),
       el('h4', null, 'Request headers'),
       kvGrid(headerRows(har.request && har.request.headers)),
@@ -788,7 +730,7 @@ function renderDetail() {
           requestUrl: entry.url,
           httpMethod: entry.httpMethod,
           status: entry.status || null,
-          env: currentEnv
+          env: getCurrentEnv()
         },
         requestHeaders: headersToObj(har.request && har.request.headers),
         responseHeaders: headersToObj(har.response && har.response.headers)
@@ -851,6 +793,10 @@ function clearAll() {
   entries.length = 0;
   seen.clear();
   rowsEl.replaceChildren();
+  if (typeof pendingRowsEl !== 'undefined' && pendingRowsEl) {
+    pendingRowsEl.replaceChildren();
+  }
+  if (typeof pendingRows !== 'undefined') pendingRows.clear();
   countEl.textContent = '0';
   emptyEl.classList.remove('hidden');
   closeDetail();
@@ -930,13 +876,64 @@ chrome.devtools.network.onNavigated.addListener(() => {
   if (!preserveLog) clearAll();
 });
 
+// ---- pending / in-flight rows --------------------------------------------
+// chrome.devtools.network only fires onRequestFinished — a slow or hung
+// request is invisible in our panel while it's alive. pending-capture.js
+// injects a fetch/XHR wrapper into the inspected page that tracks live
+// requests; we render them here as a separate "in-flight" block below the
+// finished rows. When a request completes it drops out of the pending list
+// and shows up as a finished row via onRequestFinished.
+const pendingRowsEl = document.getElementById('pending-rows');
+const pendingRows = new Map(); // pending id -> tr element
+
+function renderPendingRow(entry) {
+  const row = el('tr', { className: 'pending-row' });
+  row.append(
+    el('td', { className: 'sr' }, ''),
+    el('td', { className: 'name pending' }, extractUuidFromUrl(entry.url) || entry.url),
+    el('td', { className: 'category pending' }, '…'),
+    el('td', { className: 'actions' }),
+    el('td', null, el('span', { className: 'sbadge pending' }, 'pending')),
+    el('td', { className: 'dim' }, entry.method || '—'),
+    el('td', { className: 'dim' }, ''),
+    el('td', { className: 'mono dim' }, entry.url.replace(/^https?:\/\/[^/]+/, '')),
+    el('td', { className: 'dim' }, ''),
+    el('td', { className: 'dim' }, ''),
+    el('td', { className: 'dim' }, 'in flight')
+  );
+  return row;
+}
+
+function extractUuidFromUrl(url) {
+  const m = String(url || '').match(/[0-9a-f]{32}/i);
+  return m ? m[0].slice(0, 12) + '…' : null;
+}
+
+function updatePending(entries) {
+  const currentIds = new Set(entries.map((e) => e.id));
+
+  for (const [id, row] of pendingRows) {
+    if (!currentIds.has(id)) {
+      row.remove();
+      pendingRows.delete(id);
+    }
+  }
+  for (const entry of entries) {
+    if (pendingRows.has(entry.id)) continue;
+    const row = renderPendingRow(entry);
+    pendingRows.set(entry.id, row);
+    pendingRowsEl.appendChild(row);
+  }
+}
+
+startPendingCapture(updatePending);
+
 // ---- focus-hint shortcut --------------------------------------------------
 // Neither Chrome nor Firefox lets an extension open or switch DevTools panels
 // from a keyboard shortcut. Background writes a session flag when Ctrl+Shift+A
 // fires; if this panel is loaded, react by scrolling to newest + pulsing the
 // row + focusing the search field. If the flag was set before the panel
 // loaded, we still see it on startup (up to a minute old) and react then.
-const FOCUS_STORAGE_KEY = 'sdExtensionPanelFocusV1';
 const FOCUS_TARGET = 'ad';
 const FOCUS_MAX_AGE_MS = 60_000;
 
@@ -991,4 +988,4 @@ function backfillFromHar() {
 
 detectEnv();
 backfillFromHar();
-loadEnvRegistry();
+loadEnvRegistry(setOffline);

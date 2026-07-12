@@ -198,6 +198,19 @@
       tbody tr.focus-flash {
         animation: focus-pulse 900ms ease-in-out;
       }
+      /* In-flight rows — sit at the bottom of the list, distinct from the
+         completed rows above them so it's obvious they'll disappear when
+         the request finishes. */
+      @keyframes pending-shimmer {
+        0%, 100% { opacity: 0.55; }
+        50% { opacity: 0.85; }
+      }
+      tbody tr.pending-row {
+        animation: pending-shimmer 1400ms ease-in-out infinite;
+      }
+      tbody tr.pending-row td {
+        border-top: 1px dashed #2a2d30;
+      }
       /* Method name — colour tracks the status group (#9). */
       td.name {
         font-weight: 600;
@@ -564,6 +577,7 @@
             </tr>
           </thead>
           <tbody id="rows"></tbody>
+          <tbody id="pending-rows"></tbody>
         </table>
         <div id="empty" class="empty">
           Recording AD chain requests &mdash; navigate or run an AD method and

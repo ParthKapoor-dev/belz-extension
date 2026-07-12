@@ -17,15 +17,15 @@
 //      switch DevTools panels, so the shortcut writes a session flag that
 //      panel.js / panel-pd.js react to when they're open.
 
-const HOSTS_STORAGE_KEY = 'sdExtensionHostsV1';
-const FOCUS_STORAGE_KEY = 'sdExtensionPanelFocusV1';
+import { HOSTS_STORAGE_KEY, FOCUS_STORAGE_KEY } from './config/storage-keys.js';
+import { AD_ROUTE_PREFIX, PD_ROUTE_PREFIX, PAGES_ROUTE_PREFIX } from './config/routes.js';
 
 // Each granted host gets three registrations — AD, PD, PD-Inspector — matching
 // the routes the old static manifest declared.
 const CONTENT_SCRIPT_TEMPLATES = [
-  { key: 'ad', path: '/automation-designer/*', js: 'dist/ad-content.js' },
-  { key: 'pd', path: '/ui-designer/*', js: 'dist/pd-content.js' },
-  { key: 'pdi', path: '/pages/*', js: 'dist/pd-inspector.js' }
+  { key: 'ad', path: `${AD_ROUTE_PREFIX}*`, js: 'dist/ad-content.js' },
+  { key: 'pd', path: `${PD_ROUTE_PREFIX}*`, js: 'dist/pd-content.js' },
+  { key: 'pdi', path: `${PAGES_ROUTE_PREFIX}*`, js: 'dist/pd-inspector.js' }
 ];
 
 function idFor(host, template) {

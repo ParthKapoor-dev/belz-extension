@@ -4,6 +4,7 @@ import { extractMethodName, extractServiceCategory } from '../../utils/dom.js';
 import { showToast } from '../../ui/toast.js';
 import { subscribeObserver } from '../../core/observer.js';
 import { showModal as showJsonInputModal } from '../json-editor/modal.js';
+import { AD_ROUTE_PREFIX } from '../../config/routes.js';
 
 // Window within which a second Escape press counts as an "Esc Esc".
 const DOUBLE_ESCAPE_WINDOW_MS = 500;
@@ -77,7 +78,7 @@ export function handleKeydown(event) {
 
   // Copy AD rich link — Shift+L (ignored while typing in a field).
   if (event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === 'L') {
-    if (!window.location.pathname.startsWith('/automation-designer/')) return;
+    if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
     if (isEditableElement(document.activeElement)) return;
 
     event.preventDefault();
@@ -88,7 +89,7 @@ export function handleKeydown(event) {
 
   // Open the JSON input editor — Shift+J (ignored while typing in a field).
   if (event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === 'J') {
-    if (!window.location.pathname.startsWith('/automation-designer/')) return;
+    if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
     if (isEditableElement(document.activeElement)) return;
 
     event.preventDefault();

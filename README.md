@@ -20,7 +20,16 @@ A browser extension that augments Service Designer's web UI — Automation Desig
 
 ### DevTools panel
 
-- Adds a panel that lists every `/rest/api/automation/chain/...` call observed on the page, with request/response inspection, search, and an Execute action that replays a chain with edited inputs.
+- **AD Network** panel — lists every `/rest/api/automation/chain/...` call observed on the page, in the same chronological order as the OG Network tab. Shows completed requests via `chrome.devtools.network` (with a HAR backfill on init so nothing captured before the tab was opened is missed), and in-flight requests via a `fetch`/`XHR` wrapper injected into the inspected page. Cancelled requests render as red `canceled` pills. Row click opens details; the Actions column's Open button opens the method in draft mode.
+- **PD Inspector** panel — walks the deployable page config, highlights components in the page, and re-fetches on refresh.
+- **Focus-hint shortcuts** — `Ctrl+Shift+A` scrolls the AD Network panel to the newest entry, `Ctrl+Shift+P` refreshes PD Inspector. Both require DevTools + the relevant panel to be open (no browser exposes an API to open DevTools panels from an extension shortcut).
+
+## Settings & sites
+
+The extension's options page (`chrome://extensions` → *belz-extension* → **Details** → **Extension options**, or `about:addons` on Firefox) is the single place to manage:
+
+- **Sites** — the list of hostnames the extension is allowed to inject its content scripts on. Add a hostname to get a browser permission prompt; grant to enable; Revoke reverses both. Registration is dynamic via `chrome.scripting.registerContentScripts` and reconciled by the background service worker.
+- **Feature toggles** — live in the in-page settings modal (`Ctrl + ,`) on any AD/PD page. Persisted extension-wide in `chrome.storage.local`.
 
 ## Install
 
@@ -81,7 +90,10 @@ src/
   pd-content.js          PD page content script (entry)
   pd-inspector.js        PD inspector content script (entry)
   background.js          MV3 service worker / Firefox background scripts
-  devtools/              DevTools page + panels (AD chain + PD inspector)
+  options.js             user-facing options page (sites list)
+  config/                routes, endpoints, storage keys, DOM namespace
+  devtools/              DevTools page + panels (AD Network + PD Inspector)
+                         includes ad-env.js and pending-capture.js
   features/              feature modules (title, keyboard, json-editor, …)
   core/                  bootstrap, settings, state, logger, observer
   ui/                    modal, toast, modal-lock, theme tokens
@@ -91,6 +103,7 @@ scripts/
   escape-non-ascii.mjs   post-bundle pass for loader compatibility
   pack.mjs               assembles per-browser unpacked trees
 manifest.json            MV3 manifest
+options.html             options page markup (loads dist/options.js)
 release.config.json      extension identity (firefox id, chrome update URL)
 ```
 
