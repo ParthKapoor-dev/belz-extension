@@ -11,7 +11,8 @@
 //
 // Name + category come from two sources:
 //   - definition fetches  -> the name is in the recorded response body
-//   - belz web            -> `belz ad show` (cache-backed) gives name + category
+//   - ad-api.js           -> the platform's own chain endpoint on the
+//                            inspected host, cached SWR in ad-cache.js
 
 import {
   classifyChainUrl,
@@ -20,21 +21,25 @@ import {
 import { createJsonView } from './json-tree.js';
 import { startPendingCapture } from './pending-capture.js';
 import {
-  getCurrentEnv,
-  toStaffPortalUrl,
-  detectEnv,
-  loadEnvRegistry
-} from './ad-env.js';
+  detectOrigin,
+  getApiHost,
+  loadSiteConfig,
+  watchSiteConfig
+} from './ad-origin.js';
 import {
-  BELZ_WEB_RESOLVE,
-  BELZ_WEB_AD_NAMES,
-  BELZ_AUTOFILL_PARAM
-} from '../config/endpoints.js';
+  rememberAuth,
+  resolveSummary,
+  buildDesignerUrl
+} from './ad-api.js';
+import { hydrate as hydrateCache } from './ad-cache.js';
+import { AUTOFILL_PARAM } from '../config/endpoints.js';
 import { FOCUS_STORAGE_KEY } from '../config/storage-keys.js';
 
 const MAX_ROWS = 300;
-const BELZ_DEBOUNCE_MS = 250;
-const BELZ_RETRY_MS = 4000;
+const RESOLVE_DEBOUNCE_MS = 250;
+const RESOLVE_RETRY_MS = 4000;
+/** Never hammer the platform with a burst — resolve a few uuids at a time. */
+const RESOLVE_CONCURRENCY = 4;
 
 // ---- DOM ------------------------------------------------------------------
 const recordBtn = document.getElementById('record');
@@ -67,14 +72,16 @@ let activeTab = 'headers';
 let currentCopyText = '';
 
 const pendingUuids = new Set();
-let belzTimer = null;
-let belzRetryTimer = null;
+let resolveTimer = null;
+let resolveRetryTimer = null;
+/** Resolves once origin + site config + cache are loaded. Set at init. */
+let ready = Promise.resolve();
 
 // "Open in draft" queue — processed one at a time.
 const openQueue = [];
 let openProcessing = false;
 
-// Env detection + host→env resolution moved to ./ad-env.js.
+// Origin detection + designer-host mapping live in ./ad-origin.js.
 
 // ---- small helpers --------------------------------------------------------
 function formatBytes(n) {
@@ -188,24 +195,25 @@ function buildCurl(har) {
 }
 
 // Copy a Slack-pasteable rich link to the method's designer page — mirrors the
-// Shift+L "copy AD rich link" feature on AD pages. The designer URL is resolved
-// via belz web (same /api/resolve the "open in draft" action uses).
+// Shift+L "copy AD rich link" feature on AD pages. The designer URL is built
+// from the method summary read off the platform (same path "open in draft"
+// takes).
 async function copySlackLink(entry, btn) {
   try {
-    const res = await fetch(BELZ_WEB_RESOLVE, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: entry.uuid, env: getCurrentEnv() })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.resolved || typeof data.editUrl !== 'string') {
-      throw new Error((data && (data.reason || data.error)) || 'resolve failed');
-    }
+    await ready;
+    const summary = await resolveSummary(entry.uuid, (fresh) =>
+      applySummary(entry.uuid, fresh)
+    );
+    const url = buildDesignerUrl(entry.uuid, summary);
+    if (!url) throw new Error('method not found on this instance');
+    applySummary(entry.uuid, summary);
     setOffline(false);
-    const url = toStaffPortalUrl(data.editUrl);
     const name =
-      data.name || uuidToName.get(entry.uuid) || entry.uuid.slice(0, 8) + '…';
-    const category = data.category || uuidToCategory.get(entry.uuid) || '';
+      (summary && summary.name) ||
+      uuidToName.get(entry.uuid) ||
+      entry.uuid.slice(0, 8) + '…';
+    const category =
+      (summary && summary.category) || uuidToCategory.get(entry.uuid) || '';
     const label = [category, name].filter(Boolean).join('::');
     const html = '<a href="' + url + '">' + label + '</a>';
     const plain = '[' + label + '](' + url + ')';
@@ -225,7 +233,7 @@ async function copySlackLink(entry, btn) {
     setOffline(true);
     showToast(
       'could not copy link — ' +
-        (err && err.message ? err.message : 'belz web error')
+        (err && err.message ? err.message : 'lookup failed')
     );
   }
 }
@@ -267,24 +275,21 @@ async function processOpenQueue() {
   if (!entry) return;
   openProcessing = true;
   try {
-    const res = await fetch(BELZ_WEB_RESOLVE, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: entry.uuid, env: getCurrentEnv() })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.resolved || typeof data.editUrl !== 'string') {
-      throw new Error((data && (data.reason || data.error)) || 'resolve failed');
-    }
+    await ready;
+    const summary = await resolveSummary(entry.uuid, (fresh) =>
+      applySummary(entry.uuid, fresh)
+    );
+    let url = buildDesignerUrl(entry.uuid, summary);
+    if (!url) throw new Error('method not found on this instance');
+    applySummary(entry.uuid, summary);
     setOffline(false);
     const req = entry.har && entry.har.request;
     const body = (req && req.postData && req.postData.text) || '';
-    let url = toStaffPortalUrl(data.editUrl);
     if (body) {
       try {
         url +=
           (url.includes('?') ? '&' : '?') +
-          BELZ_AUTOFILL_PARAM + '=' +
+          AUTOFILL_PARAM + '=' +
           encodeURIComponent(btoa(body));
       } catch {
         /* body not Latin1 — open without autofill */
@@ -294,7 +299,7 @@ async function processOpenQueue() {
     const remaining = openQueue.length;
     showToast(
       'opening ' +
-        (data.name || entry.uuid.slice(0, 8) + '…') +
+        ((summary && summary.name) || entry.uuid.slice(0, 8) + '…') +
         ' in draft mode' +
         (remaining ? ' · ' + remaining + ' queued' : '')
     );
@@ -304,7 +309,7 @@ async function processOpenQueue() {
       'could not open ' +
         entry.uuid.slice(0, 8) +
         '… — ' +
-        (err && err.message ? err.message : 'belz web error')
+        (err && err.message ? err.message : 'lookup failed')
     );
   } finally {
     openProcessing = false;
@@ -357,55 +362,73 @@ function setOffline(off) {
   offlineEl.classList.toggle('hidden', !off);
 }
 
-function needsBelz(uuid) {
+/** Paint whatever a summary told us onto every row sharing that uuid. */
+function applySummary(uuid, summary) {
+  if (!summary) return;
+  if (summary.name) learnName(uuid, summary.name);
+  if (summary.category) learnCategory(uuid, summary.category);
+}
+
+function needsResolve(uuid) {
   return !uuidToName.has(uuid) || !uuidToCategory.has(uuid);
 }
 
-function scheduleBelzFetch() {
-  if (belzTimer) return;
-  belzTimer = setTimeout(() => {
-    belzTimer = null;
-    flushBelzFetch();
-  }, BELZ_DEBOUNCE_MS);
+function scheduleResolve() {
+  if (resolveTimer) return;
+  resolveTimer = setTimeout(() => {
+    resolveTimer = null;
+    flushResolve();
+  }, RESOLVE_DEBOUNCE_MS);
 }
 
-async function flushBelzFetch() {
+/**
+ * Resolve every queued uuid against the platform, a few at a time. Cache hits
+ * return without touching the network, so a warm panel paints instantly.
+ * A uuid that fails for transport/auth reasons goes back on the queue — the
+ * user may still be signing in, or the page may not have fired an
+ * authenticated request yet for us to lift a token from.
+ */
+async function flushResolve() {
+  await ready;
   const uuids = [];
   for (const uuid of pendingUuids) {
-    if (needsBelz(uuid)) uuids.push(uuid);
+    if (needsResolve(uuid)) uuids.push(uuid);
   }
   pendingUuids.clear();
   if (uuids.length === 0) return;
 
-  try {
-    const res = await fetch(BELZ_WEB_AD_NAMES, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uuids, env: getCurrentEnv() })
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    setOffline(false);
-    const items = (data && data.items) || {};
-    for (const uuid of Object.keys(items)) {
-      const meta = items[uuid];
-      if (!meta) continue;
-      if (meta.name) learnName(uuid, meta.name);
-      if (meta.category) learnCategory(uuid, meta.category);
+  const failed = [];
+  let cursor = 0;
+  async function worker() {
+    while (cursor < uuids.length) {
+      const uuid = uuids[cursor++];
+      try {
+        const summary = await resolveSummary(uuid, (fresh) =>
+          applySummary(uuid, fresh)
+        );
+        // A null summary is a definitive miss (the uuid is not an AD method
+        // on this instance) — do not retry it.
+        applySummary(uuid, summary);
+      } catch {
+        failed.push(uuid);
+      }
     }
-  } catch {
-    setOffline(true);
-    // belz web is commonly started after the panel is already open — keep the
-    // uuids queued and retry on a timer so they fill in once it is up.
-    for (const uuid of uuids) {
-      if (needsBelz(uuid)) pendingUuids.add(uuid);
-    }
-    if (pendingUuids.size > 0 && !belzRetryTimer) {
-      belzRetryTimer = setTimeout(() => {
-        belzRetryTimer = null;
-        flushBelzFetch();
-      }, BELZ_RETRY_MS);
-    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(RESOLVE_CONCURRENCY, uuids.length) }, worker)
+  );
+
+  setOffline(failed.length > 0);
+  if (failed.length === 0) return;
+
+  for (const uuid of failed) {
+    if (needsResolve(uuid)) pendingUuids.add(uuid);
+  }
+  if (pendingUuids.size > 0 && !resolveRetryTimer) {
+    resolveRetryTimer = setTimeout(() => {
+      resolveRetryTimer = null;
+      flushResolve();
+    }, RESOLVE_RETRY_MS);
   }
 }
 
@@ -439,6 +462,10 @@ function onRequest(har) {
   const key = harKey(har);
   if (seen.has(key)) return;
   seen.add(key);
+
+  // Every observed chain request is a chance to learn the app's auth headers,
+  // which is what lets us query the platform for names ourselves.
+  rememberAuth(har);
 
   const status = (har.response && har.response.status) || 0;
   const entry = {
@@ -474,7 +501,7 @@ function onRequest(har) {
   if (atBottom && isAppend) listPane.scrollTop = listPane.scrollHeight;
 
   // Name: definition fetches carry it in their body — read it instantly.
-  // HAR entries from getHAR() lack a working getContent(); belz web fills in.
+  // HAR entries from getHAR() lack a working getContent(); ad-api fills in.
   if (info.kind === 'fetch' && typeof har.getContent === 'function') {
     try {
       har.getContent((body) => {
@@ -485,10 +512,10 @@ function onRequest(har) {
       /* backfill entries: no content available */
     }
   }
-  // Name (for execute) + category for every row come from belz web.
-  if (needsBelz(info.uuid)) {
+  // Name (for execute) + category for every row come from the platform.
+  if (needsResolve(info.uuid)) {
     pendingUuids.add(info.uuid);
-    scheduleBelzFetch();
+    scheduleResolve();
   }
 
   // Cap the table — drop the oldest rows.
@@ -713,7 +740,7 @@ function renderDetail() {
         ['Request URL', entry.url],
         ['HTTP method', entry.httpMethod],
         ['Status', entry.status || '—'],
-        ["Env", getCurrentEnv()]
+        ["Host", getApiHost() || "—"]
       ]),
       el('h4', null, 'Request headers'),
       kvGrid(headerRows(har.request && har.request.headers)),
@@ -730,7 +757,7 @@ function renderDetail() {
           requestUrl: entry.url,
           httpMethod: entry.httpMethod,
           status: entry.status || null,
-          env: getCurrentEnv()
+          host: getApiHost() || null
         },
         requestHeaders: headersToObj(har.request && har.request.headers),
         responseHeaders: headersToObj(har.response && har.response.headers)
@@ -872,7 +899,7 @@ for (const tab of detailTabs) {
 
 chrome.devtools.network.onRequestFinished.addListener(onRequest);
 chrome.devtools.network.onNavigated.addListener(() => {
-  detectEnv();
+  detectOrigin();
   if (!preserveLog) clearAll();
 });
 
@@ -986,6 +1013,13 @@ function backfillFromHar() {
   }
 }
 
-detectEnv();
-backfillFromHar();
-loadEnvRegistry(setOffline);
+// Origin detection, the site list (for designer-host overrides) and the
+// metadata cache all have to be in place before the first resolve fires —
+// `ready` is what flushResolve() awaits. Backfill runs after, so a warm cache
+// paints names on the very first frame instead of after a round-trip.
+ready = (async () => {
+  await Promise.all([detectOrigin(), loadSiteConfig(), hydrateCache()]);
+  watchSiteConfig();
+})();
+
+ready.then(backfillFromHar);

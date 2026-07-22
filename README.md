@@ -20,7 +20,7 @@ A browser extension that augments Service Designer's web UI — Automation Desig
 
 ### DevTools panel
 
-- **AD Network** panel — lists every `/rest/api/automation/chain/...` call observed on the page, in the same chronological order as the OG Network tab. Shows completed requests via `chrome.devtools.network` (with a HAR backfill on init so nothing captured before the tab was opened is missed), and in-flight requests via a `fetch`/`XHR` wrapper injected into the inspected page. Cancelled requests render as red `canceled` pills. Row click opens details; the Actions column's Open button opens the method in draft mode.
+- **AD Network** panel — lists every `/rest/api/automation/chain/...` call observed on the page, in the same chronological order as the OG Network tab. Shows completed requests via `chrome.devtools.network` (with a HAR backfill on init so nothing captured before the tab was opened is missed), and in-flight requests via a `fetch`/`XHR` wrapper injected into the inspected page. Cancelled requests render as red `canceled` pills. Row click opens details; the Actions column's Open button opens the method in draft mode. Method names, categories and designer links are read from the inspected site's own API using the session you are already signed in with — no companion service required — and cached so repeat visits resolve instantly.
 - **PD Inspector** panel — walks the deployable page config, highlights components in the page, and re-fetches on refresh.
 - **Focus-hint shortcuts** — `Ctrl+Shift+A` scrolls the AD Network panel to the newest entry, `Ctrl+Shift+P` refreshes PD Inspector. Both require DevTools + the relevant panel to be open (no browser exposes an API to open DevTools panels from an extension shortcut).
 
@@ -29,7 +29,10 @@ A browser extension that augments Service Designer's web UI — Automation Desig
 The extension's options page (`chrome://extensions` → *belz-extension* → **Details** → **Extension options**, or `about:addons` on Firefox) is the single place to manage:
 
 - **Sites** — the list of hostnames the extension is allowed to inject its content scripts on. Add a hostname to get a browser permission prompt; grant to enable; Revoke reverses both. Registration is dynamic via `chrome.scripting.registerContentScripts` and reconciled by the background service worker.
+- **Designer host** — an optional per-site override for deployments that serve the Automation Designer UI on a different host than the one you browse (split public / staff portal). Leave blank when both live on the same host.
 - **Feature toggles** — live in the in-page settings modal (`Ctrl + ,`) on any AD/PD page. Persisted extension-wide in `chrome.storage.local`.
+
+The extension makes no requests to any host other than the site you are inspecting. It ships with no static host permissions — every origin it can touch is one you granted here.
 
 ## Install
 
@@ -93,7 +96,7 @@ src/
   options.js             user-facing options page (sites list)
   config/                routes, endpoints, storage keys, DOM namespace
   devtools/              DevTools page + panels (AD Network + PD Inspector)
-                         includes ad-env.js and pending-capture.js
+                         plus ad-origin/ad-api/ad-cache and pending-capture
   features/              feature modules (title, keyboard, json-editor, …)
   core/                  bootstrap, settings, state, logger, observer
   ui/                    modal, toast, modal-lock, theme tokens

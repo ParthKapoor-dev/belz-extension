@@ -1,15 +1,10 @@
 // All network endpoints the extension talks to.
 //
-// Two classes of endpoints:
-//
-//   1. Page-relative paths on the inspected host — the AD chain URL that
-//      the DevTools panel filters on, and the PD deployable-page config.
-//      The extension never picks the host; it uses whatever host the user
-//      is on. So we only need path prefixes here.
-//
-//   2. belz web (localhost) — the user's belz CLI's locally-running web
-//      app, used by the DevTools panel to resolve UUIDs → method names and
-//      draft URLs. Fixed origin.
+// Every endpoint here is a path on the INSPECTED HOST — the Service Designer
+// instance the user is already signed in to. The extension talks to no
+// third-party service: method names, categories and designer URLs are read
+// straight from the platform's own REST API, reusing the session the page
+// already holds. See src/devtools/ad-api.js for the client.
 
 /** AD chain URL detector — matches both fetch and execute variants. */
 export const CHAIN_PATH_RE = /\/rest\/api\/automation\/chain\//i;
@@ -17,21 +12,31 @@ export const CHAIN_PATH_RE = /\/rest\/api\/automation\/chain\//i;
 /** PD deployable-page config endpoint (relative to the inspected host). */
 export const PD_DEPLOYABLE_PATH = '/rest/api/public/pagedesigner/deployable/pages';
 
-/** belz web origin — the CLI's locally-hosted API. */
-export const BELZ_WEB_ORIGIN = 'http://localhost:65535';
-
-/** Env registry (belz CLI's configured environments). */
-export const BELZ_WEB_ENVS = BELZ_WEB_ORIGIN + '/api/envs';
-
-/** UUID → { name, category, editUrl } resolver. */
-export const BELZ_WEB_RESOLVE = BELZ_WEB_ORIGIN + '/api/resolve';
-
-/** Batch UUID → name resolver — reduces a burst of resolves to one request. */
-export const BELZ_WEB_AD_NAMES = BELZ_WEB_ORIGIN + '/api/ad-names';
+/**
+ * Chain definition fetch, V2 shape. `basicInfo=false` returns the full
+ * document — `name` at the root, identity under `metadata`.
+ */
+export function chainV2Path(uuid) {
+  return `/rest/api/automation/chain/v2/${encodeURIComponent(uuid)}?basicInfo=false`;
+}
 
 /**
- * URL parameter that tells the belz-served draft page to autofill inputs
- * from a cURL command. Consumed by the curl-autofill content script and
- * produced by the "Open in draft" action in the AD Network panel.
+ * Chain definition fetch, V1 shape. Fallback for instances whose platform
+ * build predates the V2 endpoint.
  */
-export const BELZ_AUTOFILL_PARAM = '_belz_autofill';
+export function chainV1Path(uuid) {
+  return `/rest/api/automation/chain/${encodeURIComponent(uuid)}`;
+}
+
+/** Automation Designer route for a method, given its category + draft uuid. */
+export function designerPath(categoryName, draftUuid) {
+  return `/automation-designer/${encodeURIComponent(categoryName)}/${draftUuid}`;
+}
+
+/**
+ * URL parameter that carries a base64 request body from the AD Network
+ * panel's "open in draft" action to the designer page, where the
+ * curl-autofill content script consumes it and fills the method's inputs.
+ * Produced and consumed entirely within this extension.
+ */
+export const AUTOFILL_PARAM = '_sdx_autofill';

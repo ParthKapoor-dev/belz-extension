@@ -1,7 +1,7 @@
 import { syncJSONToInputs } from '../json-editor/sync.js';
 import { extractAllInputs } from '../json-editor/extractor.js';
 import { showToast } from '../../ui/toast.js';
-import { BELZ_AUTOFILL_PARAM } from '../../config/endpoints.js';
+import { AUTOFILL_PARAM } from '../../config/endpoints.js';
 import { AD_ROUTE_PREFIX } from '../../config/routes.js';
 
 const POLL_INTERVAL_MS = 400;
@@ -11,7 +11,7 @@ export function startCurlAutofillFeature() {
   if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
 
   const params = new URLSearchParams(window.location.search);
-  const encoded = params.get(BELZ_AUTOFILL_PARAM);
+  const encoded = params.get(AUTOFILL_PARAM);
   if (!encoded) return;
 
   LOG('param detected, removing from URL');

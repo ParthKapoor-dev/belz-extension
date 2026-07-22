@@ -127,13 +127,54 @@
       .host-list li:last-child {
         border-bottom: none;
       }
-      .host-list .host {
+      .host-list .host-main {
         flex: 1;
+        min-width: 0;
+      }
+      .host-list .host {
         font-size: 14px;
         color: var(--fg);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+      .host-list .designer-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .host-list .designer-row label {
+        color: var(--fg-faint);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .host-list .designer-row input {
+        flex: 1;
+        min-width: 0;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        color: var(--fg-muted);
+        font-family: var(--mono);
+        font-size: 12px;
+        padding: 4px 8px;
+        outline: none;
+      }
+      .host-list .designer-row input:focus {
+        border-color: var(--accent);
+        color: var(--fg);
+      }
+      .host-list .designer-row input::placeholder {
+        color: var(--fg-faint);
+      }
+      .host-list .designer-row .saved {
+        color: var(--success);
+        font-size: 11px;
+        opacity: 0;
+        transition: opacity 120ms;
+      }
+      .host-list .designer-row .saved.show {
+        opacity: 1;
       }
       .host-list button.revoke {
         background: transparent;
@@ -169,6 +210,12 @@
           scripts. Each grant is scoped to <code>https://&lt;host&gt;/*</code>
           and asks for permission at Add time. Revoke returns the permission
           and unregisters the scripts immediately.
+        </p>
+        <p class="hint">
+          If a site serves the Automation Designer UI on a different host than
+          the one you browse (a split public / staff portal), set that host as
+          the <em>designer host</em> — the AD Network panel opens methods there.
+          Leave it blank when both live on the same host.
         </p>
         <form class="add-row" id="add-form">
           <input

@@ -53,17 +53,79 @@ function render(hosts) {
   emptyEl.style.display = 'none';
   for (const entry of hosts) {
     const li = document.createElement('li');
+
+    const main = document.createElement('div');
+    main.className = 'host-main';
+
     const hostEl = document.createElement('div');
     hostEl.className = 'host';
     hostEl.textContent = entry.host;
+
+    main.append(hostEl, designerRow(entry));
+
     const revokeBtn = document.createElement('button');
     revokeBtn.className = 'revoke';
     revokeBtn.type = 'button';
     revokeBtn.textContent = 'Revoke';
     revokeBtn.addEventListener('click', () => onRevoke(entry.host, revokeBtn));
-    li.append(hostEl, revokeBtn);
+
+    li.append(main, revokeBtn);
     listEl.appendChild(li);
   }
+}
+
+// Optional per-site override: the host that actually serves the Automation
+// Designer UI. Blank means "same host". Saved on blur / Enter rather than
+// per-keystroke so we don't thrash storage (and the background reconciler,
+// which listens on this same key).
+function designerRow(entry) {
+  const row = document.createElement('div');
+  row.className = 'designer-row';
+
+  const label = document.createElement('label');
+  label.textContent = 'designer host';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = entry.designerHost || '';
+  input.placeholder = entry.host;
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+
+  const saved = document.createElement('span');
+  saved.className = 'saved';
+  saved.textContent = 'saved';
+
+  async function commit() {
+    const raw = input.value.trim();
+    const next = raw ? normalizeHost(raw) : '';
+    if (raw && !next) {
+      setError(`"${raw}" is not a valid hostname.`);
+      return;
+    }
+    setError('');
+    if ((entry.designerHost || '') === next) return;
+    const hosts = await readHosts();
+    const target = hosts.find((h) => h.host === entry.host);
+    if (!target) return;
+    if (next) target.designerHost = next;
+    else delete target.designerHost;
+    entry.designerHost = next || undefined;
+    await writeHosts(hosts);
+    saved.classList.add('show');
+    setTimeout(() => saved.classList.remove('show'), 1200);
+  }
+
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    }
+  });
+
+  row.append(label, input, saved);
+  return row;
 }
 
 async function onAdd(host) {
