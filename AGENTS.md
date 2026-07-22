@@ -12,7 +12,8 @@ A browser extension that augments Automation Designer (AD), Page Designer (PD), 
 - Manifest V3 (`manifest.json`).
 - Build: `bun build` (see `scripts/build.mjs`) per entry point, then `scripts/escape-non-ascii.mjs` for extension-loader compatibility.
 - Per-browser packaging: `scripts/pack.mjs` assembles `build/chrome/` and `build/firefox/` trees, the second adding `browser_specific_settings.gecko` for AMO signing.
-- Targets: **runtime-editable** — the manifest ships with only `localhost:65535` as a static host_permission; the user's granted hosts live in `chrome.storage.local` under `sdExtensionHostsV1` and are managed via the options page. `src/background.js` reconciles `chrome.scripting.registerContentScripts` against that list.
+- Targets: **runtime-editable** — the manifest declares no static `host_permissions` at all; the user's granted hosts live in `chrome.storage.local` under `sdExtensionHostsV1` and are managed via the options page. `src/background.js` reconciles `chrome.scripting.registerContentScripts` against that list.
+- **No external dependencies at runtime.** The extension talks only to the site the user is inspecting, reusing that page's own session. There is no companion server, CLI, or localhost service.
 
 ## Entry points
 
@@ -27,7 +28,9 @@ src/devtools/
   panel.js               AD Network chain inspector panel (thin wiring)
   panel-pd.js            PD Inspector DevTools panel
   extract.js             classifyChainUrl + body-parser (pure helpers)
-  ad-env.js              env resolution + host→env mapping
+  ad-origin.js           inspected origin + designer-host override lookup
+  ad-api.js              platform chain-API client (auth reuse, v2 → v1)
+  ad-cache.js            SWR cache of uuid → name/category in chrome.storage
   pending-capture.js     fetch/XHR wrapper for in-flight AD chain requests
   json-tree.js           collapsible JSON view for the detail pane
 ```
@@ -41,8 +44,8 @@ src/
   config/
     constants.js               DOM selectors, observer config, feature flags
     routes.js                  /automation-designer/, /ui-designer/, /pages/
-    endpoints.js               CHAIN_PATH_RE, PD_DEPLOYABLE_PATH, BELZ_WEB_*
-    storage-keys.js            SETTINGS/HOSTS/FOCUS storage keys
+    endpoints.js               CHAIN_PATH_RE, chain/designer path builders
+    storage-keys.js            SETTINGS/HOSTS/FOCUS/AD_CACHE storage keys
     namespace.js               EXT_PREFIX + ns() helper for DOM identifiers
   core/
     bootstrap.js               wires features into start/stop lifecycle
@@ -120,7 +123,16 @@ Two capture pipelines feed the panel:
    - The wrapper tracks live AD chain requests in `window.__belzADPending`; the panel polls that map ~2× per second and renders each entry as a pending row that disappears on completion.
    - Reinstalled on `chrome.devtools.network.onNavigated`; idempotent per page context.
 
-Env resolution: `src/devtools/ad-env.js` fetches belz web's `/api/envs` and maps the inspected host → env slug. Falls back to hardcoded regex rules when belz web is unreachable.
+### Name / category / designer-URL resolution
+
+The extension is **self-contained** — it depends on no local service, CLI, or third-party API. Everything it needs about a method it reads from the inspected instance itself:
+
+1. `src/devtools/ad-origin.js` resolves two origins. `apiOrigin` is the inspected window's own origin. `designerOrigin` is the same unless the user recorded a `designerHost` override for that site on the options page (split public/staff-portal deployments). No host mapping is hardcoded.
+2. `src/devtools/ad-api.js` calls `GET /rest/api/automation/chain/v2/<uuid>?basicInfo=false` on `apiOrigin`, falling back to the V1 path on non-auth errors, and normalises both shapes to `{ name, category, state, referenceId }`. The designer URL is then `designerOrigin + /automation-designer/<category>/<draftUuid>`, where a `PUBLISHED` method routes through its `referenceId` (the linked draft).
+3. Auth reuses whatever the page already has, in order: the `Authorization` / `Expertly-Auth-Token` header lifted off an observed chain request in the HAR; a JWT found by a generic scan of page `localStorage`/`sessionStorage`; cookies alone via `credentials: 'include'`. All three rely on the host grant the panel already requires.
+4. `src/devtools/ad-cache.js` memoises results in `chrome.storage.local` under `sdExtensionAdCacheV1`, keyed `<origin>|<uuid>`. Fresh for 6h, stale-but-served (with background revalidation) to 14d, capped at 800 entries with oldest-first eviction.
+
+`panel.js` batches resolves behind a 250 ms debounce with a concurrency of 4, and retries transport/auth failures every 4 s — the user may still be signing in when the panel opens.
 
 Cross-browser caveat: Firefox can't access `chrome.tabs` from a DevTools script directly, so `background.js` relays messages between the PD panel and the target tab.
 

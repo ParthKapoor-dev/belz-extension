@@ -5,7 +5,8 @@
 //   - execution         POST /rest/api/automation/chain/[test/]execute/<uuid>
 // A definition fetch returns the full method definition, so the human-readable
 // method name can be read straight out of that response body. An `execute`
-// response carries no name — those uuids are resolved out-of-band via belz web.
+// response carries no name — those uuids are resolved via ad-api.js against
+// the platform's own chain endpoint on the inspected host.
 
 import { CHAIN_PATH_RE } from '../config/endpoints.js';
 
