@@ -148,18 +148,40 @@ function summaryFromV1(raw) {
 
 async function getJson(path, headers) {
   const origin = getApiOrigin();
-  if (!origin) throw new Error('inspected origin unknown');
-  const res = await fetch(origin + path, {
-    method: 'GET',
-    credentials: 'include',
-    headers: { Accept: 'application/json, text/plain, */*', ...headers }
-  });
+  if (!origin) {
+    throw new Error('inspected origin unknown — reopen DevTools on the page');
+  }
+
+  let res;
+  try {
+    res = await fetch(origin + path, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json, text/plain, */*', ...headers }
+    });
+  } catch (err) {
+    // A TypeError here is almost always a missing host grant: without one the
+    // browser blocks the extension's cross-origin request outright. Say so,
+    // because "Failed to fetch" on its own sends people hunting the network.
+    const e = new Error(
+      `cannot reach ${new URL(origin).host} — add it on the extension's ` +
+        `options page (${(err && err.message) || 'network error'})`
+    );
+    e.transport = true;
+    throw e;
+  }
+
   if (!res.ok) {
-    const err = new Error(`HTTP ${res.status}`);
+    const err = new Error(`HTTP ${res.status} on ${path.split('?')[0]}`);
     err.status = res.status;
     throw err;
   }
-  return res.json();
+
+  try {
+    return await res.json();
+  } catch {
+    throw new Error(`non-JSON response from ${path.split('?')[0]}`);
+  }
 }
 
 /**
@@ -168,14 +190,35 @@ async function getJson(path, headers) {
  */
 async function fetchSummary(uuid) {
   const headers = await authHeaders();
+  let v2Error;
   try {
-    return summaryFromV2(await getJson(chainV2Path(uuid), headers));
+    const summary = summaryFromV2(await getJson(chainV2Path(uuid), headers));
+    if (summary) return summary;
+    v2Error = new Error('V2 response had no name or category');
   } catch (err) {
-    // 404 means "not a V2 chain on this build" or "not an AD method at all" —
-    // both are worth one V1 attempt. 401/403 will fail the same way twice, so
-    // let those through immediately.
-    if (err && (err.status === 401 || err.status === 403)) throw err;
+    // 401/403 will fail identically on V1, and a blocked origin will too —
+    // surface those immediately instead of doubling the failed requests.
+    if (err && (err.status === 401 || err.status === 403 || err.transport)) {
+      throw new Error(
+        err.status
+          ? `not signed in to this site (HTTP ${err.status})`
+          : err.message
+      );
+    }
+    v2Error = err;
+  }
+
+  try {
     return summaryFromV1(await getJson(chainV1Path(uuid), headers));
+  } catch (err) {
+    // Report both attempts — knowing V2 404'd but V1 401'd is the difference
+    // between "old platform build" and "not signed in".
+    const e = new Error(
+      `v2: ${(v2Error && v2Error.message) || 'failed'} · ` +
+        `v1: ${(err && err.message) || 'failed'}`
+    );
+    e.status = err && err.status;
+    throw e;
   }
 }
 
@@ -232,6 +275,22 @@ function revalidate(uuid, origin, onRevalidated) {
     }
   })();
   inFlight.set(uuid, task);
+}
+
+/**
+ * Record a name we learned for free — from a definition-fetch response body
+ * the panel already had in hand — so the next panel open resolves it from
+ * cache instead of re-asking the platform. Merges into any existing entry so
+ * a cached category is not dropped.
+ */
+export function rememberName(uuid, name) {
+  if (!uuid || !name) return;
+  const origin = getApiOrigin();
+  if (!origin) return;
+  const existing = cacheRead(origin, uuid);
+  const prev = (existing && existing.data) || {};
+  if (prev.name === name) return;
+  cacheWrite(origin, uuid, { ...prev, name });
 }
 
 /**

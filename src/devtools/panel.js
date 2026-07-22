@@ -28,6 +28,7 @@ import {
 } from './ad-origin.js';
 import {
   rememberAuth,
+  rememberName,
   resolveSummary,
   buildDesignerUrl
 } from './ad-api.js';
@@ -230,7 +231,7 @@ async function copySlackLink(entry, btn) {
     flashOk(btn);
     showToast('copied link · ' + label);
   } catch (err) {
-    setOffline(true);
+    setOffline(true, err && err.message);
     showToast(
       'could not copy link — ' +
         (err && err.message ? err.message : 'lookup failed')
@@ -304,7 +305,7 @@ async function processOpenQueue() {
         (remaining ? ' · ' + remaining + ' queued' : '')
     );
   } catch (err) {
-    setOffline(true);
+    setOffline(true, err && err.message);
     showToast(
       'could not open ' +
         entry.uuid.slice(0, 8) +
@@ -358,8 +359,23 @@ function paintCategory(entry) {
   entry.categoryCell.title = cat ? cat + '  ·  click to see details' : '';
 }
 
-function setOffline(off) {
+// The offline pill is the only place a resolve failure is visible, so it
+// carries the actual reason rather than a generic "unavailable". Hover for
+// the full message; the panel console gets the raw error too.
+function setOffline(off, reason) {
   offlineEl.classList.toggle('hidden', !off);
+  if (!off) {
+    offlineEl.title = '';
+    return;
+  }
+  const detail = reason ? String(reason) : '';
+  offlineEl.textContent = detail
+    ? `names unavailable — ${detail}`
+    : 'names unavailable — sign in to this site and retry';
+  offlineEl.title = detail
+    ? `${detail}\n\nOpen the panel's own console (right-click → Inspect on this ` +
+      `panel) for the full error.`
+    : '';
 }
 
 /** Paint whatever a summary told us onto every row sharing that uuid. */
@@ -398,6 +414,7 @@ async function flushResolve() {
   if (uuids.length === 0) return;
 
   const failed = [];
+  let lastError = null;
   let cursor = 0;
   async function worker() {
     while (cursor < uuids.length) {
@@ -409,7 +426,9 @@ async function flushResolve() {
         // A null summary is a definitive miss (the uuid is not an AD method
         // on this instance) — do not retry it.
         applySummary(uuid, summary);
-      } catch {
+      } catch (err) {
+        lastError = err;
+        console.warn('[AD Network] resolve failed for ' + uuid, err);
         failed.push(uuid);
       }
     }
@@ -418,7 +437,7 @@ async function flushResolve() {
     Array.from({ length: Math.min(RESOLVE_CONCURRENCY, uuids.length) }, worker)
   );
 
-  setOffline(failed.length > 0);
+  setOffline(failed.length > 0, lastError && lastError.message);
   if (failed.length === 0) return;
 
   for (const uuid of failed) {
@@ -506,7 +525,10 @@ function onRequest(har) {
     try {
       har.getContent((body) => {
         const name = extractMethodNameFromChainResponse(body || '');
-        if (name) learnName(info.uuid, name);
+        if (!name) return;
+        learnName(info.uuid, name);
+        // Free name — persist it so the next panel open skips the round-trip.
+        rememberName(info.uuid, name);
       });
     } catch {
       /* backfill entries: no content available */
