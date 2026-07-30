@@ -15,6 +15,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "pack": "node scripts/pack.mjs",
     "dev": "bun build src/ad-content.js src/pd-content.js src/devtools/panel.js --outdir dist --watch"
   }
 }

@@ -56,8 +56,10 @@ bun run build
 
 Then in your browser:
 
-- **Chromium**: open `chrome://extensions`, enable Developer mode, click "Load unpacked", select this repo's root.
-- **Firefox**: open `about:debugging` → This Firefox → "Load Temporary Add-on", select `manifest.json`.
+- **Chromium**: open `chrome://extensions`, enable Developer mode, click "Load unpacked", select this repo's root. `bun run build` alone is enough — reload the extension after each build.
+- **Firefox / Zen**: run `bun run pack` first, then open `about:debugging` → This Firefox → "Load Temporary Add-on" and select **`build/firefox/manifest.json`**.
+
+> Do **not** load the repo-root `manifest.json` in Firefox. It declares `background.service_worker`, which Firefox does not support — `bun run pack` rewrites the manifest to `background.scripts` and adds the required `browser_specific_settings.gecko` block. `bun run build` only refreshes `dist/`; it does not regenerate the per-browser trees, so re-run `bun run pack` after every source change you want to test in Firefox.
 
 ## Build
 
