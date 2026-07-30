@@ -34,6 +34,13 @@
         "mac": "Command+Shift+P"
       },
       "description": "Focus the PD Inspector DevTools panel (requires DevTools + PD Inspector tab open)"
+    },
+    "open-settings": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "Alt+Shift+S"
+      },
+      "description": "Open the extension settings modal on an AD/PD page"
     }
   }
 }

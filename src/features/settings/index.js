@@ -12,6 +12,7 @@ let unsubscribe = null;
 let settingsInjectionTimer = null;
 let settingsInitialTimer = null;
 let settingsShortcutHandler = null;
+let settingsCommandListener = null;
 
 function createSettingsButton(onClick) {
   const button = document.createElement('button');
@@ -95,21 +96,31 @@ export function startSettingsFeature({
     });
   }
 
+  // Ctrl+, is the conventional chord, but Firefox and Zen bind it to their own
+  // preferences and consume it before the page sees a keydown — so Alt+, is
+  // accepted as an equivalent that no browser claims. The browser-level
+  // command (Alt+Shift+S by default, and remappable) covers it either way;
+  // see the open-settings handler in src/background.js.
   settingsShortcutHandler = (event) => {
-    if (
-      event.ctrlKey &&
-      !event.shiftKey &&
-      !event.altKey &&
-      !event.metaKey &&
-      (event.key === ',' || event.code === 'Comma')
-    ) {
-      event.preventDefault();
-      event.stopPropagation();
-      openSettings();
-    }
+    if (event.shiftKey || event.metaKey) return;
+    if (event.key !== ',' && event.code !== 'Comma') return;
+    // Exactly one of Ctrl / Alt — not both, not neither.
+    if (event.ctrlKey === event.altKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openSettings();
   };
 
   document.addEventListener('keydown', settingsShortcutHandler, true);
+
+  // Relay from the browser command, for when the chord never reaches the page.
+  settingsCommandListener = (message) => {
+    if (message && message.__sdxCommand === 'open-settings') openSettings();
+  };
+  if (chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener(settingsCommandListener);
+  }
+
   return stopSettingsFeature;
 }
 
@@ -132,6 +143,13 @@ export function stopSettingsFeature() {
   if (settingsShortcutHandler) {
     document.removeEventListener('keydown', settingsShortcutHandler, true);
     settingsShortcutHandler = null;
+  }
+
+  if (settingsCommandListener) {
+    if (chrome.runtime && chrome.runtime.onMessage) {
+      chrome.runtime.onMessage.removeListener(settingsCommandListener);
+    }
+    settingsCommandListener = null;
   }
 
   hideSettingsModal();

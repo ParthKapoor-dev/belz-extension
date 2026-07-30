@@ -147,9 +147,12 @@ function buildControls() {
 
 function ensureControls() {
   if (controlsEl && controlsEl.isConnected) return controlsEl;
-  // The app can wipe the body on a route change; rebuild rather than assume.
+  // The host app wipes and re-renders the body on route changes, which takes
+  // our overlay with it — rebuild rather than assume it survived.
+  const host = document.body || document.documentElement;
+  if (!host) return null;
   controlsEl = buildControls();
-  document.body.appendChild(controlsEl);
+  host.appendChild(controlsEl);
   return controlsEl;
 }
 
@@ -236,7 +239,7 @@ function show(textarea) {
     hideTimer = null;
   }
   activeTextarea = textarea;
-  ensureControls();
+  if (!ensureControls()) return;
   position();
 }
 
@@ -324,12 +327,21 @@ function detachListeners() {
 // ---- lifecycle ------------------------------------------------------------
 
 export function startTextareaEditorFeature() {
-  if (started) return stopTextareaEditorFeature;
-  started = true;
   log('Initializing textarea editor feature...');
 
-  ensureControls();
+  // Listeners FIRST, and never behind a guard that can be left half-set.
+  //
+  // These are the whole feature: the overlay itself is created lazily on the
+  // first hover. Building it here instead meant that if the host app had not
+  // settled its <body> yet — this runs at document_idle, while an SPA is still
+  // bootstrapping — the append could throw and take attachListeners() with it,
+  // leaving the feature permanently dead until something called stop()/start()
+  // again. Toggling the setting off and on was the only way back.
+  //
+  // attachListeners() is idempotent, so re-entry is harmless and no `started`
+  // flag is needed to protect it.
   attachListeners();
+  started = true;
 
   return stopTextareaEditorFeature;
 }

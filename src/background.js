@@ -186,6 +186,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // the panel reads the flag when it opens.
 if (chrome.commands && chrome.commands.onCommand) {
   chrome.commands.onCommand.addListener((command) => {
+    // Settings is an in-page modal, so this one goes straight to the content
+    // script. It exists as a browser command rather than only an in-page
+    // keybind because the page never receives some chords — Firefox and Zen
+    // both claim Ctrl+, for their own settings, so the in-page handler could
+    // never fire there. A command is also user-remappable, which an in-page
+    // listener is not.
+    if (command === 'open-settings') {
+      try {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          const tab = tabs && tabs[0];
+          if (!tab || tab.id == null) return;
+          chrome.tabs.sendMessage(tab.id, { __sdxCommand: 'open-settings' }, () => {
+            // No receiver on non-designer pages — swallow the expected error.
+            void chrome.runtime.lastError;
+          });
+        });
+      } catch {
+        /* tabs unavailable */
+      }
+      return;
+    }
+
     const target =
       command === 'focus-ad-network' ? 'ad'
       : command === 'focus-pd-inspector' ? 'pd'
