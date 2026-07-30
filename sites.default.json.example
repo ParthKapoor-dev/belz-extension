@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "Copy this file to `sites.default.json` (same directory) to have your sites",
+    "restored automatically on every fresh install of the extension.",
+    "",
+    "Browsers wipe an extension's storage when it is uninstalled — and loading a",
+    "temporary add-on in Firefox uninstalls the previous copy — so a rebuild-and-",
+    "re-add cycle would otherwise lose the list every time. On install the",
+    "background script seeds an empty list from this file.",
+    "",
+    "sites.default.json is gitignored on purpose: it holds your own internal",
+    "hostnames, which do not belong in this repository.",
+    "",
+    "designerHost is optional. Set it only when a site serves the Automation",
+    "Designer UI on a different host than the one you browse; leave it out or",
+    "empty when both live on the same host.",
+    "",
+    "Seeded hosts still need their browser permission granted once per install —",
+    "no extension can grant itself host access. They appear in the options page",
+    "with a Grant button instead of Revoke."
+  ],
+  "hosts": [
+    { "host": "example-dev.internal.test", "designerHost": "" }
+  ]
+}

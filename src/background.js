@@ -95,7 +95,54 @@ async function reconcileContentScripts() {
   }
 }
 
-chrome.runtime.onInstalled.addListener(reconcileContentScripts);
+// ---- first-install seeding ------------------------------------------------
+// Browsers clear an extension's storage when it is uninstalled, and loading a
+// temporary add-on in Firefox uninstalls the previous copy — so a rebuild and
+// re-add cycle loses the site list every time. If the user keeps a
+// sites.default.json in the extension root (gitignored; see the .example), we
+// restore the list from it whenever storage comes up empty.
+//
+// Seeded entries are marked enabled:false. The host permission itself cannot
+// be restored this way — only a user gesture can grant it — so the options
+// page shows these with a Grant button and flips enabled to true once the
+// browser confirms the grant.
+async function seedHostsIfEmpty() {
+  try {
+    const stored = await chrome.storage.local.get(HOSTS_STORAGE_KEY);
+    // Distinguish "never seeded" from "user deliberately emptied the list".
+    if (stored && stored[HOSTS_STORAGE_KEY]) return;
+
+    const res = await fetch(chrome.runtime.getURL('sites.default.json'));
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data || !Array.isArray(data.hosts)) return;
+
+    const hosts = [];
+    for (const entry of data.hosts) {
+      if (!entry || typeof entry.host !== 'string' || !entry.host.trim()) continue;
+      const host = entry.host.trim().toLowerCase();
+      const seeded = { host, enabled: false, seeded: true };
+      if (typeof entry.designerHost === 'string' && entry.designerHost.trim()) {
+        seeded.designerHost = entry.designerHost.trim().toLowerCase();
+      }
+      hosts.push(seeded);
+    }
+    if (!hosts.length) return;
+
+    await chrome.storage.local.set({ [HOSTS_STORAGE_KEY]: { hosts } });
+    console.info(
+      `[belz-extension] seeded ${hosts.length} site(s) from sites.default.json — ` +
+        'open the options page to grant them.'
+    );
+  } catch {
+    /* no seed file, or it is malformed — start empty, which is the old behaviour */
+  }
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await seedHostsIfEmpty();
+  reconcileContentScripts();
+});
 chrome.runtime.onStartup.addListener(reconcileContentScripts);
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' && changes[HOSTS_STORAGE_KEY]) {

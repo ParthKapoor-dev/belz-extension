@@ -79,9 +79,11 @@ src/
 | Command | Purpose |
 |---|---|
 | `bun install` | install dependencies |
-| `bun run build` | bundle every entry point to `dist/`, escape non-ASCII |
+| `bun run build` | bundle to `dist/`, then pack `build/chrome/` + `build/firefox/` |
+| `bun run build:dist` | `dist/` only (skips packing) |
 | `bun run dev` | watch-mode (content scripts + DevTools panel) |
-| `node scripts/pack.mjs` | per-browser trees in `build/chrome` and `build/firefox` |
+
+Load the per-browser tree from `build/`, never the repo root — the root `manifest.json` is a template carrying both background styles, split per browser by `scripts/pack.mjs`.
 
 A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see README.md for the full flow + required secrets.
 
@@ -98,6 +100,8 @@ A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see
 3. `src/background.js` listens for `chrome.storage.onChanged` on that key and reconciles `chrome.scripting.registerContentScripts` — three registrations per host (AD, PD, PD-Inspector) with stable IDs (`ad-<host>`, `pd-<host>`, `pdi-<host>`).
 4. `chrome.runtime.onStartup` / `onInstalled` also trigger reconcile so the registrations are restored on browser start / extension update.
 5. Revoke reverses everything: `chrome.scripting.unregisterContentScripts` → `chrome.permissions.remove` → storage delete.
+6. **Seeding.** Uninstalling an extension clears its storage, and a Firefox temporary add-on is uninstalled on every reload — so the host list would be lost on each rebuild. If a `sites.default.json` is present in the extension root (gitignored; see `sites.default.json.example`, copied into both trees by `pack.mjs`), `chrome.runtime.onInstalled` restores the list from it when storage has no host key at all. An explicitly emptied list stores `{hosts: []}` and is therefore never re-seeded.
+7. **Grant state is read from the browser, not storage.** Seeded entries are written `enabled:false, seeded:true` — a permission cannot be restored without a user gesture. `options.js` calls `chrome.permissions.contains` for every host on each render and reconciles the stored `enabled` flag against it, so a host revoked outside the page (or a list carried into a different profile) shows a **Grant** button rather than a stale Revoke. It also subscribes to `chrome.permissions.onAdded` / `onRemoved` to repaint on out-of-band changes.
 
 ## JSON sync engine (the most fragile piece)
 

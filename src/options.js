@@ -44,6 +44,49 @@ function setError(msg) {
   errorEl.textContent = msg || '';
 }
 
+function originFor(host) {
+  return `https://${host}/*`;
+}
+
+/**
+ * The browser — not storage — is the authority on whether we hold a host
+ * permission. A list restored from sites.default.json, or one surviving a
+ * profile change, can name hosts we no longer have access to, so every render
+ * asks chrome.permissions rather than trusting the stored `enabled` flag.
+ */
+async function withGrantState(hosts) {
+  return Promise.all(
+    hosts.map(async (entry) => {
+      let granted = false;
+      try {
+        granted = await chrome.permissions.contains({
+          origins: [originFor(entry.host)]
+        });
+      } catch {
+        granted = false;
+      }
+      return { ...entry, granted };
+    })
+  );
+}
+
+/** Reconcile the stored enabled flag with what the browser actually reports. */
+async function syncEnabledFlags(marked) {
+  const stored = await readHosts();
+  let changed = false;
+  for (const entry of stored) {
+    const match = marked.find((m) => m.host === entry.host);
+    if (!match) continue;
+    const shouldBe = match.granted;
+    if (entry.enabled !== shouldBe) {
+      entry.enabled = shouldBe;
+      if (shouldBe) delete entry.seeded;
+      changed = true;
+    }
+  }
+  if (changed) await writeHosts(stored);
+}
+
 function render(hosts) {
   listEl.replaceChildren();
   if (hosts.length === 0) {
@@ -60,17 +103,57 @@ function render(hosts) {
     const hostEl = document.createElement('div');
     hostEl.className = 'host';
     hostEl.textContent = entry.host;
+    if (!entry.granted) {
+      const badge = document.createElement('span');
+      badge.className = 'needs-grant';
+      badge.textContent = 'not granted';
+      hostEl.appendChild(badge);
+    }
 
     main.append(hostEl, designerRow(entry));
 
-    const revokeBtn = document.createElement('button');
-    revokeBtn.className = 'revoke';
-    revokeBtn.type = 'button';
-    revokeBtn.textContent = 'Revoke';
-    revokeBtn.addEventListener('click', () => onRevoke(entry.host, revokeBtn));
+    // A host we hold no permission for gets a Grant button — that is the only
+    // way back, since permissions.request needs a user gesture.
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    if (entry.granted) {
+      btn.className = 'revoke';
+      btn.textContent = 'Revoke';
+      btn.addEventListener('click', () => onRevoke(entry.host, btn));
+    } else {
+      btn.className = 'grant';
+      btn.textContent = 'Grant';
+      btn.addEventListener('click', () => onGrant(entry.host, btn));
+    }
 
-    li.append(main, revokeBtn);
+    li.append(main, btn);
     listEl.appendChild(li);
+  }
+}
+
+/** Re-read storage, ask the browser for permission state, and repaint. */
+async function refresh() {
+  const marked = await withGrantState(await readHosts());
+  await syncEnabledFlags(marked);
+  render(marked);
+}
+
+async function onGrant(host, button) {
+  setError('');
+  button.disabled = true;
+  try {
+    const granted = await chrome.permissions.request({
+      origins: [originFor(host)]
+    });
+    if (!granted) {
+      setError(`Permission for ${host} was denied.`);
+      return;
+    }
+    await refresh();
+  } catch (err) {
+    setError(String((err && err.message) || err));
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -142,14 +225,18 @@ async function onAdd(host) {
       return;
     }
     const hosts = await readHosts();
-    if (hosts.some((h) => h.host === host)) {
-      setError(`${host} is already in the list.`);
-      return;
+    const existing = hosts.find((h) => h.host === host);
+    if (existing) {
+      // Already listed — typically a seeded entry the user just re-granted.
+      // Mark it live rather than refusing the add.
+      existing.enabled = true;
+      delete existing.seeded;
+    } else {
+      hosts.push({ host, enabled: true, addedAt: Date.now() });
     }
-    hosts.push({ host, enabled: true, addedAt: Date.now() });
     await writeHosts(hosts);
     inputEl.value = '';
-    render(hosts);
+    await refresh();
   } catch (err) {
     setError(String((err && err.message) || err));
   } finally {
@@ -173,7 +260,7 @@ async function onRevoke(host, button) {
     }
     const hosts = (await readHosts()).filter((h) => h.host !== host);
     await writeHosts(hosts);
-    render(hosts);
+    await refresh();
   } catch (err) {
     setError(String((err && err.message) || err));
   } finally {
@@ -193,7 +280,17 @@ formEl.addEventListener('submit', (e) => {
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local' || !changes[HOSTS_STORAGE_KEY]) return;
-  readHosts().then(render);
+  refresh();
 });
 
-readHosts().then(render);
+// Permissions also change outside this page — the browser's own add-on settings
+// can revoke a host while we are open. Without these listeners the list would
+// keep offering Revoke for a host we no longer hold.
+if (chrome.permissions && chrome.permissions.onAdded) {
+  chrome.permissions.onAdded.addListener(() => refresh());
+}
+if (chrome.permissions && chrome.permissions.onRemoved) {
+  chrome.permissions.onRemoved.addListener(() => refresh());
+}
+
+refresh();

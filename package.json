@@ -14,8 +14,8 @@
     "@codemirror/view": "^6.38.6"
   },
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "pack": "node scripts/pack.mjs",
+    "build": "node scripts/pack.mjs",
+    "build:dist": "node scripts/build.mjs",
     "dev": "bun build src/ad-content.js src/pd-content.js src/devtools/panel.js --outdir dist --watch"
   }
 }

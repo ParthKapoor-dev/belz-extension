@@ -51,24 +51,42 @@ Add an `ExtensionInstallForcelist` policy entry on Chromium, or an `ExtensionSet
 git clone https://github.com/ParthKapoor-dev/belz-extension.git
 cd belz-extension
 bun install
-bun run build
+bun run build      # -> dist/, build/chrome/, build/firefox/
 ```
 
-Then in your browser:
+One command builds every target. Then load the tree for your browser — **always from `build/`, never the repo root**:
 
-- **Chromium**: open `chrome://extensions`, enable Developer mode, click "Load unpacked", select this repo's root. `bun run build` alone is enough — reload the extension after each build.
-- **Firefox / Zen**: run `bun run pack` first, then open `about:debugging` → This Firefox → "Load Temporary Add-on" and select **`build/firefox/manifest.json`**.
+| Browser | Load this |
+|---|---|
+| Chrome / Edge / Brave | `chrome://extensions` → Developer mode → Load unpacked → **`build/chrome/`** |
+| Firefox / Zen | `about:debugging` → This Firefox → Load Temporary Add-on → **`build/firefox/manifest.json`** |
 
-> Do **not** load the repo-root `manifest.json` in Firefox. It declares `background.service_worker`, which Firefox does not support — `bun run pack` rewrites the manifest to `background.scripts` and adds the required `browser_specific_settings.gecko` block. `bun run build` only refreshes `dist/`; it does not regenerate the per-browser trees, so re-run `bun run pack` after every source change you want to test in Firefox.
+> The repo-root `manifest.json` is a template, not a loadable manifest. It carries both `background.service_worker` (Chromium) and `background.scripts` (Firefox); the build splits them per browser and adds Firefox's required `browser_specific_settings.gecko` block. Loading the root directly works on Chromium by accident and fails on Firefox.
+
+### Keeping your sites across rebuilds
+
+Browsers wipe an extension's storage when it is uninstalled, and loading a temporary add-on in Firefox uninstalls the previous copy — so a rebuild-and-re-add cycle loses your site list every time.
+
+Copy `sites.default.json.example` to `sites.default.json` and list your hosts there:
+
+```json
+{ "hosts": [ { "host": "your-host.internal", "designerHost": "" } ] }
+```
+
+The build ships it into both trees, and on a fresh install the background script restores the list from it. `sites.default.json` is **gitignored** — it holds your own internal hostnames, which do not belong in this repository.
+
+Host *permissions* cannot be restored this way; only a user gesture can grant them. Seeded hosts appear in the options page badged `not granted`, with a **Grant** button — one click each and you are back.
+
+> Prefer **Reload** over remove-and-re-add during development (the reload icon on `chrome://extensions`, or Reload on `about:debugging`). Reloading preserves both storage and granted permissions, so nothing is lost in the first place.
 
 ## Build
 
 | Command | What it does |
 |---|---|
 | `bun install` | install dependencies |
-| `bun run build` | bundle every entry point into `dist/` and escape non-ASCII for the extension loader |
+| `bun run build` | bundle to `dist/`, then assemble `build/chrome/` and `build/firefox/` — the one command you need |
+| `bun run build:dist` | bundle to `dist/` only, skipping the per-browser trees |
 | `bun run dev` | watch-mode rebuild of content scripts + the DevTools panel |
-| `node scripts/pack.mjs` | assemble per-browser unpacked trees in `build/chrome` and `build/firefox` |
 
 ## Release
 

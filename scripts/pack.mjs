@@ -40,7 +40,18 @@ const version = versionArg ?? manifest.version;
 execSync('node scripts/build.mjs', { cwd: root, stdio: 'inherit' });
 
 // 2. Files every packaged tree needs (besides the manifest, written per-browser).
-const SHARED = ['dist', 'devtools.html', 'panel.html', 'panel-pd.html', 'options.html', 'fonts'];
+// `sites.default.json` is optional and gitignored — when the user keeps one it
+// ships in the tree so a fresh install can restore their site list. stage()
+// skips any entry that does not exist.
+const SHARED = [
+  'dist',
+  'devtools.html',
+  'panel.html',
+  'panel-pd.html',
+  'options.html',
+  'fonts',
+  'sites.default.json'
+];
 
 /** Copy the shared payload into build/<target>/. */
 function stage(target) {

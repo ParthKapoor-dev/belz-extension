@@ -31,3 +31,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+# Personal site seed — holds internal hostnames, never committed.
+# Copy sites.default.json.example to create it.
+sites.default.json

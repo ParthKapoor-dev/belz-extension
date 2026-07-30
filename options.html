@@ -189,6 +189,35 @@
       .host-list button.revoke:hover {
         color: var(--accent-hover);
       }
+      .host-list button.grant {
+        background: var(--accent);
+        border: none;
+        color: var(--accent-fg);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        padding: 6px 14px;
+        white-space: nowrap;
+      }
+      .host-list button.grant:hover {
+        background: var(--accent-hover);
+      }
+      .host-list button.grant:disabled {
+        background: var(--line2);
+        color: var(--fg-faint);
+        cursor: not-allowed;
+      }
+      .host-list .needs-grant {
+        margin-left: 10px;
+        padding: 1px 7px;
+        border: 1px solid var(--line2);
+        color: var(--fg-faint);
+        font-size: 10px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        vertical-align: middle;
+      }
       .empty {
         color: var(--fg-muted);
         font-style: italic;
