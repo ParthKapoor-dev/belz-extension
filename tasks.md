@@ -19,8 +19,20 @@ Enhacement/Optimization
   -> the selection of the pd item, isn't really correct
      OPEN (phase 2). Replace the two-tag anchor count with structural alignment
      over the `exp-layout.exp-layout-use-sibling` markers the runtime emits —
-     381 identification points on the LT-261 page, where the anchor scheme had
+     396 identification points on the LT-261 page, where the anchor scheme had
      1 (and zero exp-form-builder elements).
+
+     Phase 2 DISCOVERY IS DONE; the implementation is not started. What the
+     measurements settled (details in RESEARCH.md, "Markers come in RUNS"):
+       - markers chain: a run of N consecutive markers ends in ONE real
+         element (108 of 396 targets on LT-261 are themselves markers)
+       - there is NO count law between config nodes and markers — nsm has more
+         markers than nodes, sems has fewer
+       - document order does NOT align naively between config and DOM
+     So the aligner must be a recursive tree walk with resync: config tree vs
+     the tree of run-terminal elements, consuming marker runs, skipping config
+     nodes that rendered nothing, matching on expected tag. Any flat sequence
+     zip — by count or position — will not work.
 
   -> the confidence logic
      OPEN (phase 3). Rework only after phase 2. It should be per-node rather

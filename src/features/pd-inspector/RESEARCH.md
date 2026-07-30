@@ -176,6 +176,52 @@ conditional dropped — the reason the current confidence score exists.
 Conclusion: identification cannot be a direct property read. It must be a
 **structural alignment** of the config tree against the marker-target tree.
 
+### Markers come in RUNS, and there is no count law
+
+**VERIFIED.** The first design sketch assumed one marker per rendered config
+node, so config and DOM could be zipped in document order. That is wrong twice
+over, and both corrections matter for the aligner.
+
+**1. Markers chain.** A marker's next sibling is frequently *another marker*.
+On LT-261, 108 of 396 targets are `exp-layout` elements, and every one of those
+is itself a `use-sibling` marker (there are no `exp-layout` elements without the
+class). A concrete chain:
+
+```
+<exp-layout class="exp-layout-use-sibling">   marker
+<exp-layout class="exp-layout-use-sibling">   marker
+<span class="format-tooltip inline-…">        the actual element
+```
+
+So a *run* of N consecutive markers terminates in one real element. The run
+length is meaningful — it is a chain of config nodes that delegate rendering
+down to the same element (a symbol reference and the symbol's own root, for
+example). Breakdown on LT-261: 396 markers = 273 pointing at a real element +
+108 pointing at the next marker + 15 orphans.
+
+**2. Counts do not correspond.** Two environments, two directions:
+
+| | config nodes | `[isVisible]` bound | markers | direction |
+|---|---|---|---|---|
+| nsm LT-261 list | 354 | 42 | **396** | more markers than nodes |
+| sems manual-placement | 51 | 6 | **44** | fewer markers than nodes |
+
+`354 + 42 = 396` looks like a law on nsm and is a coincidence — it predicts 57
+for sems, where 44 were observed. Do not build on it.
+
+**3. Document order does not align naively.** First few of each on LT-261:
+
+```
+config:  div, exp-form-field, exp-layout-dialog, mat-dialog-content, mat-dialog-actions, …
+DOM:     div, div,            exp-svg-icon,      exp-layout-dialog,  exp-layout-dialog,  …
+```
+
+**Consequence for the aligner:** it must be a genuine recursive tree walk with
+resynchronisation — config tree against the tree of run-terminal elements —
+consuming marker runs, skipping config nodes that produced nothing, and matching
+on expected tag. A flat sequence zip of any kind will not work, whether by count
+or by position.
+
 ### Dialogs
 
 **VERIFIED (closed state only).** All 7 `exp-layout-dialog` elements on LT-261
