@@ -5,6 +5,8 @@ import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
 import { sql, keywordCompletionSource, StandardSQL } from '@codemirror/lang-sql';
 import { javascript, scopeCompletionSource, localCompletionSource } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
+import { java } from '@codemirror/lang-java';
+import { python } from '@codemirror/lang-python';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/autocomplete';
 import {
@@ -45,6 +47,10 @@ const EDITOR_FONT_FAMILY = FONT_MONO;
 
 let editorView = null;
 let resolvedEditorLanguage = 'plain';
+// Set once the user picks a language by hand, which suspends detection for the
+// rest of the session with that textarea. Cleared every time the editor opens,
+// so detection is what you get by default, always.
+let languageOverridden = false;
 const languageCompartment = new Compartment();
 const wrapCompartment = new Compartment();
 const autocompleteCompartment = new Compartment();
@@ -112,6 +118,11 @@ function getAutocompleteExtensionsForMode(mode) {
   }
   if (mode === 'json') {
     return [closeBrackets()];
+  }
+  if (mode === 'java' || mode === 'python') {
+    // No override: the language packages register their own completion sources
+    // via language data, which the default autocompletion() config picks up.
+    return [autocompletion(), closeBrackets()];
   }
   return [];
 }
@@ -303,11 +314,6 @@ function getSelectedFontSize() {
   return 13;
 }
 
-function getSelectedLanguageMode() {
-  const languageSelect = document.getElementById(LANG_SELECT_ID);
-  return languageSelect?.value || 'auto';
-}
-
 function getSelectedWrapMode() {
   const wrapSelect = document.getElementById(WRAP_SELECT_ID);
   return wrapSelect?.value || DEFAULT_SETTINGS.textareaEditorWrap;
@@ -316,7 +322,6 @@ function getSelectedWrapMode() {
 function getEditorSettings() {
   const settings = loadSettings();
   return {
-    language: settings.textareaEditorLanguage || 'auto',
     wrap: settings.textareaEditorWrap || DEFAULT_SETTINGS.textareaEditorWrap,
     fontSize: Number.parseInt(String(settings.textareaEditorFontSize || 13), 10) || 13
   };
@@ -324,13 +329,9 @@ function getEditorSettings() {
 
 function syncEditorControlValuesFromSettings() {
   const settings = getEditorSettings();
-  const languageSelect = document.getElementById(LANG_SELECT_ID);
   const wrapSelect = document.getElementById(WRAP_SELECT_ID);
   const fontSizeSelect = document.getElementById(FONT_SIZE_SELECT_ID);
 
-  if (languageSelect && languageSelect.value !== settings.language) {
-    languageSelect.value = settings.language;
-  }
   if (wrapSelect && wrapSelect.value !== settings.wrap) {
     wrapSelect.value = settings.wrap;
   }
@@ -358,6 +359,23 @@ function applyEditorFontSize(fontSize) {
   editorView.dom.style.wordSpacing = 'normal';
 }
 
+// Every mode the editor can be in. There is no 'auto' entry: the dropdown
+// reports the detected mode by name, and selecting an entry overrides it.
+const LANGUAGE_OPTIONS = [
+  { value: 'sql', label: 'SQL' },
+  { value: 'spel', label: 'SpEL' },
+  { value: 'javascript', label: 'JavaScript' },
+  { value: 'json', label: 'JSON' },
+  { value: 'java', label: 'Java' },
+  { value: 'python', label: 'Python' },
+  { value: 'plain', label: 'Plain' }
+];
+
+// ---- language detection ---------------------------------------------------
+// The editor has no "auto" mode any more: detection always runs, and the header
+// dropdown reports what it found. Picking from the dropdown overrides the
+// detector until the editor is closed and reopened.
+
 // A SQL statement, judged by how it OPENS rather than by any keyword appearing
 // somewhere in it — `from` and `where` turn up in prose and SpEL alike.
 const SQL_STATEMENT_RE =
@@ -367,26 +385,69 @@ const SQL_STATEMENT_RE =
 const SQL_SHAPE_RE = /\bselect\b[\s\S]*\bfrom\b/i;
 
 // SpEL, identified only by constructs unique to it: an interpolation block or
-// a T() type reference. The previous detector also accepted the bare words
+// a T() type reference. An earlier detector also accepted the bare words
 // and/or/not/eq/ne/lt/gt/le/ge, which match ordinary SQL and English — a plain
 // `a = 1 and b = 2` was enough to be called SpEL.
 const SPEL_RE = /#\{[\s\S]*?\}|\bT\(\s*[\w.$]+\s*\)/;
 
+// Java, by constructs JavaScript cannot produce: a `package`/`import` line
+// terminated with a semicolon (JS imports quote their source), an access
+// modifier introducing a member, an annotation, or System.out.
+const JAVA_RE = new RegExp([
+  /^\s*package\s+[\w.]+\s*;/.source,
+  /^\s*import\s+(?:static\s+)?[\w.]+(?:\.\*)?\s*;/.source,
+  /^\s*@(?:Override|Test|Autowired|Component|Service|Entity|SpringBootApplication|FunctionalInterface)\b/.source,
+  /\b(?:public|private|protected)\s+(?:static\s+|final\s+|abstract\s+|synchronized\s+)*(?:class|interface|enum|record|void|int|long|double|float|boolean|char|byte|short|String|List<|Map<|[A-Z][\w.]*(?:<[^>\n]*>)?(?:\[\])?)\s+\w+/.source,
+  /\bSystem\.(?:out|err)\.print/.source
+].join('|'), 'm');
+
+// Python, by its block syntax and its own keywords. `def name(...):` and a
+// dedicated `elif` have no JavaScript equivalent.
+const PYTHON_RE = new RegExp([
+  /^\s*(?:async\s+)?def\s+\w+\s*\([^\n]*\)\s*(?:->[^:\n]+)?:/.source,
+  /^\s*class\s+\w+\s*(?:\([^\n]*\))?\s*:\s*$/.source,
+  /^\s*from\s+[\w.]+\s+import\s+\w/.source,
+  /^\s*(?:if|elif|for|while|with|try|except|finally|else)\b[^\n]*:\s*(?:#[^\n]*)?$/.source,
+  /\belif\b/.source,
+  /__name__|__init__|\bself\.\w/.source
+].join('|'), 'm');
+
 const JS_RE =
   /\b(?:const|let|var|function|return|class|import|export|async|await)\b|=>|console\./;
+
+// JSON is bracket-delimited with a MATCHING closer — `{ ... ]` is neither a
+// JSON object nor an array, so the pair is checked rather than "starts with one
+// of {[ and ends with one of }]".
+function looksLikeJson(sample) {
+  const opener = sample[0];
+  const closer = sample[sample.length - 1];
+  const paired =
+    (opener === '{' && closer === '}') || (opener === '[' && closer === ']');
+  if (!paired) return false;
+
+  try {
+    JSON.parse(sample);
+    return true;
+  } catch {
+    // A document being typed or repaired — a trailing comma, an unclosed
+    // string, a single-quoted key — does not parse but is still JSON as far as
+    // the person editing it is concerned, and highlighting it as anything else
+    // is worse than useless. Require some structural evidence, so a random
+    // `{...}` block of prose stays plain.
+    return (
+      /["']\s*:/.test(sample) // "key": ... (or a single-quoted key)
+      || /^[[{]\s*[\]}]$/.test(sample) // {} / []
+      || /^\[\s*[[{"]/.test(sample) // array of objects / arrays / strings
+      || /^\[\s*-?\d/.test(sample) // array of numbers
+    );
+  }
+}
 
 function detectLanguage(text) {
   const sample = text.trim();
   if (!sample) return 'plain';
 
-  if ((sample.startsWith('{') && sample.endsWith('}')) || (sample.startsWith('[') && sample.endsWith(']'))) {
-    try {
-      JSON.parse(sample);
-      return 'json';
-    } catch {
-      // continue with other detectors
-    }
-  }
+  if (looksLikeJson(sample)) return 'json';
 
   // SQL is tested BEFORE SpEL on purpose. Automation Designer SQL steps
   // routinely interpolate SpEL placeholders —
@@ -397,35 +458,46 @@ function detectLanguage(text) {
     return 'sql';
   }
 
-  if (SPEL_RE.test(sample)) {
-    return 'spel';
-  }
+  // Java before SpEL: SpEL's `T(java.lang.Math)` shares vocabulary with Java,
+  // but a Java source file also carries package/modifier/annotation syntax that
+  // a SpEL expression never does.
+  if (JAVA_RE.test(sample)) return 'java';
 
-  if (JS_RE.test(sample)) {
-    return 'javascript';
-  }
+  if (SPEL_RE.test(sample)) return 'spel';
+
+  // Python before JavaScript: both use `class`, `import` and `return`, so the
+  // Python patterns (which are colon-terminated blocks and Python-only
+  // keywords) get first refusal.
+  if (PYTHON_RE.test(sample)) return 'python';
+
+  if (JS_RE.test(sample)) return 'javascript';
 
   return 'plain';
-}
-
-function resolveLanguageMode(text, selectedMode) {
-  if (selectedMode === 'auto') {
-    return detectLanguage(text);
-  }
-  return selectedMode;
 }
 
 function getLanguageExtensionForMode(mode) {
   if (mode === 'sql') return sql();
   if (mode === 'javascript') return javascript();
   if (mode === 'json') return json();
+  if (mode === 'java') return java();
+  if (mode === 'python') return python();
+  // SpEL has no grammar of its own; JavaScript's is the closest fit for its
+  // dotted paths, string literals and call syntax.
   if (mode === 'spel') return javascript();
   return [];
+}
+
+function syncLanguageSelectValue(mode) {
+  const languageSelect = document.getElementById(LANG_SELECT_ID);
+  if (languageSelect && languageSelect.value !== mode) {
+    languageSelect.value = mode;
+  }
 }
 
 function reconfigureEditorLanguage(mode) {
   if (!editorView) return;
   resolvedEditorLanguage = mode;
+  syncLanguageSelectValue(mode);
   editorView.dispatch({
     effects: [
       languageCompartment.reconfigure(getLanguageExtensionForMode(mode)),
@@ -478,10 +550,13 @@ function createEditorForSource(sourceEl) {
 
   const textValue = sourceEl.value || '';
   const readOnly = sourceEl.readOnly || sourceEl.disabled;
-  const selectedLanguageMode = getSelectedLanguageMode();
   const selectedWrapMode = getSelectedWrapMode();
-  const initialLanguageMode = resolveLanguageMode(textValue, selectedLanguageMode);
+  // Every open re-detects. A manual pick from the previous open does not carry
+  // over — otherwise one override would silently mislabel every later step.
+  const initialLanguageMode = detectLanguage(textValue);
   resolvedEditorLanguage = initialLanguageMode;
+  languageOverridden = false;
+  syncLanguageSelectValue(initialLanguageMode);
 
   const extensions = [
     lineNumbers(),
@@ -498,7 +573,7 @@ function createEditorForSource(sourceEl) {
     wrapCompartment.of(getWrapExtensionForMode(selectedWrapMode)),
     EditorView.updateListener.of((update) => {
       if (!update.docChanged || !editorView) return;
-      if (getSelectedLanguageMode() !== 'auto') return;
+      if (languageOverridden) return;
 
       const nextMode = detectLanguage(update.state.doc.toString());
       if (nextMode === resolvedEditorLanguage) return;
@@ -522,10 +597,13 @@ function createEditorForSource(sourceEl) {
 function handleLanguageSelectionChange() {
   if (!editorView) return;
 
-  const selectedMode = getSelectedLanguageMode();
-  setSetting('textareaEditorLanguage', selectedMode);
-  const resolvedMode = resolveLanguageMode(getEditorText(), selectedMode);
-  reconfigureEditorLanguage(resolvedMode);
+  const languageSelect = document.getElementById(LANG_SELECT_ID);
+  const selectedMode = languageSelect?.value;
+  if (!selectedMode) return;
+
+  // Deliberately not persisted: the mode belongs to the text, not to the user.
+  languageOverridden = true;
+  reconfigureEditorLanguage(selectedMode);
 }
 
 function handleWrapSelectionChange() {
@@ -545,10 +623,11 @@ function applyEditorSettingsFromStore(settings) {
   syncEditorControlValuesFromSettings();
   if (!editorView) return;
 
-  const language = settings.textareaEditorLanguage || 'auto';
-  const resolvedLanguage = resolveLanguageMode(getEditorText(), language);
-  reconfigureEditorLanguage(resolvedLanguage);
-  reconfigureEditorWrapMode(settings.textareaEditorWrap || 'nowrap');
+  // Language is not a stored setting — it is detected, or overridden in the
+  // header — so a settings change never touches it.
+  reconfigureEditorWrapMode(
+    settings.textareaEditorWrap || DEFAULT_SETTINGS.textareaEditorWrap
+  );
   applyEditorFontSize(
     Number.parseInt(String(settings.textareaEditorFontSize || 13), 10) || 13
   );
@@ -790,7 +869,7 @@ export function createTextareaEditorModal() {
     const optionEl = document.createElement('option');
     optionEl.value = option.value;
     optionEl.textContent = option.label;
-    if (option.value === 'nowrap') optionEl.selected = true;
+    if (option.value === DEFAULT_SETTINGS.textareaEditorWrap) optionEl.selected = true;
     wrapSelect.appendChild(optionEl);
   }
 
@@ -806,19 +885,15 @@ export function createTextareaEditorModal() {
     outline: 'none',
     cursor: 'pointer'
   });
-  const languageOptions = [
-    { value: 'auto', label: 'Auto' },
-    { value: 'sql', label: 'SQL' },
-    { value: 'spel', label: 'SpEL' },
-    { value: 'javascript', label: 'JavaScript' },
-    { value: 'json', label: 'JSON' },
-    { value: 'plain', label: 'Plain' }
-  ];
-  for (const option of languageOptions) {
+  languageSelect.setAttribute(
+    'title',
+    'Detected syntax mode — pick another to override it for this editor session'
+  );
+  for (const option of LANGUAGE_OPTIONS) {
     const optionEl = document.createElement('option');
     optionEl.value = option.value;
     optionEl.textContent = option.label;
-    if (option.value === 'auto') optionEl.selected = true;
+    if (option.value === 'plain') optionEl.selected = true;
     languageSelect.appendChild(optionEl);
   }
 

@@ -1,13 +1,5 @@
 import { SETTINGS_STORAGE_KEY } from '../config/storage-keys.js';
 
-export const TEXTAREA_EDITOR_LANGUAGE_OPTIONS = [
-  'auto',
-  'sql',
-  'spel',
-  'javascript',
-  'json',
-  'plain'
-];
 export const TEXTAREA_EDITOR_WRAP_OPTIONS = ['nowrap', 'wrap'];
 export const TEXTAREA_EDITOR_FONT_SIZE_OPTIONS = [12, 13, 14, 16, 18];
 
@@ -17,7 +9,6 @@ export const DEFAULT_SETTINGS = {
   jsonEditor: true,
   outputCopy: true,
   textareaEditor: true,
-  textareaEditorLanguage: 'auto',
   textareaEditorWrap: 'wrap',
   textareaEditorFontSize: 13
 };
@@ -50,27 +41,11 @@ export const FEATURE_SETTING_DEFINITIONS = [
   }
 ];
 
+// The editor language is not listed here: it is always detected from the
+// content, and the editor's own header dropdown reports what was detected
+// (and allows a one-off override). A stored default would only fight the
+// detector.
 export const EDITOR_SETTING_DEFINITIONS = [
-  {
-    key: 'textareaEditorLanguage',
-    label: 'Editor Language',
-    description: 'Default syntax highlighting mode',
-    type: 'select',
-    options: TEXTAREA_EDITOR_LANGUAGE_OPTIONS.map((value) => ({
-      value,
-      label: value === 'auto'
-        ? 'Auto'
-        : value === 'sql'
-          ? 'SQL'
-          : value === 'spel'
-            ? 'SpEL'
-            : value === 'javascript'
-              ? 'JavaScript'
-              : value === 'json'
-                ? 'JSON'
-                : 'Plain'
-    }))
-  },
   {
     key: 'textareaEditorWrap',
     label: 'Editor Wrap',
@@ -104,12 +79,6 @@ function sanitizeSettingValue(key, value) {
     || key === 'outputCopy'
     || key === 'textareaEditor') {
     return Boolean(value);
-  }
-
-  if (key === 'textareaEditorLanguage') {
-    return TEXTAREA_EDITOR_LANGUAGE_OPTIONS.includes(value)
-      ? value
-      : DEFAULT_SETTINGS.textareaEditorLanguage;
   }
 
   if (key === 'textareaEditorWrap') {
