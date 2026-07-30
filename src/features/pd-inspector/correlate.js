@@ -15,7 +15,7 @@
 //   approx — the shortfall is fully explained by conditional anchors
 //   low    — an unexplained shortfall remains; the mapping may be off
 
-import { isSymbolRef } from './config.js';
+import { isSymbolRef, OUTLET_NODE_NAME } from './config.js';
 
 const ANCHOR_TAGS = ['exp-form-builder', 'exp-data-table'];
 
@@ -30,7 +30,7 @@ function isConditional(node) {
  * @returns {{ formBuilders: Anchor[], dataTables: Anchor[] }}
  *   Anchor = { chain: string[], conditional: boolean }
  */
-export function buildAnchors(pageConfig, graph) {
+export function buildAnchors(rootConfig, graph, outletConfig) {
   const formBuilders = [];
   const dataTables = [];
 
@@ -41,6 +41,16 @@ export function buildAnchors(pageConfig, graph) {
     if (name === 'exp-form-builder') formBuilders.push({ chain, conditional: gated });
     else if (name === 'exp-data-table') dataTables.push({ chain, conditional: gated });
 
+    // The content page renders here, so its anchors belong at this position in
+    // document order. Walking the shell without descending into the outlet was
+    // the bug: the shell's own anchors are rendered BEFORE the page's, so every
+    // page anchor index was shifted by however many the shell contributed —
+    // silently, and on every page of that app.
+    if (name === OUTLET_NODE_NAME && outletConfig && outletConfig.layout) {
+      walk(outletConfig.layout, chain.concat(outletConfig.path), gated);
+      return;
+    }
+
     if (isSymbolRef(node)) {
       if (chain.includes(node.name)) return; // cycle guard
       const cc = graph.get(node.name);
@@ -50,7 +60,7 @@ export function buildAnchors(pageConfig, graph) {
     (node.children || []).forEach((c) => walk(c, chain, gated));
   };
 
-  walk(pageConfig.layout, [pageConfig.path], false);
+  walk(rootConfig.layout, [rootConfig.path], false);
   return { formBuilders, dataTables };
 }
 

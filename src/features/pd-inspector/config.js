@@ -44,16 +44,44 @@ export function isSymbolRef(n) {
   );
 }
 
-/** Names of every embedded-component reference in a layout, in document order. */
-export function collectSymbolNames(layoutRoot) {
-  const names = [];
+/** The node an app shell uses to mark where the content page renders. */
+export const OUTLET_NODE_NAME = 'router-outlet';
+
+/**
+ * Child references of a layout in document order — embedded components, and the
+ * outlet where a content page is spliced in.
+ *
+ * The outlet is reported as a ref so the component tree and the anchor walk can
+ * both place the content page at its true position among the shell's own
+ * content, rather than appending it.
+ *
+ * @returns {Array<{type: 'symbol', name: string} | {type: 'outlet'}>}
+ */
+export function collectChildRefs(layoutRoot) {
+  const refs = [];
   const walk = (n) => {
     if (!n || typeof n !== 'object') return;
-    if (isSymbolRef(n)) names.push(n.name);
+    if (isSymbolRef(n)) {
+      refs.push({ type: 'symbol', name: n.name });
+      return; // a ref is a leaf; its content lives in its own config
+    }
+    if (n.name === OUTLET_NODE_NAME) refs.push({ type: 'outlet' });
     (n.children || []).forEach(walk);
   };
   walk(layoutRoot);
-  return names;
+  return refs;
+}
+
+/** Names of every embedded-component reference in a layout, in document order. */
+export function collectSymbolNames(layoutRoot) {
+  return collectChildRefs(layoutRoot)
+    .filter((r) => r.type === 'symbol')
+    .map((r) => r.name);
+}
+
+/** True when a layout splices another page in — i.e. it is an app shell. */
+export function hasOutlet(layoutRoot) {
+  return collectChildRefs(layoutRoot).some((r) => r.type === 'outlet');
 }
 
 /** fetch + parse JSON, with retries — rapid sequential fetches drop transiently. */
@@ -182,6 +210,57 @@ export async function fetchPageConfig(ctx) {
 }
 
 /**
+ * Fetch the app shell for a page, or null when the page stands alone.
+ *
+ * A published app can render its pages inside a *shell* — an ordinary PAGE
+ * whose layout contains a `router-outlet` node. The shell is where the navbar
+ * and sidebar live, and it is unreachable from the content page: the content
+ * page does not reference its own container, so no amount of symbol recursion
+ * finds it. It has to be looked up separately, by the first path segment.
+ *
+ * Two things this must NOT do, both learned the hard way (see RESEARCH.md):
+ *
+ *   - assume the first segment is a shell. On some domains no page has an
+ *     outlet at all and every page stands alone.
+ *   - look for the outlet in the DOM. The rendered page also contains
+ *     Angular's own app-level `<router-outlet>` elements, which have nothing
+ *     to do with Page Designer. The outlet is only meaningful in the config.
+ *
+ * @returns {Promise<PageConfig | null>}
+ */
+export async function fetchShellConfig(ctx, pagePath) {
+  const firstSegment = ctx.path.split('/').filter(Boolean)[0];
+  // A single-segment page IS the first segment — it cannot be its own shell.
+  if (!firstSegment || firstSegment === pagePath || firstSegment === ctx.path) {
+    return null;
+  }
+
+  let deployed;
+  try {
+    deployed = await fetchDeployable(ctx, 'PAGE', firstSegment);
+  } catch {
+    return null; // a missing shell must never fail the whole build
+  }
+  if (!deployed) return null;
+
+  let compiled;
+  try {
+    compiled = JSON.parse(deployed.compiledConfig);
+  } catch {
+    return null;
+  }
+  const layout = compiled.layout || null;
+  if (!layout || !hasOutlet(layout)) return null;
+
+  return {
+    path: deployed.path || firstSegment,
+    referencePageId: deployed.referencePageId || '',
+    pageVersionId: deployed.pageVersionId || 0,
+    layout
+  };
+}
+
+/**
  * Compiled config for one PD component.
  * @typedef {{
  *   name: string,
@@ -211,10 +290,12 @@ export async function fetchComponentConfig(ctx, name) {
  *
  * @param {PageContext} ctx
  * @param {object} pageLayout  the page's compiled-config layout root
+ * @param {Map<string, ComponentConfig>} [into]  accumulate into an existing map,
+ *   so a shell and its content page share one graph and fetch each component once
  * @returns {Promise<Map<string, ComponentConfig>>}
  */
-export async function fetchComponentGraph(ctx, pageLayout) {
-  const map = new Map();
+export async function fetchComponentGraph(ctx, pageLayout, into) {
+  const map = into || new Map();
   const queue = collectSymbolNames(pageLayout);
 
   while (queue.length) {

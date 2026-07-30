@@ -131,6 +131,17 @@ function buildInfo(info) {
   box.appendChild(row('Path', el('span', 'v', info.path)));
   box.appendChild(row('Env', el('span', 'v', info.env)));
 
+  // Only shown when the app renders its pages inside a shell — the shell is
+  // where the navbar and sidebar come from, and it is a separate PD page.
+  if (info.shellPath) {
+    const v = el('span', info.shellReferencePageId ? 'v link' : 'v', info.shellPath);
+    if (info.shellReferencePageId) {
+      v.title = 'Open the app shell in Page Designer';
+      v.addEventListener('click', () => openInPd('page', info.shellReferencePageId));
+    }
+    box.appendChild(row('Shell', v));
+  }
+
   if (info.referencePageId) {
     const v = el('span', 'v link', info.referencePageId);
     v.title = 'Open this page in Page Designer';
@@ -167,7 +178,9 @@ function renderComponent(node, container, depth, detailPane) {
   const row = el('div', 'comp');
   row.style.paddingLeft = `${8 + depth * 14}px`;
 
-  row.appendChild(el('span', `badge ${node.isPage ? 'page' : 'comp'}`, node.isPage ? 'PAGE' : 'COMP'));
+  const kind = node.kind || (node.isPage ? 'page' : 'component');
+  const BADGE = { shell: 'SHELL', page: 'PAGE', component: 'COMP' };
+  row.appendChild(el('span', `badge ${kind === 'component' ? 'comp' : 'page'}`, BADGE[kind]));
   row.appendChild(el('span', 'cname', node.name));
 
   if (node.error) {
@@ -210,7 +223,9 @@ function selectComponent(node, row, detailPane) {
 function renderDetail(node, detailPane) {
   detailPane.innerHTML = '';
   const head = el('div', 'detail-head');
-  head.appendChild(el('span', `badge ${node.isPage ? 'page' : 'comp'}`, node.isPage ? 'PAGE' : 'COMP'));
+  const kind = node.kind || (node.isPage ? 'page' : 'component');
+  const BADGE = { shell: 'SHELL', page: 'PAGE', component: 'COMP' };
+  head.appendChild(el('span', `badge ${kind === 'component' ? 'comp' : 'page'}`, BADGE[kind]));
   head.appendChild(el('span', 'nm', node.name));
   const open = el('span', 'openpd', '↗ open in PD');
   open.addEventListener('click', () => {

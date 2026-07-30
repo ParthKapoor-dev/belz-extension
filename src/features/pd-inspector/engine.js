@@ -10,8 +10,13 @@
 // pick events back out via chrome.runtime.sendMessage. All messages are tagged
 // `ns: 'pd'`.
 
-import { getPageContext, fetchPageConfig, fetchComponentGraph } from './config.js';
-import { buildComponentTree } from './componentTree.js';
+import {
+  getPageContext,
+  fetchPageConfig,
+  fetchShellConfig,
+  fetchComponentGraph
+} from './config.js';
+import { buildComponentTree, componentNames } from './componentTree.js';
 import { buildAnchors, createCorrelator } from './correlate.js';
 import { createHighlighter } from './highlight.js';
 
@@ -40,6 +45,7 @@ function stripNodeTree(node) {
 function serializeComponentTree(node) {
   return {
     name: node.name,
+    kind: node.kind,
     isPage: node.isPage,
     referencePageId: node.referencePageId,
     nodeTree: stripNodeTree(node.nodeTree),
@@ -51,10 +57,24 @@ function serializeComponentTree(node) {
 
 async function build(ctx) {
   STATE = { status: 'loading' };
+  // A stale correlator answering from the previous route is worse than no
+  // answer, so inspect mode goes quiet until this build finishes.
+  correlator = null;
+
   const pageConfig = await fetchPageConfig(ctx);
+  const shellConfig = await fetchShellConfig(ctx, pageConfig.path);
+
+  // One graph shared by shell and page, so a component embedded in both
+  // (a style or nav symbol, typically) is fetched once.
   const graph = await fetchComponentGraph(ctx, pageConfig.layout);
-  const componentTree = buildComponentTree(pageConfig, graph);
-  const anchors = buildAnchors(pageConfig, graph);
+  if (shellConfig) await fetchComponentGraph(ctx, shellConfig.layout, graph);
+
+  const componentTree = buildComponentTree(pageConfig, graph, shellConfig);
+  // Anchors are walked from the shell when there is one, descending into the
+  // outlet, so the expected sequence covers everything the browser renders.
+  const anchors = shellConfig
+    ? buildAnchors(shellConfig, graph, pageConfig)
+    : buildAnchors(pageConfig, graph, null);
   correlator = createCorrelator(anchors);
 
   STATE = {
@@ -65,7 +85,9 @@ async function build(ctx) {
       env: ctx.env,
       referencePageId: pageConfig.referencePageId,
       pageVersionId: pageConfig.pageVersionId,
-      componentCount: componentTree.children.length,
+      shellPath: shellConfig ? shellConfig.path : '',
+      shellReferencePageId: shellConfig ? shellConfig.referencePageId : '',
+      componentCount: componentNames(componentTree).length,
       correlation: {
         confidence: correlator.confidence,
         expectedAnchors: correlator.expectedAnchors,

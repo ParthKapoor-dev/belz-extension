@@ -1,5 +1,13 @@
 # PD Inspector — how it works
 
+> **Parts of this document are now known to be wrong.** Live investigation
+> (2026-07-31) found that the runtime *does* mark component boundaries in the
+> DOM — as elements, not attributes — and that a page rendered inside an app
+> shell has content this design never accounted for. Read
+> [RESEARCH.md](./RESEARCH.md) alongside this; its "Corrections" section lists
+> what no longer holds. The shell half has been fixed; the inspect-mode half
+> described below is still the shipped behaviour.
+
 The PD Inspector answers one question: *for this published verifi/expertly
 page, which Page Designer components are on it, and which one owns a given
 piece of the UI?*
