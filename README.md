@@ -10,7 +10,7 @@ A browser extension that augments Service Designer's web UI — Automation Desig
 - **Run Test shortcut** — `Ctrl + Shift + Enter` triggers the Run Test button from anywhere on the page, including inside inputs and textareas.
 - **JSON input editor** — `📋 JSON` button on each method opens a CodeMirror modal that edits every input as one JSON document, syncs back into the per-input controls with type-aware handling (Text, Number, Boolean, Date, JSON, Array, Map, StructuredData).
 - **Output copy** — hover-revealed copy icon on each output container.
-- **Textarea editor** — hover-revealed Open + Copy icons on native textareas. Open launches a CodeMirror modal with line numbers, auto-syntax (SQL / SpEL / JS / JSON / plain), wrap/no-wrap, and font controls.
+- **Textarea editor** — hover-revealed Open + Copy icons on native textareas, drawn by a single shared overlay that follows the pointer rather than injecting controls into every textarea (so a method with dozens of steps stays responsive). Open launches a CodeMirror modal with line numbers, auto-syntax (SQL / SpEL / JS / JSON / plain), wrap/no-wrap, and font controls.
 - **Settings** — `Ctrl + ,` (or the gear icon near the page title) opens the settings modal to toggle features and persist textarea editor defaults.
 
 ### Page Designer

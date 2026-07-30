@@ -10,6 +10,5 @@ export const state = {
   cachedInputs: null,
   lastInputScanTime: 0,
   injectionAttempts: 0,
-  injectionDebounceTimer: null,
-  textareaEditorInjectionTimer: null
+  injectionDebounceTimer: null
 };

@@ -59,7 +59,7 @@ src/
     run-test/                  Run Test button lookup + click
     json-editor/               📋 JSON modal: extractor, sync engine, type adapters
     output-copy/               hover-revealed output copy icon
-    textarea-editor/           overlay icons + CodeMirror modal editor
+    textarea-editor/           shared hover overlay + CodeMirror modal editor
     pd-inspector/              deployable page config walker
     curl-autofill/             cURL → AD inputs autofill
     settings/                  ⚙ settings modal
@@ -141,6 +141,16 @@ The extension is **self-contained** — it depends on no local service, CLI, or 
 Cross-browser caveat: Firefox can't access `chrome.tabs` from a DevTools script directly, so `background.js` relays messages between the PD panel and the target tab.
 
 Focus-hint shortcut: `Ctrl+Shift+A` / `Ctrl+Shift+P` fire background `chrome.commands` — neither Chrome nor Firefox exposes an API for extensions to open or switch DevTools panels, so the background writes a session flag and each panel reacts (scroll+pulse+focus for AD, refetch+pulse for PD) when the flag targets it.
+
+## Textarea overlay (performance-critical)
+
+`features/textarea-editor/index.js` injects **one** controls element for the whole page, positioned over whichever textarea has pointer or keyboard focus. Do not reintroduce per-textarea DOM.
+
+- Hover/focus is handled by capture-phase delegation on `document`, using `event.composedPath()[0]` so open shadow roots resolve to the real inner target. A textarea added later therefore needs no registration and no rescan — this feature deliberately does **not** subscribe to the MutationObserver.
+- Repositioning is coalesced through `requestAnimationFrame` with a 32 ms `setTimeout` backstop, because rAF is suspended in backgrounded tabs and headless rendering; without the backstop the overlay can linger over the wrong element.
+- The page's own markup is never restructured. The previous design wrapped every textarea in a positioned `<div>` plus a controls node (~480 elements on a 40-step method), which forced a layout pass over all of them and made the extension a major source of the mutations it was reacting to.
+
+Measured node visits per single DOM mutation on a synthetic 40-step method (7,973 nodes, 120 textareas): **2,138,128 → 80**. Idle cost is zero. If you change this file, re-run the benchmark before and after.
 
 ## Known risks
 
