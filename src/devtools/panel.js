@@ -60,8 +60,8 @@ const detailTabs = Array.from(document.querySelectorAll('.detail-tabs button'));
 const toastEl = document.getElementById('toast');
 
 // ---- state ----------------------------------------------------------------
-const entries = []; // chronological (oldest-first by har.startedDateTime), mirrors DOM order
-const seen = new Set(); // dedup key = request.url + '|' + har.startedDateTime
+const entries = []; // chronological (oldest-first by start time), mirrors DOM order
+const seen = new Set(); // dedup key = request.url + '|' + start time in epoch ms
 const uuidToName = new Map();
 const uuidToCategory = new Map();
 let nextId = 1;
@@ -452,16 +452,38 @@ async function flushResolve() {
 }
 
 // ---- request capture ------------------------------------------------------
+// Dedup key for a captured request. The timestamp is normalised to epoch ms
+// rather than used raw: the same request can reach us twice — once replayed
+// from getHAR(), once live from onRequestFinished — and if those two sources
+// format startedDateTime differently (offset vs Z, or differing fractional
+// precision) a raw-string key treats them as two distinct requests, which
+// shows up as a duplicated row sitting in the wrong place.
 function harKey(har) {
   const url = (har && har.request && har.request.url) || '';
-  return url + '|' + (har.startedDateTime || '');
+  return url + '|' + startedAt(har);
+}
+
+// Start time as epoch ms. Comparing the raw startedDateTime STRINGS is wrong:
+// browsers emit local time with a UTC offset (`…T17:04:56.789+05:30`), and two
+// timestamps carrying different offsets sort lexicographically in the OPPOSITE
+// order to the instants they represent — `12:34:57+00:00` sorts before
+// `17:04:56+05:30` despite being a second later. Parsing normalises every
+// source (getHAR replay, live onRequestFinished, either browser) to one scale.
+function startedAt(har) {
+  const raw = har && har.startedDateTime;
+  if (typeof raw === 'string' && raw) {
+    const t = Date.parse(raw);
+    if (!Number.isNaN(t)) return t;
+  }
+  return 0;
 }
 
 // Find the chronological insert index for a new entry. entries[] is kept
-// sorted by har.startedDateTime ascending — ISO 8601 sorts lexicographically.
+// sorted by start time ascending. The comparison is strict (`>`), so entries
+// sharing a millisecond keep their arrival order rather than churning.
 function insertIndexFor(started) {
   let i = entries.length;
-  while (i > 0 && (entries[i - 1].har.startedDateTime || '') > started) i--;
+  while (i > 0 && entries[i - 1].startedAt > started) i--;
   return i;
 }
 
@@ -499,6 +521,7 @@ function onRequest(har) {
     type: typeOf(har),
     size: transferSize(har),
     time: typeof har.time === 'number' ? har.time : -1,
+    startedAt: startedAt(har),
     har,
     rowEl: null,
     nameCell: null,
@@ -511,7 +534,7 @@ function onRequest(har) {
   // shouldn't jump the scroll.
   const atBottom =
     listPane.scrollTop + listPane.clientHeight >= listPane.scrollHeight - 4;
-  const insertAt = insertIndexFor(har.startedDateTime || '');
+  const insertAt = insertIndexFor(entry.startedAt);
   const isAppend = insertAt === entries.length;
   entries.splice(insertAt, 0, entry);
   renderRow(entry, insertAt);
@@ -662,13 +685,21 @@ function renderRow(entry, insertAt) {
   paintCategory(entry);
   applyRowFilter(entry);
 
+  // Mirror the array order in the DOM. Scan forward for the first entry that
+  // actually has a live row to anchor against — stopping at the immediate
+  // successor would fall through to appendChild (i.e. jump the row to the
+  // bottom of the table) whenever that one entry happened to be unrendered.
   const idx = typeof insertAt === 'number' ? insertAt : entries.length - 1;
-  const next = entries[idx + 1];
-  if (next && next.rowEl && next.rowEl.parentNode === rowsEl) {
-    rowsEl.insertBefore(row, next.rowEl);
-  } else {
-    rowsEl.appendChild(row);
+  let anchor = null;
+  for (let i = idx + 1; i < entries.length; i++) {
+    const candidate = entries[i];
+    if (candidate.rowEl && candidate.rowEl.parentNode === rowsEl) {
+      anchor = candidate.rowEl;
+      break;
+    }
   }
+  if (anchor) rowsEl.insertBefore(row, anchor);
+  else rowsEl.appendChild(row);
 }
 
 // ---- filter ---------------------------------------------------------------
@@ -812,16 +843,7 @@ function renderDetail() {
       detailBody.append(el('pre', null, 'No request payload.'));
     }
   } else if (activeTab === 'response') {
-    detailBody.append(el('pre', null, 'Loading response…'));
-    const token = entry.id;
-    har.getContent((body) => {
-      if (selectedId !== token || activeTab !== 'response') return;
-      currentCopyText = body ? prettyMaybeJson(body) : '';
-      detailBody.replaceChildren(
-        el('h4', null, 'Response body'),
-        body ? createJsonView(body).element : el('pre', null, '(empty)')
-      );
-    });
+    renderResponseTab(entry, har);
   } else if (activeTab === 'timing') {
     const t = har.timings || {};
     const rows = [['Total', Math.round(har.time || 0) + ' ms']];
@@ -835,6 +857,80 @@ function renderDetail() {
     detailBody.append(el('h4', null, 'Timing'), kvGrid(rows));
     currentCopyText = JSON.stringify(obj, null, 2);
   }
+}
+
+// ---- response body --------------------------------------------------------
+// Reading a response body has three possible sources, and the panel has to
+// try all of them or rows silently hang on "Loading response…":
+//
+//   1. har.response.content.text — HAR entries replayed from getHAR() usually
+//      carry the body inline. This is the ONLY source for backfilled rows.
+//   2. har.getContent(cb) — the live path, available on entries delivered by
+//      onRequestFinished while our panel was open.
+//   3. Neither — DevTools drops bodies it no longer retains (large responses,
+//      streams, or anything captured before the panel attached). Say so
+//      instead of spinning forever.
+//
+// getContent() is also allowed to simply never invoke its callback, which is
+// what produced the stuck placeholder, so every call is raced with a timeout.
+const RESPONSE_TIMEOUT_MS = 3000;
+
+function showResponseBody(body) {
+  currentCopyText = body ? prettyMaybeJson(body) : '';
+  detailBody.replaceChildren(
+    el('h4', null, 'Response body'),
+    body ? createJsonView(body).element : el('pre', null, '(empty)')
+  );
+}
+
+function showResponseUnavailable(entry) {
+  currentCopyText = '';
+  const note =
+    entry.statusGroup === 'error'
+      ? 'This request was canceled, so it has no response body.'
+      : 'DevTools did not retain a body for this request — that happens for ' +
+        'streamed responses and for requests captured before the AD Network ' +
+        'panel was opened. Re-run it with this panel open to capture it.';
+  detailBody.replaceChildren(
+    el('h4', null, 'Response body'),
+    el('pre', null, note)
+  );
+}
+
+function renderResponseTab(entry, har) {
+  // 1. Inline body — no async, no chance of hanging.
+  const content = (har.response && har.response.content) || {};
+  if (typeof content.text === 'string' && content.text) {
+    showResponseBody(content.text);
+    return;
+  }
+
+  // 3. Nothing to ask.
+  if (typeof har.getContent !== 'function') {
+    showResponseUnavailable(entry);
+    return;
+  }
+
+  // 2. Ask DevTools, but never trust it to answer.
+  detailBody.append(el('pre', null, 'Loading response…'));
+  const token = entry.id;
+  let settled = false;
+  const settle = (body) => {
+    if (settled) return;
+    settled = true;
+    // The user may have selected another row or tab while we waited.
+    if (selectedId !== token || activeTab !== 'response') return;
+    if (body) showResponseBody(body);
+    else showResponseUnavailable(entry);
+  };
+
+  try {
+    har.getContent(settle);
+  } catch {
+    settle(null);
+    return;
+  }
+  setTimeout(() => settle(null), RESPONSE_TIMEOUT_MS);
 }
 
 // ---- clearing -------------------------------------------------------------
@@ -1025,9 +1121,9 @@ function backfillFromHar() {
   try {
     chrome.devtools.network.getHAR((log) => {
       if (!log || !Array.isArray(log.entries)) return;
-      const sorted = log.entries.slice().sort((a, b) =>
-        (a.startedDateTime || '').localeCompare(b.startedDateTime || '')
-      );
+      const sorted = log.entries
+        .slice()
+        .sort((a, b) => startedAt(a) - startedAt(b));
       for (const har of sorted) onRequest(har);
     });
   } catch {
