@@ -33,19 +33,44 @@ let textareaEditorIdCounter = 0;
 let unsubscribe = null;
 let initialTextareaInjectionTimer = null;
 
-// Query `selector` across the light DOM AND every open shadow root. PD
-// designer textareas live inside web-component shadow trees, which a plain
+// Roots to search: the document plus every open shadow root. PD designer
+// textareas live inside web-component shadow trees, which a plain
 // `document.querySelectorAll` cannot reach.
-function queryAllDeep(selector, root = document) {
-  const results = [];
-  const stack = [root];
+//
+// Discovering shadow roots costs a full `*` sweep of the document, so the
+// result is cached for the duration of one pass. Previously that sweep ran
+// inside `queryAllDeep`, which was itself called once per textarea — making
+// the whole scan O(textareas x DOM nodes). On a 40-step method that measured
+// 2.1 million node visits for a single DOM mutation.
+let cachedRoots = null;
+
+function collectRoots() {
+  const roots = [document];
+  const stack = [document];
   while (stack.length) {
     const node = stack.pop();
     if (!node.querySelectorAll) continue;
-    for (const el of node.querySelectorAll(selector)) results.push(el);
     for (const el of node.querySelectorAll('*')) {
-      if (el.shadowRoot) stack.push(el.shadowRoot);
+      if (el.shadowRoot) {
+        roots.push(el.shadowRoot);
+        stack.push(el.shadowRoot);
+      }
     }
+  }
+  return roots;
+}
+
+/** Invalidate the root cache — call once at the start of each pass. */
+function beginPass() {
+  cachedRoots = null;
+}
+
+function queryAllDeep(selector) {
+  if (!cachedRoots) cachedRoots = collectRoots();
+  const results = [];
+  for (const root of cachedRoots) {
+    if (!root.querySelectorAll) continue;
+    for (const el of root.querySelectorAll(selector)) results.push(el);
   }
   return results;
 }
@@ -72,23 +97,35 @@ function getOverlayWrapperForTextarea(textarea) {
   return null;
 }
 
-function removeStaleControlsForTextarea(textareaId, validWrapper) {
-  const staleControls = queryAllDeep(
-    `.${TEXTAREA_EDITOR_CONTROLS_CLASS}[${TEXTAREA_EDITOR_FOR_ATTR}="${textareaId}"]`
-  );
-  for (const control of staleControls) {
-    if (control.parentElement !== validWrapper) {
-      control.remove();
-    }
+// Drop every controls node that is no longer sitting in a valid wrapper
+// alongside the textarea it belongs to — the app re-renders and can move a
+// textarea out from under its overlay, orphaning the buttons.
+//
+// This runs ONCE per pass. It used to be a per-textarea deep query, which is
+// what made scanning quadratic in page size.
+function pruneStaleControls() {
+  for (const control of queryAllDeep(`.${TEXTAREA_EDITOR_CONTROLS_CLASS}`)) {
+    const textareaId = control.getAttribute(TEXTAREA_EDITOR_FOR_ATTR);
+    const wrapper = control.parentElement;
+    const attached =
+      textareaId &&
+      wrapper &&
+      wrapper.classList.contains(TEXTAREA_OVERLAY_WRAPPER_CLASS) &&
+      wrapper.getAttribute(EXTENSION_OWNED_ATTR) === 'true' &&
+      wrapper.querySelector(
+        `${TEXTAREA_SELECTOR}[${TEXTAREA_EDITOR_ID_ATTR}="${textareaId}"]`
+      );
+    if (!attached) control.remove();
   }
 }
 
+// Cheap, O(1)-ish check: everything it looks at is scoped to the textarea's
+// own wrapper. Orphaned controls elsewhere in the page are handled by
+// pruneStaleControls() once per pass rather than re-searched per textarea.
 function hasAttachedLauncher(textarea) {
   const textareaId = getTextareaEditorId(textarea);
   const wrapper = getOverlayWrapperForTextarea(textarea);
   if (!wrapper) return false;
-
-  removeStaleControlsForTextarea(textareaId, wrapper);
 
   const controls = wrapper.querySelector(
     `.${TEXTAREA_EDITOR_CONTROLS_CLASS}[${TEXTAREA_EDITOR_FOR_ATTR}="${textareaId}"]`
@@ -186,10 +223,15 @@ function wrapTextarea(textarea) {
   return wrapper;
 }
 
-function syncControlSizing(textarea, controls) {
-  if (!textarea || !controls) return;
+/** Read the one measurement control sizing depends on. Forces layout. */
+function measureControlSizing(textarea) {
+  return textarea ? Math.max(textarea.offsetHeight, 0) : 0;
+}
 
-  const height = Math.max(textarea.offsetHeight, 0);
+/** Write-only half of the sizing pass — safe to batch after all reads. */
+function applyControlSizing(controls, height) {
+  if (!controls) return;
+
   const compact = height > 0 && height < 36;
   const buttonSize = compact ? Math.max(16, Math.min(22, height - 4)) : 28;
   const glyphSize = Math.max(10, Math.round(buttonSize * 0.5));
@@ -288,8 +330,10 @@ function createLauncher(textarea) {
     existingBinding.textarea.removeEventListener('blur', existingBinding.relayout);
   }
 
+  // Single-element relayout — one read then one write, so there is nothing to
+  // batch here (the batching matters only for the whole-page pass).
   const relayout = () => {
-    syncControlSizing(textarea, controls);
+    applyControlSizing(controls, measureControlSizing(textarea));
   };
   textarea.addEventListener('input', relayout);
   textarea.addEventListener('focus', relayout);
@@ -301,7 +345,15 @@ function createLauncher(textarea) {
 }
 
 function refreshAllTextareaControlLayouts() {
+  beginPass();
   const controlsList = queryAllDeep(`.${TEXTAREA_EDITOR_CONTROLS_CLASS}`);
+
+  // Two phases on purpose. measuring reads offsetHeight (which forces
+  // layout) and then writes inline styles (which invalidates it) — doing that
+  // per element interleaves read/write and forces a fresh layout for every
+  // control on the page. Collecting all measurements first means the browser
+  // lays out once for the whole pass.
+  const pending = [];
   for (const controls of controlsList) {
     const textareaId = controls.getAttribute(TEXTAREA_EDITOR_FOR_ATTR);
     if (!textareaId) continue;
@@ -314,7 +366,11 @@ function refreshAllTextareaControlLayouts() {
         `${TEXTAREA_SELECTOR}[${TEXTAREA_EDITOR_ID_ATTR}="${textareaId}"]`
       );
     if (!textarea) continue;
-    syncControlSizing(textarea, controls);
+    pending.push({ controls, height: Math.max(textarea.offsetHeight, 0) });
+  }
+
+  for (const { controls, height } of pending) {
+    applyControlSizing(controls, height);
   }
 }
 
@@ -344,6 +400,9 @@ function detachViewportLayoutListener() {
 function injectTextareaLaunchers() {
   attachViewportLayoutListener();
 
+  beginPass();
+  pruneStaleControls();
+
   const textareas = queryAllDeep(TEXTAREA_SELECTOR);
   if (textareas.length === 0) return;
 
@@ -358,13 +417,13 @@ function injectTextareaLaunchers() {
     const wrapper = wrapTextarea(textarea);
     if (!wrapper) continue;
 
-    const textareaId = getTextareaEditorId(textarea);
-    removeStaleControlsForTextarea(textareaId, wrapper);
-
     wrapper.appendChild(createLauncher(textarea));
     textarea.setAttribute(TEXTAREA_EDITOR_BOUND_ATTR, 'true');
   }
 
+  // Wrapping textareas restructures the DOM, so the cached root list and any
+  // layout measurements taken before this point are stale.
+  beginPass();
   refreshAllTextareaControlLayouts();
 }
 
@@ -374,8 +433,9 @@ function debouncedInjectTextareaLaunchers() {
   }
 
   state.textareaEditorInjectionTimer = setTimeout(() => {
+    // injectTextareaLaunchers() already ends with a layout refresh — calling
+    // it again here just paid for the whole pass twice.
     injectTextareaLaunchers();
-    refreshAllTextareaControlLayouts();
   }, 300);
 }
 
