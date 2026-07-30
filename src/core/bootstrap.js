@@ -25,11 +25,22 @@ export function bootstrap(featureStarters, options) {
     const startFeatureFn = featureStarters[key];
     if (!startFeatureFn) return;
 
-    const cleanup = startFeatureFn();
+    // A feature that throws while starting leaves nothing in
+    // activeFeatureStops, so the next settings pass silently retries it and
+    // the failure is invisible. Report it loudly — a half-started feature is
+    // how the textarea overlay ended up dead-until-toggled once already.
+    let cleanup;
+    try {
+      cleanup = startFeatureFn();
+    } catch (error) {
+      console.error(`[belz] feature "${key}" FAILED to start:`, error);
+      throw error;
+    }
     activeFeatureStops.set(
       key,
       typeof cleanup === 'function' ? cleanup : () => {}
     );
+    console.log(`[belz] feature ON  : ${key}`);
   }
 
   function stopFeature(key) {
@@ -42,10 +53,19 @@ export function bootstrap(featureStarters, options) {
       console.error(`Failed stopping feature "${key}":`, error);
     } finally {
       activeFeatureStops.delete(key);
+      // Logged because an unexpected stop — from a stale stored setting, say —
+      // is otherwise indistinguishable from a feature that never started.
+      console.log(`[belz] feature OFF : ${key}`);
     }
   }
 
-  function applyFeatureSettings(settings) {
+  function applyFeatureSettings(settings, source) {
+    console.log(
+      `[belz] applying settings (${source}):`,
+      Object.keys(featureStarters)
+        .map((k) => `${k}=${Boolean(settings[k])}`)
+        .join(' ')
+    );
     for (const key of Object.keys(featureStarters)) {
       try {
         if (settings[key]) {
@@ -62,9 +82,13 @@ export function bootstrap(featureStarters, options) {
   function init() {
     console.log('Extension initializing...');
 
-    applyFeatureSettings(loadSettings());
+    applyFeatureSettings(loadSettings(), 'init');
+    // Fires immediately with the current snapshot, then again once
+    // chrome.storage has been read (and on every later change).
+    let firstNotify = true;
     subscribeSettings((settings) => {
-      applyFeatureSettings(settings);
+      applyFeatureSettings(settings, firstNotify ? 'subscribe' : 'storage');
+      firstNotify = false;
     });
 
     startSettingsFeature({

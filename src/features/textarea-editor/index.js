@@ -260,8 +260,18 @@ function scheduleHide() {
 // All of these are document-level and capture-phase, so a textarea that
 // appears later needs no registration of any kind.
 
+let sawTextareaHover = false;
 function onPointerOver(event) {
   const target = realTarget(event);
+  // One-shot: confirms hover delegation is live and that the element under the
+  // pointer really is a <textarea> we accept.
+  if (!sawTextareaHover && target && target.tagName === 'TEXTAREA') {
+    sawTextareaHover = true;
+    console.log(
+      '[belz] textarea overlay: first textarea hover — eligible=' +
+        isEligibleTextarea(target)
+    );
+  }
   if (controlsEl && controlsEl.contains(target)) {
     // Moving onto the buttons themselves keeps the current textarea active.
     if (hideTimer) {
@@ -305,6 +315,7 @@ function onInput(event) {
 function attachListeners() {
   if (listenersAttached) return;
   listenersAttached = true;
+  console.log('[belz] textarea overlay: listeners attached');
   document.addEventListener('mouseover', onPointerOver, true);
   document.addEventListener('focusin', onFocusIn, true);
   document.addEventListener('focusout', onFocusOut, true);
@@ -316,6 +327,7 @@ function attachListeners() {
 function detachListeners() {
   if (!listenersAttached) return;
   listenersAttached = false;
+  console.log('[belz] textarea overlay: listeners DETACHED');
   document.removeEventListener('mouseover', onPointerOver, true);
   document.removeEventListener('focusin', onFocusIn, true);
   document.removeEventListener('focusout', onFocusOut, true);
