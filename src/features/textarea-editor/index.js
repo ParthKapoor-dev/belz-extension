@@ -48,6 +48,11 @@ let hideTimer = null;
 let repositionScheduled = false;
 let repositionTimer = null;
 let listenersAttached = false;
+/** The document the delegation is currently registered on. */
+let attachedDocument = null;
+/** Re-arm points, in ms after start — spanning a slow SPA bootstrap. */
+const REARM_DELAYS_MS = [1000, 3000, 6000];
+const rearmTimers = [];
 let started = false;
 
 // ---- eligibility ----------------------------------------------------------
@@ -260,11 +265,17 @@ function scheduleHide() {
 // All of these are document-level and capture-phase, so a textarea that
 // appears later needs no registration of any kind.
 
+let sawAnyHover = false;
 let sawTextareaHover = false;
 function onPointerOver(event) {
   const target = realTarget(event);
-  // One-shot: confirms hover delegation is live and that the element under the
-  // pointer really is a <textarea> we accept.
+  if (!sawAnyHover) {
+    sawAnyHover = true;
+    console.log(
+      '[belz] textarea overlay: delegation live — first target <' +
+        (target && target.tagName ? target.tagName.toLowerCase() : '?') + '>'
+    );
+  }
   if (!sawTextareaHover && target && target.tagName === 'TEXTAREA') {
     sawTextareaHover = true;
     console.log(
@@ -315,6 +326,7 @@ function onInput(event) {
 function attachListeners() {
   if (listenersAttached) return;
   listenersAttached = true;
+  attachedDocument = document;
   console.log('[belz] textarea overlay: listeners attached');
   document.addEventListener('mouseover', onPointerOver, true);
   document.addEventListener('focusin', onFocusIn, true);
@@ -322,6 +334,37 @@ function attachListeners() {
   document.addEventListener('input', onInput, true);
   document.addEventListener('scroll', onScroll, true);
   window.addEventListener('resize', onResize);
+}
+
+// Re-register the delegation from scratch. The host SPA bootstraps after our
+// content script runs (document_idle), and listeners registered before that
+// point were observed never to receive events, while identical ones registered
+// afterwards work — which is exactly what toggling the feature off and on was
+// doing by hand. Re-arming a few times over the first seconds, and on the
+// document lifecycle events, covers it without depending on why.
+function rearmListeners() {
+  if (!started) return;
+  const sameDocument = attachedDocument === document;
+  if (!sameDocument) {
+    console.log('[belz] textarea overlay: document was replaced — re-arming');
+  }
+  detachListeners();
+  attachListeners();
+}
+
+function scheduleRearms() {
+  for (const delay of REARM_DELAYS_MS) {
+    rearmTimers.push(setTimeout(rearmListeners, delay));
+  }
+  window.addEventListener('load', rearmListeners);
+  window.addEventListener('pageshow', rearmListeners);
+}
+
+function cancelRearms() {
+  for (const timer of rearmTimers) clearTimeout(timer);
+  rearmTimers.length = 0;
+  window.removeEventListener('load', rearmListeners);
+  window.removeEventListener('pageshow', rearmListeners);
 }
 
 function detachListeners() {
@@ -352,14 +395,16 @@ export function startTextareaEditorFeature() {
   //
   // attachListeners() is idempotent, so re-entry is harmless and no `started`
   // flag is needed to protect it.
-  attachListeners();
   started = true;
+  attachListeners();
+  scheduleRearms();
 
   return stopTextareaEditorFeature;
 }
 
 export function stopTextareaEditorFeature() {
   started = false;
+  cancelRearms();
   detachListeners();
 
   if (hideTimer) {
