@@ -1,7 +1,7 @@
 // PD Inspector content-script engine.
 //
-// Runs on published /pages/* pages. It fetches the page + component configs,
-// builds the exact component-nesting tree and the best-effort DOM correlation,
+// Runs on published /pages/* pages. It fetches the shell + page + component
+// configs, builds the component-nesting tree and the className anchor index,
 // and answers commands from the DevTools "PD Inspector" panel. Inspect mode
 // (point at the page, identify the owning PD component) runs here because the
 // highlighting must happen on the page.
@@ -17,12 +17,12 @@ import {
   fetchComponentGraph
 } from './config.js';
 import { buildComponentTree, componentNames } from './componentTree.js';
-import { buildAnchors, createCorrelator } from './correlate.js';
+import { buildConfigIndex, createResolver } from './resolve.js';
 import { createHighlighter } from './highlight.js';
 
-/** @type {{status:string, pageInfo?:object, componentTree?:object, correlation?:object, error?:string}} */
+/** @type {{status:string, pageInfo?:object, componentTree?:object, error?:string}} */
 let STATE = { status: 'loading' };
-let correlator = null;
+let resolver = null;
 let highlighter = null;
 let inspecting = false;
 
@@ -57,9 +57,9 @@ function serializeComponentTree(node) {
 
 async function build(ctx) {
   STATE = { status: 'loading' };
-  // A stale correlator answering from the previous route is worse than no
+  // A stale resolver answering from the previous route is worse than no
   // answer, so inspect mode goes quiet until this build finishes.
-  correlator = null;
+  resolver = null;
 
   const pageConfig = await fetchPageConfig(ctx);
   const shellConfig = await fetchShellConfig(ctx, pageConfig.path);
@@ -70,12 +70,14 @@ async function build(ctx) {
   if (shellConfig) await fetchComponentGraph(ctx, shellConfig.layout, graph);
 
   const componentTree = buildComponentTree(pageConfig, graph, shellConfig);
-  // Anchors are walked from the shell when there is one, descending into the
-  // outlet, so the expected sequence covers everything the browser renders.
-  const anchors = shellConfig
-    ? buildAnchors(shellConfig, graph, pageConfig)
-    : buildAnchors(pageConfig, graph, null);
-  correlator = createCorrelator(anchors);
+  // Indexed from the shell when there is one, descending into the outlet, so
+  // the index covers everything the browser actually renders.
+  const index = shellConfig
+    ? buildConfigIndex(shellConfig, graph, pageConfig)
+    : buildConfigIndex(pageConfig, graph, null);
+  resolver = createResolver(index);
+  resolver.rebuild(); // so the panel can report real numbers immediately
+  const anchorStats = resolver.getStats();
 
   STATE = {
     status: 'ready',
@@ -88,11 +90,8 @@ async function build(ctx) {
       shellPath: shellConfig ? shellConfig.path : '',
       shellReferencePageId: shellConfig ? shellConfig.referencePageId : '',
       componentCount: componentNames(componentTree).length,
-      correlation: {
-        confidence: correlator.confidence,
-        expectedAnchors: correlator.expectedAnchors,
-        domAnchors: correlator.domAnchors
-      }
+      configNodes: index.nodes.length,
+      anchors: anchorStats
     },
     componentTree: serializeComponentTree(componentTree)
   };
@@ -100,35 +99,28 @@ async function build(ctx) {
 
 // ---- inspect mode ----------------------------------------------------------
 
-const CONFIDENCE_NOTE = {
-  exact: '',
-  approx: '  (approx — conditional regions on page)',
-  low: '  (low confidence — may be off)'
-};
-
 function onMove(e) {
-  if (!correlator) return;
-  const hit = correlator.chainFor(e.target);
+  if (!resolver) return;
+  const hit = resolver.resolve(e.target);
   if (!hit) {
     highlighter.hide();
     return;
   }
-  if (hit.chain) {
-    const inner = hit.chain[hit.chain.length - 1];
-    const owner = hit.chain.length > 1 ? inner : `${inner} (page-level)`;
-    highlighter.show(
-      [hit.anchorEl],
-      owner + (CONFIDENCE_NOTE[hit.confidence] || ''),
-      hit.chain.join('  ›  ')
-    );
-  } else {
-    highlighter.show([hit.anchorEl], 'component undetermined', `<${hit.anchorTag}>`);
-  }
+  // The node label says WHICH config node, not just which component — the old
+  // scheme could only ever name a whole form-builder region.
+  const node = hit.node.className
+    ? `<${hit.node.name} class="${hit.node.className}">`
+    : `<${hit.node.name}>`;
+  highlighter.show(
+    [hit.anchorEl],
+    hit.owner + (hit.exact ? '' : '  (nearest match)'),
+    `${hit.chain.join('  ›  ')}    ${node}`
+  );
 }
 
 function onClick(e) {
-  if (!correlator) return;
-  const hit = correlator.chainFor(e.target);
+  if (!resolver) return;
+  const hit = resolver.resolve(e.target);
   if (!hit) return;
   e.preventDefault();
   e.stopPropagation();
@@ -136,7 +128,7 @@ function onClick(e) {
     ns: 'pd',
     type: 'pick',
     chain: hit.chain,
-    anchorTag: hit.anchorTag
+    nodeName: hit.node.name
   });
 }
 
@@ -165,11 +157,11 @@ function handleCommand(msg, sendResponse) {
       sendResponse({ ok: true, inspecting });
       return;
     case 'highlightComponent': {
-      if (!correlator) {
+      if (!resolver) {
         sendResponse({ ok: false, reason: 'not ready' });
         return;
       }
-      const els = correlator.elementsForComponent(msg.name);
+      const els = resolver.elementsForComponent(msg.name);
       if (els.length) {
         els[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
         highlighter.show(els, msg.name, `${els.length} region(s)`);

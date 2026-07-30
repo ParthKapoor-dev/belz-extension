@@ -222,6 +222,67 @@ consuming marker runs, skipping config nodes that produced nothing, and matching
 on expected tag. A flat sequence zip of any kind will not work, whether by count
 or by position.
 
+### Markers are NOT 1:1 with config nodes, in either direction
+
+**VERIFIED.** Two separate causes, and together they rule out any positional or
+count-based alignment:
+
+1. **Unrendered subtrees emit nothing below their own marker.** A node that does
+   not render still emits its marker (that is what an orphan is), but its
+   descendants emit none. A closed `exp-layout-dialog` has 0 children in the
+   DOM while carrying several in the config.
+2. **The runtime emits markers for its OWN internal markup.** A config
+   `exp-form-field` with zero children renders as `div.form-field-wrap`
+   containing a further marker for an `exp-svg-icon` that appears nowhere in
+   the config.
+
+Measured attempts on the reference page, all failures:
+
+| approach | result |
+|---|---|
+| flat zip, marker[i] ↔ configNode[i] | 14% tag agreement |
+| sequential consumption with subtree skipping | 170/410 markers, 9% consistency |
+| tree walk matching children by tag | 2% coverage |
+
+The learned name→tag map is noise under all three
+(`div -> div:18, span:18, exp-html-template:9, …`), which is the signature of a
+walk that has drifted rather than a mapping that needs more entries.
+
+### className IS ground truth — and it is what the resolver uses
+
+**VERIFIED.** A node's static `props.className` survives into the rendered
+element's class list. On the reference page 168 of 354 composed config nodes
+carry one, spanning 82 distinct className strings.
+
+That gives real anchor points, and — unlike everything above — it is checkable
+rather than inferred. Resolution is then: climb from the hovered element to the
+nearest anchored ancestor and read its config node and component chain.
+
+Measured with the shipped `resolve.js`, run verbatim against the live page:
+
+```
+anchored elements      96   (32 exact, 65 positional)   loose pairing
+hover coverage         98% of 1158 visible elements
+```
+
+**Pairing rule matters more than coverage.** When several config nodes share a
+className and several elements match it, pairing them in document order is only
+sound if the counts agree. Pairing them anyway ("loose") buys 1% coverage and
+corrupts ownership: a generic `overflow-hidden` anchor (18 candidates) landed
+inside the sidebar and attributed the whole sidebar to the *shell* rather than
+to `n_s_verifi-staff-header-dmv`, because resolution takes the NEAREST anchored
+ancestor and a wrong near anchor shadows the correct outer one.
+
+| rule | anchors | coverage | sidebar owner |
+|---|---|---|---|
+| loose (pair min(n,m)) | 96 | 98% | `ncdot-notice-and-storage` ✗ |
+| strict (pair only when n == m) | 69 | 97% | `n_s_verifi-staff-header-dmv` ✓ |
+
+The shipped code uses **strict**. A wrong anchor is worse than no anchor.
+
+For comparison, the scheme this replaced had **one** usable anchor on this page
+(one `exp-data-table`, zero `exp-form-builder`).
+
 ### Dialogs
 
 **VERIFIED (closed state only).** All 7 `exp-layout-dialog` elements on LT-261

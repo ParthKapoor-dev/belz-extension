@@ -150,18 +150,22 @@ function buildInfo(info) {
   }
   box.appendChild(row('Components', el('span', 'v', String(info.componentCount))));
 
-  const c = info.correlation;
-  const CONF = {
-    exact: 'exact — 1:1 with the page',
-    approx: 'approx — conditional regions accounted for',
-    low: 'low — page has hidden regions the map cannot place'
-  };
-  const corr = el(
-    'span',
-    `v ${c.confidence === 'exact' ? 'ok' : 'warn'}`,
-    `${CONF[c.confidence] || c.confidence} (${c.domAnchors}/${c.expectedAnchors} anchors)`
-  );
-  box.appendChild(row('Inspect map', corr));
+  // Anchors are className matches between the config and the live DOM — facts,
+  // not inference. `exact` means one config node and one element carried that
+  // className; `positional` means several competed and were paired in document
+  // order, which is right when all of them rendered.
+  const a = info.anchors;
+  if (a) {
+    const v = el(
+      'span',
+      `v ${a.anchored ? 'ok' : 'warn'}`,
+      `${a.anchored} of ${info.configNodes} nodes  (${a.exact} exact, ${a.positional} positional)`
+    );
+    v.title =
+      'Elements pinned to a config node by className. Hovering resolves to the '
+      + 'nearest pinned ancestor.';
+    box.appendChild(row('Anchors', v));
+  }
 
   const picked = el('div', 'row');
   picked.id = 'picked-row';

@@ -17,27 +17,23 @@ Enhacement/Optimization
      the outlet. This also removed the silent +2 anchor index shift.
 
   -> the selection of the pd item, isn't really correct
-     OPEN (phase 2). Replace the two-tag anchor count with structural alignment
-     over the `exp-layout.exp-layout-use-sibling` markers the runtime emits —
-     396 identification points on the LT-261 page, where the anchor scheme had
-     1 (and zero exp-form-builder elements).
+     DONE (phase 2). The two-tag anchor count is gone (correlate.js deleted).
+     Ownership now resolves by climbing to the nearest element anchored to a
+     config node via its static `props.className` — 97% of visible elements on
+     LT-261, against 1 usable anchor before. Hover now names the config NODE,
+     not just a whole form-builder region.
 
-     Phase 2 DISCOVERY IS DONE; the implementation is not started. What the
-     measurements settled (details in RESEARCH.md, "Markers come in RUNS"):
-       - markers chain: a run of N consecutive markers ends in ONE real
-         element (108 of 396 targets on LT-261 are themselves markers)
-       - there is NO count law between config nodes and markers — nsm has more
-         markers than nodes, sems has fewer
-       - document order does NOT align naively between config and DOM
-     So the aligner must be a recursive tree walk with resync: config tree vs
-     the tree of run-terminal elements, consuming marker runs, skipping config
-     nodes that rendered nothing, matching on expected tag. Any flat sequence
-     zip — by count or position — will not work.
+     Marker-based structural alignment was tried first and abandoned: the
+     runtime emits markers for its own internal markup AND omits whole
+     unrendered subtrees, so markers are not 1:1 with config nodes in either
+     direction. Flat zip reached 14%, tree walk 2%. See RESEARCH.md.
 
   -> the confidence logic
-     OPEN (phase 3). Rework only after phase 2. It should be per-node rather
-     than one page-wide label, and orphan markers make hidden nodes directly
-     observable instead of guessed.
+     LARGELY DISSOLVED (phase 3 remainder). The page-wide exact/approx/low
+     label is gone with correlate.js. The panel now reports Anchors — a count
+     of facts (className matches), not a guess — and each hover says whether
+     its anchor was exact or positional. What remains: decide whether a
+     positional hit needs a stronger visual signal in the highlight overlay.
 
   Phase 0 questions still unanswered:
   - an OPEN dialog's DOM (needs app interaction; closed dialogs contribute
