@@ -8,6 +8,7 @@ import { json } from '@codemirror/lang-json';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/autocomplete';
 import {
+  DEFAULT_SETTINGS,
   loadSettings,
   setSetting,
   subscribeSettings
@@ -309,14 +310,14 @@ function getSelectedLanguageMode() {
 
 function getSelectedWrapMode() {
   const wrapSelect = document.getElementById(WRAP_SELECT_ID);
-  return wrapSelect?.value || 'nowrap';
+  return wrapSelect?.value || DEFAULT_SETTINGS.textareaEditorWrap;
 }
 
 function getEditorSettings() {
   const settings = loadSettings();
   return {
     language: settings.textareaEditorLanguage || 'auto',
-    wrap: settings.textareaEditorWrap || 'nowrap',
+    wrap: settings.textareaEditorWrap || DEFAULT_SETTINGS.textareaEditorWrap,
     fontSize: Number.parseInt(String(settings.textareaEditorFontSize || 13), 10) || 13
   };
 }
@@ -357,6 +358,23 @@ function applyEditorFontSize(fontSize) {
   editorView.dom.style.wordSpacing = 'normal';
 }
 
+// A SQL statement, judged by how it OPENS rather than by any keyword appearing
+// somewhere in it — `from` and `where` turn up in prose and SpEL alike.
+const SQL_STATEMENT_RE =
+  /^\s*(?:with|select|insert\s+into|update|delete\s+from|merge|replace\s+into|create|alter|drop|truncate)\b/i;
+// A SELECT ... FROM pair anywhere, for fragments that do not open cleanly —
+// a leading comment, or a snippet pasted from the middle of a statement.
+const SQL_SHAPE_RE = /\bselect\b[\s\S]*\bfrom\b/i;
+
+// SpEL, identified only by constructs unique to it: an interpolation block or
+// a T() type reference. The previous detector also accepted the bare words
+// and/or/not/eq/ne/lt/gt/le/ge, which match ordinary SQL and English — a plain
+// `a = 1 and b = 2` was enough to be called SpEL.
+const SPEL_RE = /#\{[\s\S]*?\}|\bT\(\s*[\w.$]+\s*\)/;
+
+const JS_RE =
+  /\b(?:const|let|var|function|return|class|import|export|async|await)\b|=>|console\./;
+
 function detectLanguage(text) {
   const sample = text.trim();
   if (!sample) return 'plain';
@@ -370,15 +388,20 @@ function detectLanguage(text) {
     }
   }
 
-  if (/#\{[^}]*\}|T\([^)]+\)|\b(eq|ne|lt|gt|le|ge|and|or|not)\b/i.test(sample)) {
-    return 'spel';
-  }
-
-  if (/\b(select|insert|update|delete|from|where|join|group\s+by|order\s+by|having|with)\b/i.test(sample)) {
+  // SQL is tested BEFORE SpEL on purpose. Automation Designer SQL steps
+  // routinely interpolate SpEL placeholders —
+  //   select id from guardian where account_id = '#{userIdMetaDb}'
+  // — and testing SpEL first meant every such statement was highlighted as
+  // SpEL. A statement that opens as SQL is SQL, whatever it interpolates.
+  if (SQL_STATEMENT_RE.test(sample) || SQL_SHAPE_RE.test(sample)) {
     return 'sql';
   }
 
-  if (/\b(const|let|var|function|return|class|import|export|async|await)\b|=>|console\./.test(sample)) {
+  if (SPEL_RE.test(sample)) {
+    return 'spel';
+  }
+
+  if (JS_RE.test(sample)) {
     return 'javascript';
   }
 

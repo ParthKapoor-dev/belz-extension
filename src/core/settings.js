@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS = {
   outputCopy: true,
   textareaEditor: true,
   textareaEditorLanguage: 'auto',
-  textareaEditorWrap: 'nowrap',
+  textareaEditorWrap: 'wrap',
   textareaEditorFontSize: 13
 };
 
