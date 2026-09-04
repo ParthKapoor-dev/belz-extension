@@ -26,10 +26,30 @@ import {
 const CONTROLS_ID = 'sdExtensionTextareaControls';
 const TEXTAREA_COPY_BUTTON_CLASS = 'sdExtensionTextareaCopyButton';
 
-function resolveTextarea(node) {
-  if (node.tagName !== 'TEXTAREA') return null;
-  if (node.disabled || node.readOnly) return null;
-  return node;
+// Read-only and disabled textareas qualify too.
+//
+// A PUBLISHED Automation Designer method renders its steps as non-editable
+// fields, and Open + Copy are exactly what you want there: reading a long SQL
+// step in the large editor, and copying it out. Refusing them meant the
+// overlay only ever appeared on drafts.
+//
+// Nothing can be written back by accident — the modal already handles a
+// read-only source: updateModalForSource() marks the subtitle "(read only)"
+// and disables Save, and handleSave() bails on a disabled button.
+//
+// The second branch is for `disabled` specifically. The browser dispatches no
+// pointer events to a disabled control — the hover is retargeted to its
+// nearest enabled ancestor — so document-level delegation never sees the
+// textarea itself, and dropping the guard alone would not be enough. Hit
+// testing is not suppressed the same way, so elementFromPoint still finds it.
+// Guarded on clientX because focusin carries no coordinates; without that it
+// would hit-test the viewport's top-left corner on every focus.
+function resolveTextarea(node, event) {
+  if (node.tagName === 'TEXTAREA') return node;
+
+  if (!event || typeof event.clientX !== 'number') return null;
+  const under = document.elementFromPoint(event.clientX, event.clientY);
+  return under && under.tagName === 'TEXTAREA' ? under : null;
 }
 
 // A short textarea cannot carry two full-size buttons stacked without covering

@@ -402,9 +402,9 @@ footer p { max-width: 74ch; }
 </header>
 
 <div class="stamp">
-  <div><span class="k">Commit</span><span class="v">e186436</span></div>
+  <div><span class="k">Commit</span><span class="v">e217a23</span></div>
   <div><span class="k">Branch</span><span class="v">main</span></div>
-  <div><span class="k">As of</span><span class="v">2026-08-20</span></div>
+  <div><span class="k">As of</span><span class="v">2026-09-04</span></div>
   <div><span class="k">Source</span><span class="v">9,566 LOC</span></div>
   <div><span class="k">Files</span><span class="v">54 .js</span></div>
   <div><span class="k">Build</span><span class="v">0.44 s</span></div>
@@ -766,6 +766,7 @@ footer p { max-width: 74ch; }
   <li><strong>The page's own markup is never touched.</strong> No wrappers, no added classes, no inline <code>position</code>, no marker attributes.</li>
   <li><strong>No scanning.</strong> Capture-phase delegation on <code>document</code> means a textarea added later is picked up for free &mdash; so these features do not subscribe to the MutationObserver at all.</li>
   <li><strong>Only one element is ever measured.</strong> A single <code>getBoundingClientRect()</code> per reposition.</li>
+  <li><strong>The resolver gets the event, not just the node.</strong> Which is the only way to reach a control that dispatches no pointer events of its own.</li>
 </ul>
 
 <p>Three implementation details are worth understanding because they encode real browser behaviour:</p>
@@ -778,6 +779,13 @@ footer p { max-width: 74ch; }
 
 <h3>Textarea editor</h3>
 <p>The overlay offers <em>Open</em> and <em>Copy</em>; Open launches a CodeMirror 6 modal. Buttons shrink for a box under 36&nbsp;px tall so they don't cover its content.</p>
+
+<p><strong>Published methods count.</strong> A published AD method renders its steps as non-editable fields, and reading a long SQL step in the large editor is exactly when you want this. The overlay used to refuse any <code>readonly</code> or <code>disabled</code> textarea, so it only ever appeared on drafts. It no longer does &mdash; the modal already refuses to write back to a read-only source, marking the subtitle <em>(read only)</em> and disabling Save.</p>
+
+<div class="note warn">
+<span class="tag">Why that needed more than deleting a check</span>
+<p>A <code>disabled</code> control <strong>dispatches no pointer events</strong> &mdash; the browser retargets the hover to its nearest enabled ancestor, so document-level delegation never sees the textarea at all. Hit testing is not suppressed the same way, so <code>resolveTarget</code> now also receives the originating event and falls back to <code>document.elementFromPoint</code>. Verified headless: <code>elementFromPoint</code> does return a disabled textarea. The coordinate check matters too &mdash; <code>focusin</code> carries no <code>clientX</code>, and without the guard every focus would hit-test the viewport's top-left corner.</p>
+</div>
 
 <p>The interesting part is <strong>language detection</strong>. There is no &ldquo;auto&rdquo; option &mdash; auto is always the behaviour, and the dropdown reports what was detected (with a one-off override that is deliberately not persisted, since a stored default would only fight the detector). Ordering is load-bearing:</p>
 
@@ -1326,7 +1334,7 @@ mod.openTextareaEditor(textarea);</code></pre>
 </section>
 
 <footer>
-  <p>Reflects commit <strong>e186436</strong> on <strong>main</strong>, 2026-08-20. Regenerate this page whenever the architecture, timings, or bundle sizes change &mdash; the numbers here are measured, not estimated, and stale measurements are worse than none.</p>
+  <p>Reflects commit <strong>e217a23</strong> on <strong>main</strong>, 2026-09-04. Regenerate this page whenever the architecture, timings, or bundle sizes change &mdash; the numbers here are measured, not estimated, and stale measurements are worse than none.</p>
   <p>Source: <code>docs/codebase.html</code> &nbsp;&middot;&nbsp; companions: <code>AGENTS.md</code> (maintainer map), <code>README.md</code> (user-facing), <code>tasks.md</code> (open work), <code>src/features/pd-inspector/RESEARCH.md</code> (the PD investigation record).</p>
 </footer>
 

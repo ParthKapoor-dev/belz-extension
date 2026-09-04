@@ -45,9 +45,10 @@ function realTarget(event) {
  * @param {object} config
  * @param {string} config.id                   Element id for the controls node.
  * @param {string} config.label                Name used in diagnostic logging.
- * @param {(node: Element) => Element|null} config.resolveTarget
+ * @param {(node: Element, event?: Event) => Element|null} config.resolveTarget
  *        Given the element under the pointer, return the element the overlay
- *        should attach to, or null if it should not appear.
+ *        should attach to, or null if it should not appear. The originating
+ *        event is passed too, for resolvers that need to hit-test.
  * @param {Array<object>} config.buttons       Button descriptors, top to bottom.
  * @param {(rect: DOMRect) => object} [config.sizeFor]
  *        Optional sizing hook; returns { buttonSize, glyphSize, compact }.
@@ -227,11 +228,14 @@ export function createHoverOverlay(config) {
   // All of these are document-level and capture-phase, so an element that
   // appears later needs no registration of any kind.
 
-  function resolve(node) {
+  // `event` is forwarded so a resolver can hit-test the pointer position.
+  // That is the only way to reach a `disabled` control, which receives no
+  // pointer events of its own — see resolveTextarea in the textarea editor.
+  function resolve(node, event) {
     if (!node || node.nodeType !== 1) return null;
     // Never decorate anything inside our own UI (the modals, another overlay).
     if (node.closest && node.closest(`[${EXTENSION_OWNED_ATTR}]`)) return null;
-    return config.resolveTarget(node);
+    return config.resolveTarget(node, event);
   }
 
   function onPointerOver(event) {
@@ -244,7 +248,7 @@ export function createHoverOverlay(config) {
       }
       return;
     }
-    const resolved = resolve(target);
+    const resolved = resolve(target, event);
     if (resolved) {
       show(resolved);
       return;
@@ -253,7 +257,7 @@ export function createHoverOverlay(config) {
   }
 
   function onFocusIn(event) {
-    const resolved = resolve(realTarget(event));
+    const resolved = resolve(realTarget(event), event);
     if (resolved) show(resolved);
   }
 

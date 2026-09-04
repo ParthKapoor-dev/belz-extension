@@ -704,7 +704,17 @@ function handleSave() {
   const sourceEl = state.textareaEditorSourceEl;
   const saveBtn = document.getElementById(SAVE_BTN_ID);
 
-  if (!sourceEl || !saveBtn || saveBtn.disabled || !editorView) {
+  if (!sourceEl || !saveBtn || !editorView) {
+    return;
+  }
+
+  // Read-only sources now reach this path: a published AD method opens here
+  // for reading, and Ctrl+S is muscle memory. Say why nothing was written
+  // rather than swallowing the keystroke. The editor itself stays editable on
+  // purpose — scratch-editing a published step is useful — so this is the
+  // only place the boundary is felt.
+  if (saveBtn.disabled) {
+    showToast('Read-only field — nothing was written back');
     return;
   }
 

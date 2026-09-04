@@ -147,6 +147,8 @@ Focus-hint shortcut: `Ctrl+Shift+A` / `Ctrl+Shift+P` fire background `chrome.com
 `features/textarea-editor/index.js` injects **one** controls element for the whole page, positioned over whichever textarea has pointer or keyboard focus. Do not reintroduce per-textarea DOM.
 
 - Hover/focus is handled by capture-phase delegation on `document`, using `event.composedPath()[0]` so open shadow roots resolve to the real inner target. A textarea added later therefore needs no registration and no rescan — this feature deliberately does **not** subscribe to the MutationObserver.
+- Read-only and **disabled** textareas qualify, so a PUBLISHED AD method gets the overlay too — only drafts did before. The modal already refuses to write back to a read-only source (`updateModalForSource` disables Save).
+- A `disabled` control dispatches no pointer events: the browser retargets the hover to its nearest enabled ancestor, so delegation never sees the textarea. `resolveTarget` therefore also receives the originating **event** and hit-tests `document.elementFromPoint`, which is not suppressed the same way. `output-copy` runs the same hit test so the two overlays never both claim one pointer position.
 - Repositioning is coalesced through `requestAnimationFrame` with a 32 ms `setTimeout` backstop, because rAF is suspended in backgrounded tabs and headless rendering; without the backstop the overlay can linger over the wrong element.
 - The page's own markup is never restructured. The previous design wrapped every textarea in a positioned `<div>` plus a controls node (~480 elements on a 40-step method), which forced a layout pass over all of them and made the extension a major source of the mutations it was reacting to.
 

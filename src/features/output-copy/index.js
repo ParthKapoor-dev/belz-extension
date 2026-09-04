@@ -34,12 +34,19 @@ function extractOutputText(container) {
   return (clone.innerText || clone.textContent || '').trim();
 }
 
-function resolveOutputContainer(node) {
+function resolveOutputContainer(node, event) {
   if (typeof node.closest !== 'function') return null;
   // A textarea inside an output container belongs to the textarea overlay,
   // which is the more specific target — otherwise both would appear stacked in
   // the same corner.
   if (node.tagName === 'TEXTAREA') return null;
+  // Same rule, for a textarea the tag check cannot see. A `disabled` control
+  // dispatches no pointer events, so the hover is retargeted to this container
+  // and `node` is never the textarea — hit-test the pointer to catch it.
+  if (event && typeof event.clientX === 'number') {
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    if (under && under.tagName === 'TEXTAREA') return null;
+  }
   return node.closest(OUTPUT_CONTAINER_SELECTOR);
 }
 
