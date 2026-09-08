@@ -1,0 +1,1053 @@
+<title>belz Extension Primer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+
+<style>
+/* ============================================================
+   A companion to belz Extension Internals, pitched at a reader
+   who knows REST backends and not much browser. Different register
+   from the reference doc: teal instead of blue, serif body instead
+   of mono-first, prose you read rather than a table you scan.
+   Neutrals carry a green bias so they read as chosen, not default.
+   ============================================================ */
+:root {
+  --ink:      #fdfdfc;
+  --surface:  #f3f5f4;
+  --surface2: #e8ebe9;
+  --line:     #dbdfdd;
+  --line2:    #c3cac7;
+  --fg:       #14201d;
+  --fg-muted: #4d5a56;
+  --fg-faint: #869390;
+  --accent:   #0d6e63;
+  --accent-soft: rgba(13, 110, 99, 0.08);
+  --warn:     #8a5a00;
+  --warn-soft: rgba(138, 90, 0, 0.07);
+  --bad:      #a3271f;
+  --good:     #16663c;
+
+  --f-sans:  "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --f-mono:  "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --col: 64ch;
+  --gutter: clamp(1.25rem, 4vw, 3rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink:      #0b0f0e;
+    --surface:  #121815;
+    --surface2: #1a221f;
+    --line:     #232c29;
+    --line2:    #35403c;
+    --fg:       #e4e9e7;
+    --fg-muted: #97a4a0;
+    --fg-faint: #5f6c68;
+    --accent:   #35c9b6;
+    --accent-soft: rgba(53, 201, 182, 0.11);
+    --warn:     #d8a648;
+    --warn-soft: rgba(216, 166, 72, 0.09);
+    --bad:      #ef6a60;
+    --good:     #4cc07c;
+  }
+}
+:root[data-theme="dark"] {
+  --ink:      #0b0f0e;
+  --surface:  #121815;
+  --surface2: #1a221f;
+  --line:     #232c29;
+  --line2:    #35403c;
+  --fg:       #e4e9e7;
+  --fg-muted: #97a4a0;
+  --fg-faint: #5f6c68;
+  --accent:   #35c9b6;
+  --accent-soft: rgba(53, 201, 182, 0.11);
+  --warn:     #d8a648;
+  --warn-soft: rgba(216, 166, 72, 0.09);
+  --bad:      #ef6a60;
+  --good:     #4cc07c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--fg);
+  font-family: var(--f-serif);
+  font-size: 17px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 1fr;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+@media (min-width: 1120px) {
+  .shell { grid-template-columns: 14rem minmax(0, 1fr); gap: 3.5rem; }
+}
+
+/* ---------- rail ---------- */
+.rail { display: none; }
+@media (min-width: 1120px) {
+  .rail {
+    display: block; position: sticky; top: 0; align-self: start;
+    max-height: 100vh; overflow-y: auto;
+    padding: 3.25rem 1.25rem 3rem 0;
+  }
+}
+.rail-h {
+  font-family: var(--f-sans); font-size: 0.6875rem; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-faint);
+  margin: 0 0 0.9rem;
+}
+.rail ul { list-style: none; margin: 0 0 1.75rem; padding: 0;
+           display: flex; flex-direction: column; gap: 0.3rem; }
+.rail a {
+  font-family: var(--f-sans); font-size: 0.8125rem; color: var(--fg-muted);
+  text-decoration: none; display: block; padding: 0.12rem 0 0.12rem 0.7rem;
+  border-left: 2px solid var(--line);
+}
+.rail a:hover, .rail a:focus-visible { color: var(--accent); border-left-color: var(--accent); }
+
+main { padding: 3.25rem 0 6rem; min-width: 0; }
+
+/* ---------- masthead ---------- */
+.masthead { margin-bottom: 2.75rem; }
+.kicker {
+  font-family: var(--f-sans); font-size: 0.6875rem; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent);
+  margin: 0 0 0.9rem;
+}
+h1 {
+  font-family: var(--f-sans); font-weight: 700;
+  font-size: clamp(2rem, 5.5vw, 3.1rem); line-height: 1.06;
+  letter-spacing: -0.025em; margin: 0 0 1rem; text-wrap: balance;
+}
+.standfirst {
+  font-size: 1.15rem; line-height: 1.6; color: var(--fg-muted);
+  max-width: 58ch; margin: 0;
+}
+
+/* ---------- sections ---------- */
+section { margin: 0 0 4.25rem; scroll-margin-top: 1.5rem; }
+.sec-num {
+  font-family: var(--f-mono); font-size: 0.6875rem; font-weight: 700;
+  letter-spacing: 0.12em; color: var(--accent);
+  display: block; margin-bottom: 0.5rem;
+}
+h2 {
+  font-family: var(--f-sans); font-weight: 700;
+  font-size: clamp(1.45rem, 3.4vw, 1.85rem); line-height: 1.18;
+  letter-spacing: -0.018em; margin: 0 0 1.1rem;
+  padding-bottom: 0.7rem; border-bottom: 2px solid var(--fg);
+  text-wrap: balance;
+}
+h3 {
+  font-family: var(--f-sans); font-weight: 600; font-size: 1.15rem;
+  margin: 2.5rem 0 0.7rem; text-wrap: balance;
+}
+h4 {
+  font-family: var(--f-sans); font-weight: 600; font-size: 0.9375rem;
+  margin: 1.6rem 0 0.5rem; color: var(--fg-muted);
+}
+p, ul, ol { max-width: var(--col); }
+p { margin: 0 0 1.05rem; }
+ul, ol { margin: 0 0 1.05rem; padding-left: 1.3rem; }
+li { margin-bottom: 0.45rem; }
+li::marker { color: var(--accent); }
+
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+strong { font-weight: 600; }
+
+code {
+  font-family: var(--f-mono); font-size: 0.82em;
+  background: var(--surface2); padding: 0.1em 0.36em;
+  border-radius: 3px; white-space: nowrap;
+}
+pre {
+  font-family: var(--f-mono); font-size: 0.8125rem; line-height: 1.65;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 4px; padding: 1rem 1.15rem; overflow-x: auto;
+  margin: 0 0 1.25rem; max-width: var(--col);
+}
+pre code { background: none; padding: 0; white-space: pre; font-size: inherit; }
+
+/* ---------- the signature device: a term card ---------- */
+.term {
+  border: 1px solid var(--line); border-radius: 4px;
+  background: var(--surface); padding: 1.4rem 1.5rem;
+  margin: 1.75rem 0; max-width: 74ch;
+}
+.term-word {
+  font-family: var(--f-mono); font-size: 1.25rem; font-weight: 700;
+  letter-spacing: -0.01em; margin: 0 0 0.15rem; color: var(--fg);
+}
+.term-plain {
+  font-family: var(--f-sans); font-size: 1rem; font-weight: 500;
+  color: var(--fg-muted); margin: 0 0 1rem;
+}
+.term p { max-width: 66ch; }
+.term > :last-child { margin-bottom: 0; }
+
+.known {
+  border-left: 3px solid var(--accent); background: var(--accent-soft);
+  padding: 0.85rem 1.1rem; margin: 1rem 0; border-radius: 0 3px 3px 0;
+}
+.known .lbl {
+  font-family: var(--f-sans); font-size: 0.625rem; font-weight: 700;
+  letter-spacing: 0.13em; text-transform: uppercase; color: var(--accent);
+  display: block; margin-bottom: 0.3rem;
+}
+.known p { margin: 0; max-width: 64ch; }
+.known p + p { margin-top: 0.6rem; }
+
+.here {
+  font-size: 0.9375rem; color: var(--fg-muted);
+  border-top: 1px solid var(--line); padding-top: 0.85rem; margin-top: 1.1rem;
+}
+.here .lbl {
+  font-family: var(--f-sans); font-size: 0.625rem; font-weight: 700;
+  letter-spacing: 0.13em; text-transform: uppercase; color: var(--fg-faint);
+  display: block; margin-bottom: 0.3rem;
+}
+
+/* ---------- callouts ---------- */
+.aside {
+  border: 1px solid var(--line); border-left: 3px solid var(--warn);
+  background: var(--warn-soft); border-radius: 0 4px 4px 0;
+  padding: 1rem 1.2rem; margin: 1.5rem 0; max-width: 70ch;
+}
+.aside .lbl {
+  font-family: var(--f-sans); font-size: 0.625rem; font-weight: 700;
+  letter-spacing: 0.13em; text-transform: uppercase; color: var(--warn);
+  display: block; margin-bottom: 0.35rem;
+}
+.aside > :last-child { margin-bottom: 0; }
+.aside p { max-width: 62ch; }
+
+/* ---------- numbered walkthrough ---------- */
+.steps { list-style: none; margin: 1.75rem 0; padding: 0; max-width: 76ch; }
+.step {
+  display: grid; grid-template-columns: 2.75rem minmax(0, 1fr);
+  gap: 0 1.1rem; padding: 1.3rem 0; border-top: 1px solid var(--line);
+}
+.step:last-child { border-bottom: 1px solid var(--line); }
+.step-n {
+  font-family: var(--f-mono); font-size: 0.9375rem; font-weight: 700;
+  color: var(--accent); font-variant-numeric: tabular-nums; padding-top: 0.1rem;
+}
+.step-code {
+  font-family: var(--f-mono); font-size: 0.9375rem; font-weight: 600;
+  margin: 0 0 0.5rem; word-break: break-word; line-height: 1.45;
+}
+.step-body { margin: 0; max-width: 62ch; }
+.step-body + .step-body { margin-top: 0.6rem; }
+.step.hot .step-n, .step.hot .step-code { color: var(--warn); }
+.step.done .step-n, .step.done .step-code { color: var(--good); }
+
+/* ---------- figures ---------- */
+figure { margin: 2rem 0; max-width: 100%; }
+.fig {
+  border: 1px solid var(--line); border-radius: 4px;
+  background: var(--surface); padding: 1.4rem; overflow-x: auto;
+}
+figure svg { max-width: 100%; height: auto; display: block; color: var(--fg); }
+figcaption {
+  font-family: var(--f-sans); font-size: 0.8125rem; line-height: 1.6;
+  color: var(--fg-muted); margin-top: 0.8rem; max-width: 70ch;
+}
+
+/* ---------- compact glossary grid ---------- */
+.mini { display: grid; gap: 0.9rem; margin: 1.5rem 0; }
+@media (min-width: 780px) { .mini { grid-template-columns: 1fr 1fr; } }
+.mini-item {
+  border: 1px solid var(--line); border-radius: 4px;
+  padding: 1rem 1.15rem; background: var(--surface);
+}
+.mini-item h4 {
+  font-family: var(--f-mono); font-size: 0.9375rem; font-weight: 700;
+  color: var(--fg); margin: 0 0 0.35rem;
+}
+.mini-item p { font-size: 0.9375rem; margin: 0; max-width: none; line-height: 1.6; }
+.mini-item p + p { margin-top: 0.5rem; color: var(--fg-muted); }
+
+hr { border: 0; border-top: 1px solid var(--line); margin: 3rem 0; }
+
+footer {
+  border-top: 2px solid var(--fg); padding-top: 1.4rem; margin-top: 4rem;
+  font-family: var(--f-sans); font-size: 0.875rem; color: var(--fg-muted);
+}
+footer p { max-width: 70ch; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+</style>
+
+<div class="shell">
+
+<nav class="rail" aria-label="Contents">
+  <p class="rail-h">Part 1 · your words</p>
+  <ul>
+    <li><a href="#reconcile">Reconcile</a></li>
+    <li><a href="#seeding">Seeding</a></li>
+    <li><a href="#absent">Absent vs empty</a></li>
+    <li><a href="#subscribers">Subscribers</a></li>
+    <li><a href="#polling">Polling</a></li>
+    <li><a href="#spa">SPA</a></li>
+    <li><a href="#bootstrap">Bootstrapping</a></li>
+    <li><a href="#overlay">Overlay</a></li>
+    <li><a href="#timers">Timers &amp; magic numbers</a></li>
+  </ul>
+  <p class="rail-h">Part 2 · the chart</p>
+  <ul>
+    <li><a href="#chart">All nine steps</a></li>
+  </ul>
+  <p class="rail-h">Part 3 · coming up</p>
+  <ul>
+    <li><a href="#next">Concepts ahead</a></li>
+    <li><a href="#habits">Habits worth stealing</a></li>
+  </ul>
+</nav>
+
+<main>
+
+<header class="masthead">
+  <p class="kicker">Companion to belz Extension Internals</p>
+  <h1>belz Extension Primer</h1>
+  <p class="standfirst">Every term in that document is an ordinary idea with an intimidating name &mdash; and most of them you already know from building REST APIs. Here they are, in the words you already have.</p>
+</header>
+
+<p>A note before we start. You said you usually skip these words and move on. That instinct is more common than anyone admits, and the reason it persists is that jargon is <em>compression</em>: a word like &ldquo;reconcile&rdquo; packs a whole paragraph into three syllables. That's useful once you know the paragraph and impenetrable before. Nothing below is hard. It's just unpacked.</p>
+
+<p>Since backends are your solid ground, I'll anchor each term to something you already do there. Those anchors aren't loose metaphors &mdash; in most cases they're literally the same idea, borrowed by a different community.</p>
+
+<!-- ============================================================ -->
+<section id="reconcile">
+<span class="sec-num">PART 1 · TERM 01</span>
+<h2>Reconcile</h2>
+
+<div class="term">
+  <p class="term-word">reconcile</p>
+  <p class="term-plain">Make reality match the plan &mdash; whatever reality currently looks like.</p>
+
+  <p>You have a list of what <em>should</em> exist, and a list of what <em>does</em> exist. Reconciling means comparing the two and issuing whatever add/remove/update calls close the gap. Crucially, it doesn't care <em>how</em> things drifted apart. It just fixes them.</p>
+
+  <div class="known">
+    <span class="lbl">You already know this as</span>
+    <p>An idempotent sync job. Imagine a nightly task: read the <code>subscriptions</code> table, list the active mailing-list entries at your email provider, then add the missing ones and delete the extras. You don't track <em>events</em> (&ldquo;user subscribed&rdquo;, &ldquo;user churned&rdquo;) &mdash; you just compare the two lists.</p>
+    <p>It's also exactly why <code>PUT</code> is idempotent and <code>POST</code> isn't. <code>PUT /users/7</code> says &ldquo;make user 7 look like <em>this</em>&rdquo;. Run it five times, same result. That's the reconcile mindset applied to one resource.</p>
+  </div>
+
+  <p class="here"><span class="lbl">Here</span> The user's site list lives in storage. The browser separately holds a set of registered content scripts. <code>reconcileContentScripts()</code> reads the list, asks the browser what's registered, and diffs them.</p>
+</div>
+
+<h3>Why not just do it when the user clicks Add?</h3>
+
+<p>This is the real lesson, and it generalises far beyond browser extensions. The obvious design is <strong>event-driven</strong>: user clicks Add &rarr; register a script. User clicks Revoke &rarr; unregister it. Simple, and it works&hellip; until it doesn't:</p>
+
+<ul>
+  <li>The browser restarts. Were registrations kept? Partly, sometimes.</li>
+  <li>The user revokes the permission in browser settings, never touching your page.</li>
+  <li>The extension updates and its file paths change.</li>
+  <li>Your registration call failed and nobody noticed.</li>
+</ul>
+
+<p>Each of those is a separate bug needing separate handling. With reconcile, there is <strong>one</strong> code path, and you simply run it whenever something might have changed. Every one of those scenarios is already covered, because the function never assumed a starting state.</p>
+
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 300" role="img" aria-label="Diagram: a desired set and an actual set are compared; items only in desired are added, items only in actual are removed, items in both are left alone or updated.">
+  <defs>
+    <marker id="p1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text x="20" y="26" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="700" fill="currentColor" opacity="0.6">WANT (from storage)</text>
+  <rect x="20" y="40" width="180" height="130" fill="none" stroke="currentColor" stroke-width="1.5" rx="3"/>
+  <text x="36" y="70" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">ad-nsm-dev</text>
+  <text x="36" y="98" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">pd-nsm-dev</text>
+  <text x="36" y="126" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">pdi-nsm-dev</text>
+  <text x="36" y="154" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">ad-sems-dev</text>
+
+  <text x="290" y="26" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="700" fill="currentColor" opacity="0.6">HAVE (from browser)</text>
+  <rect x="290" y="40" width="180" height="130" fill="none" stroke="currentColor" stroke-width="1.5" rx="3"/>
+  <text x="306" y="70" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">ad-nsm-dev</text>
+  <text x="306" y="98" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">pd-nsm-dev</text>
+  <text x="306" y="126" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor" opacity="0.45">pdi-nsm-dev</text>
+  <text x="306" y="154" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">ad-OLD-host</text>
+
+  <line x1="240" y1="105" x2="282" y2="105" stroke="currentColor" stroke-width="1.5" marker-end="url(#p1)" marker-start="url(#p1)"/>
+  <text x="261" y="95" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity="0.7">diff</text>
+
+  <line x1="490" y1="105" x2="530" y2="105" stroke="currentColor" stroke-width="1.5" marker-end="url(#p1)"/>
+
+  <rect x="540" y="40" width="200" height="130" fill="none" stroke="currentColor" stroke-width="1.5" rx="3"/>
+  <text x="556" y="66" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="700" fill="currentColor">ACTIONS</text>
+  <text x="556" y="92" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">+ register pdi-nsm-dev</text>
+  <text x="556" y="116" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">&minus; remove ad-OLD-host</text>
+  <text x="556" y="140" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor" opacity="0.65">= leave the rest alone</text>
+
+  <text x="20" y="216" font-family="IBM Plex Mono, monospace" font-size="11.5" font-weight="700" fill="currentColor">Run it again immediately:</text>
+  <rect x="20" y="230" width="720" height="42" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" rx="3" opacity="0.6"/>
+  <text x="36" y="248" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor" opacity="0.75">the two lists now match, so the diff is empty and nothing happens.</text>
+  <text x="36" y="266" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor" opacity="0.75">That property &mdash; safe to repeat &mdash; is what &ldquo;idempotent&rdquo; means.</text>
+</svg>
+</div>
+<figcaption>Reconcile compares two lists and emits only the difference. Because it starts from &ldquo;what is true right now&rdquo; rather than &ldquo;what happened&rdquo;, it can be run at any time, any number of times.</figcaption>
+</figure>
+
+<p>The reconcile pattern is everywhere once you spot it: Kubernetes is essentially one enormous reconcile loop, Terraform is reconcile for cloud resources, and a database migration runner is reconcile for schema. Recognising it is a genuine upgrade in how you design systems.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="seeding">
+<span class="sec-num">PART 1 · TERM 02</span>
+<h2>Seeding</h2>
+
+<div class="term">
+  <p class="term-word">seeding</p>
+  <p class="term-plain">Putting starter data into an empty store so a fresh install isn't useless.</p>
+
+  <div class="known">
+    <span class="lbl">You already know this as</span>
+    <p>Database seeding. A <code>seeds.sql</code> or a <code>db:seed</code> command that inserts the default roles, the admin user, the country list &mdash; the rows the app needs to function but which no user would ever type in by hand.</p>
+  </div>
+
+  <p class="here"><span class="lbl">Here</span> Exactly the same idea, just with <code>chrome.storage</code> instead of Postgres. On install, if there's no site list, read <code>sites.default.json</code> and write those hosts in.</p>
+</div>
+
+<h3>Why it was needed at all</h3>
+
+<p>Two browser behaviours combine into an annoyance:</p>
+
+<ul>
+  <li>Uninstalling an extension <strong>wipes its storage</strong>. Reasonable &mdash; you wouldn't want uninstalled extensions leaving data behind.</li>
+  <li>In Firefox, loading a <em>temporary</em> add-on (what you do when developing) counts as uninstalling the previous copy.</li>
+</ul>
+
+<p>So every single rebuild-and-reload during development wiped the developer's carefully typed list of sites. Seeding restores it automatically.</p>
+
+<div class="aside">
+<span class="lbl">A word about the word &ldquo;subtlety&rdquo;</span>
+<p>That one isn't technical at all. A <em>subtlety</em> is just a fine distinction that's easy to miss and matters anyway. When a document says &ldquo;two subtleties&rdquo;, read it as &ldquo;two small things that look unimportant but will bite you&rdquo;. The next section is one of the best examples I know.</p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="absent">
+<span class="sec-num">PART 1 · TERM 03</span>
+<h2>Absent is not the same as empty</h2>
+
+<p>This is the sentence you quoted:</p>
+
+<blockquote style="margin:1.25rem 0; padding:0.2rem 0 0.2rem 1.1rem; border-left:3px solid var(--line2); color:var(--fg-muted); max-width:64ch;">
+&ldquo;Note the precision of that condition &mdash; an explicitly emptied list stores <code>{hosts: []}</code>, which is present, so it is never re-seeded over.&rdquo;
+</blockquote>
+
+<p>Here's the problem it solves. Seeding must only happen for a <em>brand-new</em> install. But how do you tell &ldquo;brand new&rdquo; from &ldquo;the user deliberately deleted every site&rdquo;? In both cases there are zero sites.</p>
+
+<p>If you get this wrong, the bug is genuinely maddening: the user removes their last site, reloads, and it silently comes back. They remove it again. It comes back again. The extension appears haunted.</p>
+
+<p>The fix is to notice there are <strong>three</strong> states, not two:</p>
+
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 330" role="img" aria-label="Diagram: three storage states. Key absent means never configured, so seed. Key present with an empty array means deliberately emptied, so do not seed. Key present with hosts means normal, so do not seed.">
+  <defs>
+    <marker id="p2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect x="250" y="20" width="260" height="44" fill="none" stroke="currentColor" stroke-width="1.5" rx="3"/>
+  <text x="380" y="48" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12.5" font-weight="600" fill="currentColor">what is in storage?</text>
+
+  <line x1="330" y1="66" x2="150" y2="108" stroke="currentColor" stroke-width="1.4" marker-end="url(#p2)"/>
+  <line x1="380" y1="66" x2="380" y2="108" stroke="currentColor" stroke-width="1.4" marker-end="url(#p2)"/>
+  <line x1="430" y1="66" x2="610" y2="108" stroke="currentColor" stroke-width="1.4" marker-end="url(#p2)"/>
+
+  <!-- absent -->
+  <rect x="20" y="112" width="240" height="90" fill="none" stroke="#0d6e63" stroke-width="2" rx="3"/>
+  <text x="140" y="138" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" font-weight="700" fill="#0d6e63">KEY ABSENT</text>
+  <text x="140" y="160" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">undefined</text>
+  <text x="140" y="184" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.7">never configured</text>
+
+  <!-- empty -->
+  <rect x="280" y="112" width="200" height="90" fill="none" stroke="currentColor" stroke-width="1.5" rx="3"/>
+  <text x="380" y="138" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" font-weight="700" fill="currentColor">KEY PRESENT</text>
+  <text x="380" y="160" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">{ hosts: [] }</text>
+  <text x="380" y="184" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.7">emptied on purpose</text>
+
+  <!-- populated -->
+  <rect x="500" y="112" width="240" height="90" fill="none" stroke="currentColor" stroke-width="1.5" rx="3"/>
+  <text x="620" y="138" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" font-weight="700" fill="currentColor">KEY PRESENT</text>
+  <text x="620" y="160" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">{ hosts: [ &hellip; ] }</text>
+  <text x="620" y="184" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.7">normal use</text>
+
+  <line x1="140" y1="204" x2="140" y2="240" stroke="#0d6e63" stroke-width="1.6" marker-end="url(#p2)"/>
+  <line x1="380" y1="204" x2="380" y2="240" stroke="currentColor" stroke-width="1.4" marker-end="url(#p2)"/>
+  <line x1="620" y1="204" x2="620" y2="240" stroke="currentColor" stroke-width="1.4" marker-end="url(#p2)"/>
+
+  <rect x="40" y="244" width="200" height="36" fill="none" stroke="#0d6e63" stroke-width="2" rx="3"/>
+  <text x="140" y="268" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" font-weight="700" fill="#0d6e63">SEED IT</text>
+
+  <rect x="290" y="244" width="180" height="36" fill="none" stroke="currentColor" stroke-width="1.5" rx="3" opacity="0.6"/>
+  <text x="380" y="268" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor" opacity="0.75">leave alone</text>
+
+  <rect x="530" y="244" width="180" height="36" fill="none" stroke="currentColor" stroke-width="1.5" rx="3" opacity="0.6"/>
+  <text x="620" y="268" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor" opacity="0.75">leave alone</text>
+
+  <text x="20" y="312" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.7">A check for &ldquo;is the list empty?&rdquo; would merge the first two boxes &mdash; and resurrect deleted sites forever.</text>
+</svg>
+</div>
+<figcaption>The distinction that matters is between <em>the key does not exist</em> and <em>the key exists and holds an empty list</em>. Only the first means &ldquo;never configured&rdquo;.</figcaption>
+</figure>
+
+<p>In code the whole subtlety is one line &mdash; testing for the <em>key</em>, not its contents:</p>
+
+<pre><code>// right: is the key there at all?
+if (stored &amp;&amp; stored[HOSTS_STORAGE_KEY]) return;   // configured before, don't seed
+
+// wrong: this treats "emptied on purpose" as "never configured"
+if (hosts.length === 0) seed();</code></pre>
+
+<div class="known">
+<span class="lbl">You already know this as</span>
+<p>You meet this constantly in APIs and just may not have named it. <code>GET /users/7/tags</code> returning <strong>404</strong> (no such user) is a different answer from <strong>200 <code>[]</code></strong> (user exists, has no tags). Same in a <code>PATCH</code> body: <code>{"nickname": null}</code> means &ldquo;clear the nickname&rdquo;, while omitting the field entirely means &ldquo;don't touch it&rdquo;. And in SQL, <code>NULL</code> is not <code>''</code>.</p>
+<p>The general rule: <strong>&ldquo;no value&rdquo; and &ldquo;the empty value&rdquo; are different pieces of information.</strong> Collapsing them destroys the user's intent. Once you start noticing this, you'll find it in half the confusing bugs you meet.</p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="subscribers">
+<span class="sec-num">PART 1 · TERM 04</span>
+<h2>Subscribers</h2>
+
+<div class="term">
+  <p class="term-word">subscriber</p>
+  <p class="term-plain">A function that has asked to be called when something changes.</p>
+
+  <p>You keep a list of functions. When the thing changes, you loop the list and call each one. That's the entire mechanism &mdash; there is nothing else to it.</p>
+
+  <div class="known">
+    <span class="lbl">You already know this as</span>
+    <p>Webhooks. A client registers a callback URL; when an order ships, your server <code>POST</code>s to everyone registered. Subscribers are the same design with the network removed: instead of a URL you store a function, and instead of an HTTP request you just call it.</p>
+    <p>Also: SQL triggers, pub/sub topics, and the listener list behind any event emitter.</p>
+  </div>
+
+  <p class="here"><span class="lbl">Here</span> <code>subscribeSettings(fn)</code> for settings changes, and <code>subscribeObserver(fn)</code> for DOM changes.</p>
+</div>
+
+<h3>The whole implementation</h3>
+
+<p>Jargon makes this sound like a framework. It's four lines:</p>
+
+<pre><code>const listeners = new Set();
+
+function subscribe(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);   // call this to unsubscribe
+}
+
+function notify(value) {
+  for (const fn of listeners) fn(value);
+}</code></pre>
+
+<p>Two details worth absorbing, because both show up in real systems:</p>
+
+<p><strong>Subscribe returns its own undo.</strong> <code>subscribe()</code> hands back a function that removes the listener. That's a widespread convention &mdash; the thing that creates a resource also gives you the way to release it, so you can never lose track of it. In backend terms, it's the <code>DELETE</code> that pairs with your <code>POST</code>, handed to you at creation time.</p>
+
+<p><strong>Why bother at all?</strong> Because it inverts who knows about whom. Without subscribers, the settings module would need to import every feature and call them directly &mdash; so adding a feature would mean editing the settings module. With subscribers, settings knows nothing about features; features announce their own interest. That's called <em>decoupling</em>, and it's the same reason you'd rather emit an <code>order.shipped</code> event than have your order service import the email service, the analytics service and the loyalty service.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="polling">
+<span class="sec-num">PART 1 · TERM 05</span>
+<h2>Polling</h2>
+
+<div class="term">
+  <p class="term-word">polling</p>
+  <p class="term-plain">Asking &ldquo;has it changed yet?&rdquo; over and over, on a timer.</p>
+
+  <div class="known">
+    <span class="lbl">You already know this as</span>
+    <p>The cron job that hits <code>GET /jobs/123/status</code> every 30 seconds until it says <code>done</code>. Compare with the alternative: the job service calls <em>your</em> webhook the moment it finishes. Polling is you asking repeatedly; events are being told once.</p>
+  </div>
+</div>
+
+<div class="mini">
+  <div class="mini-item">
+    <h4>Polling</h4>
+    <p>Simple, works even when the other side offers you nothing. You control the frequency.</p>
+    <p>Costs work every tick even when nothing changed, and you learn about changes up to one interval late.</p>
+  </div>
+  <div class="mini-item">
+    <h4>Events / push</h4>
+    <p>Zero cost while idle, and you find out immediately.</p>
+    <p>Requires something willing to notify you &mdash; and if it misses an event, you may never find out at all.</p>
+  </div>
+</div>
+
+<p>Mature systems often use <strong>both</strong>: events for speed, plus slow polling as a safety net for missed events. That is precisely what this codebase does.</p>
+
+<h3>How it plays out here</h3>
+
+<p>The event mechanism is a <code>MutationObserver</code> &mdash; a browser feature that calls you when the page's HTML changes. Efficient, and free when nothing happens. But it watches <code>document.body</code>, and it cannot see inside a <em>shadow root</em> (a private DOM subtree a component can hide inside itself &mdash; more on that later). So changes in there would be missed entirely.</p>
+
+<p>Hence a 2-second poll as backup. And here's the clever part, which is worth stealing:</p>
+
+<pre><code>function pollTick() {
+  const fingerprint = document.getElementsByTagName('*').length;
+  if (fingerprint === lastFingerprint) return;   // nothing changed — stop here
+  lastFingerprint = fingerprint;
+  fireAll();                                     // only now do the expensive work
+}</code></pre>
+
+<p>Before doing anything costly, it computes something <em>very</em> cheap &mdash; the number of elements on the page &mdash; and bails if that number is unchanged. Counting is far cheaper than re-running every subscriber.</p>
+
+<div class="known">
+<span class="lbl">You already know this as</span>
+<p><strong>ETags and <code>If-None-Match</code>.</strong> Rather than downloading a whole resource to see if it changed, the client sends a cheap fingerprint and the server replies <code>304 Not Modified</code>. Identical idea: a cheap check gates the expensive operation.</p>
+<p>Same family: <code>Last-Modified</code>, checksums before a file sync, and comparing a row's <code>updated_at</code> before recomputing a cache.</p>
+</div>
+
+<div class="aside">
+<span class="lbl">And the honest limitation</span>
+<p>Counting elements misses a change that swaps one element for another, leaving the total identical. The code says so out loud, and accepts it &mdash; this is only a backup for the rare shadow-DOM case, and the next structural change will catch it. Knowing what your optimization <em>doesn't</em> cover, and writing it down, is a mark of good engineering rather than a weakness.</p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="spa">
+<span class="sec-num">PART 1 · TERM 06</span>
+<h2>SPA &mdash; Single Page Application</h2>
+
+<div class="term">
+  <p class="term-word">SPA</p>
+  <p class="term-plain">A website that loads once and then rewrites itself with JavaScript, instead of fetching a new page from the server for every click.</p>
+
+  <div class="known">
+    <span class="lbl">You already know the alternative</span>
+    <p>The traditional model is the one your REST brain expects: browser asks for <code>/orders</code>, server renders complete HTML, browser throws away the old page and displays the new one. Every click is a full round trip and a fresh document.</p>
+  </div>
+</div>
+
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 350" role="img" aria-label="Comparison: a traditional site returns full HTML on every click and reloads the document; an SPA returns an empty shell once, then fetches JSON and rewrites the DOM in place without reloading.">
+  <defs>
+    <marker id="p3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text x="20" y="24" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="700" fill="currentColor" opacity="0.6">TRADITIONAL</text>
+  <line x1="90" y1="40" x2="90" y2="150" stroke="currentColor" stroke-width="1.2" opacity="0.4"/>
+  <line x1="330" y1="40" x2="330" y2="150" stroke="currentColor" stroke-width="1.2" opacity="0.4"/>
+  <text x="90" y="38" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity="0.6">browser</text>
+  <text x="330" y="38" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity="0.6">server</text>
+
+  <line x1="92" y1="60" x2="326" y2="60" stroke="currentColor" stroke-width="1.3" marker-end="url(#p3)"/>
+  <text x="209" y="54" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">GET /orders</text>
+  <line x1="328" y1="82" x2="94" y2="82" stroke="currentColor" stroke-width="1.3" marker-end="url(#p3)"/>
+  <text x="209" y="76" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">full HTML page</text>
+
+  <line x1="92" y1="112" x2="326" y2="112" stroke="currentColor" stroke-width="1.3" marker-end="url(#p3)"/>
+  <text x="209" y="106" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">GET /orders/7 (click)</text>
+  <line x1="328" y1="134" x2="94" y2="134" stroke="currentColor" stroke-width="1.3" marker-end="url(#p3)"/>
+  <text x="209" y="128" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">full HTML page again</text>
+
+  <rect x="400" y="46" width="340" height="96" fill="none" stroke="currentColor" stroke-width="1.3" rx="3" opacity="0.65"/>
+  <text x="416" y="70" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.8">document is REPLACED each time</text>
+  <text x="416" y="92" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.8">&rarr; scripts re-run from scratch</text>
+  <text x="416" y="114" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.8">&rarr; whatever you injected is gone</text>
+  <text x="416" y="132" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.55">predictable, but a slow flash on every click</text>
+
+  <line x1="20" y1="172" x2="740" y2="172" stroke="currentColor" stroke-width="1" opacity="0.25"/>
+
+  <text x="20" y="200" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="700" fill="#0d6e63">SPA</text>
+  <line x1="90" y1="216" x2="90" y2="330" stroke="currentColor" stroke-width="1.2" opacity="0.4"/>
+  <line x1="330" y1="216" x2="330" y2="330" stroke="currentColor" stroke-width="1.2" opacity="0.4"/>
+
+  <line x1="92" y1="236" x2="326" y2="236" stroke="currentColor" stroke-width="1.3" marker-end="url(#p3)"/>
+  <text x="209" y="230" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">GET /</text>
+  <line x1="328" y1="258" x2="94" y2="258" stroke="currentColor" stroke-width="1.3" marker-end="url(#p3)"/>
+  <text x="209" y="252" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">near-empty shell + big JS</text>
+
+  <line x1="92" y1="292" x2="326" y2="292" stroke="#0d6e63" stroke-width="1.3" marker-end="url(#p3)"/>
+  <text x="209" y="286" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#0d6e63">GET /api/orders/7 (click)</text>
+  <line x1="328" y1="314" x2="94" y2="314" stroke="#0d6e63" stroke-width="1.3" marker-end="url(#p3)"/>
+  <text x="209" y="308" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#0d6e63">JSON only</text>
+
+  <rect x="400" y="222" width="340" height="108" fill="none" stroke="#0d6e63" stroke-width="1.5" rx="3"/>
+  <text x="416" y="246" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">JS rewrites the DOM in place</text>
+  <text x="416" y="268" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">&rarr; NO page load, URL changes anyway</text>
+  <text x="416" y="290" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">&rarr; your script does NOT re-run</text>
+  <text x="416" y="312" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">&rarr; the page keeps changing under you</text>
+</svg>
+</div>
+<figcaption>The SPA's server sends data, not pages. Everything you see is assembled in the browser &mdash; which is why an extension cannot assume the page it saw at load time is the page that exists a second later.</figcaption>
+</figure>
+
+<p>Three consequences drive much of this codebase's design:</p>
+
+<ul>
+  <li><strong>Your script runs once, the page changes forever.</strong> The content script is injected at page load. If you scan for textareas then, you miss every one rendered afterwards &mdash; which is most of them.</li>
+  <li><strong>The URL changes without a page load.</strong> Navigating from one page to another inside the app doesn't re-inject anything. That's why the PD Inspector checks <code>location.pathname</code> every 1.5&nbsp;seconds instead of trusting a navigation event.</li>
+  <li><strong>The app starts <em>after</em> the HTML arrives.</strong> The shell downloads fast; the JavaScript then has to run and build the real interface. That gap is where the extension lands, and it's the whole story of step 07 in your chart.</li>
+</ul>
+</section>
+
+<!-- ============================================================ -->
+<section id="bootstrap">
+<span class="sec-num">PART 1 · TERM 07</span>
+<h2>Bootstrapping</h2>
+
+<div class="term">
+  <p class="term-word">bootstrap</p>
+  <p class="term-plain">The startup sequence that takes a system from &ldquo;code is loaded&rdquo; to &ldquo;ready to do work&rdquo;.</p>
+
+  <p>From the old joke about pulling yourself up by your own bootstraps &mdash; a system that has to get itself running before it can run.</p>
+
+  <div class="known">
+    <span class="lbl">You already know this as</span>
+    <p>Your API server's boot: read config &rarr; connect to the database &rarr; run migrations &rarr; register routes &rarr; start listening on the port. Until that finishes, requests get connection-refused. Nobody calls it &ldquo;bootstrapping&rdquo; in a tutorial, but that's what it is.</p>
+  </div>
+
+  <p class="here"><span class="lbl">Here</span> The extension's <code>bootstrap()</code> reads settings and starts the enabled features. Separately, the Angular app does its own, much larger bootstrap. <strong>Two systems, each booting, in the same tab.</strong></p>
+</div>
+
+<h3>And that is the bug</h3>
+
+<p>The extension's content script is injected at <code>document_idle</code> &mdash; roughly &ldquo;the HTML is parsed and things have gone quiet&rdquo;. That sounds late. But for an SPA, the HTML is nearly empty and parsing it is trivial, so <code>document_idle</code> arrives while the app has barely begun. The extension finishes booting <em>before</em> the app it's supposed to augment.</p>
+
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 260" role="img" aria-label="Timeline showing the extension finishing its startup while the host application is still starting, so listeners registered by the extension arrive before the application is ready.">
+  <line x1="20" y1="120" x2="740" y2="120" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+  <text x="20" y="242" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.65">time &rarr;</text>
+
+  <!-- host lane -->
+  <text x="20" y="52" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="700" fill="currentColor" opacity="0.65">HOST APP</text>
+  <rect x="120" y="36" width="90" height="30" fill="none" stroke="currentColor" stroke-width="1.3" rx="3"/>
+  <text x="165" y="56" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">shell HTML</text>
+  <rect x="215" y="36" width="330" height="30" fill="none" stroke="#d8a648" stroke-width="1.8" rx="3"/>
+  <text x="380" y="56" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" font-weight="600" fill="#d8a648">app bootstrapping &mdash; building the real UI</text>
+  <rect x="550" y="36" width="190" height="30" fill="none" stroke="#0d6e63" stroke-width="1.5" rx="3"/>
+  <text x="645" y="56" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#0d6e63">app ready</text>
+
+  <!-- extension lane -->
+  <text x="20" y="180" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="700" fill="currentColor" opacity="0.65">EXTENSION</text>
+  <rect x="215" y="164" width="120" height="30" fill="none" stroke="currentColor" stroke-width="1.5" rx="3"/>
+  <text x="275" y="184" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">injected + boots</text>
+
+  <line x1="275" y1="162" x2="275" y2="70" stroke="#d8a648" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <circle cx="275" cy="120" r="4" fill="#d8a648"/>
+  <text x="288" y="112" font-family="IBM Plex Mono, monospace" font-size="10.5" font-weight="600" fill="#d8a648">we finish here &mdash; while the app is mid-boot</text>
+
+  <line x1="645" y1="70" x2="645" y2="200" stroke="#0d6e63" stroke-width="1.3" stroke-dasharray="4 3"/>
+  <text x="500" y="216" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#0d6e63">only now is the page really usable</text>
+</svg>
+</div>
+<figcaption>Two independent startup sequences in one tab, and nothing coordinates them. The extension is ready first, which sounds like an advantage and is actually the problem.</figcaption>
+</figure>
+
+<div class="known">
+<span class="lbl">You already know this as</span>
+<p>A <strong>race condition</strong> &mdash; two things happening in an order you don't control, where one order works and the other doesn't. You've met it if you've ever had a service start before its database was accepting connections, or seen a test pass alone and fail in the suite.</p>
+<p>The standard cures are the same everywhere: <em>retry</em> (try again in a moment), <em>wait for readiness</em> (poll a health check until it answers), or <em>re-establish on a signal</em>. This codebase uses the first &mdash; and is honest that it's a patch, because nobody has yet worked out <em>why</em> the early listeners are ignored.</p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="overlay">
+<span class="sec-num">PART 1 · TERM 08</span>
+<h2>Overlay</h2>
+
+<div class="term">
+  <p class="term-word">overlay</p>
+  <p class="term-plain">An element drawn on top of the page, positioned to look attached to something &mdash; without actually being inside it.</p>
+
+  <p>Think of a sticky note laid on a book page, versus writing in the margin. The sticky note can be moved to any page and peeled off leaving no trace. Writing in the margin changes the book.</p>
+
+  <p class="here"><span class="lbl">Here</span> One small floating element holds the <em>Open</em> and <em>Copy</em> buttons. When your pointer enters a textarea, the code measures where that textarea is on screen and moves the floating element over its top-right corner. It looks attached. It never was.</p>
+</div>
+
+<p>Mechanically it's two pieces:</p>
+
+<ul>
+  <li><code>position: fixed</code> &mdash; the element is positioned relative to the window, not to whatever is around it in the HTML.</li>
+  <li><code>getBoundingClientRect()</code> &mdash; asks the browser &ldquo;where is this element on screen right now?&rdquo;, giving top/left/width/height in pixels. Copy those numbers onto the floating element and it lands in the right place.</li>
+</ul>
+
+<h3>Why this is the whole performance story</h3>
+
+<p>The alternative &mdash; the original design &mdash; was to inject a wrapper and a button into <em>every</em> textarea. On a method with 120 textareas that's roughly 480 extra elements, and it edits the app's own HTML, and it needs re-scanning every time the page changes to catch new ones.</p>
+
+<p>With one overlay: one element, always. The page's HTML is never touched. And because it works by asking &ldquo;what is the pointer over right now?&rdquo;, a textarea added five minutes later is handled with no registration and no scan.</p>
+
+<div class="known">
+<span class="lbl">You already know this as</span>
+<p>The difference between <code>O(n)</code> and <code>O(1)</code>. If you've ever replaced a loop of 120 single-row <code>INSERT</code>s with one batch statement, or noticed an N+1 query problem in an ORM, this is the same instinct: <em>the cost should not grow with the size of the input if it doesn't have to</em>.</p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="timers">
+<span class="sec-num">PART 1 · TERM 09</span>
+<h2>Timers, and the honest problem with 400&nbsp;ms</h2>
+
+<p>&ldquo;Timers: settings button @400&nbsp;ms, JSON button @1&nbsp;s&rdquo; simply means:</p>
+
+<pre><code>setTimeout(() =&gt; injectSettingsButton(), 400);   // do this 400ms from now
+</code></pre>
+
+<p>Two functions, which you'll see constantly:</p>
+
+<div class="mini">
+  <div class="mini-item">
+    <h4>setTimeout(fn, ms)</h4>
+    <p>Run <code>fn</code> once, <code>ms</code> milliseconds from now.</p>
+  </div>
+  <div class="mini-item">
+    <h4>setInterval(fn, ms)</h4>
+    <p>Run <code>fn</code> every <code>ms</code> milliseconds, forever, until you call <code>clearInterval</code>.</p>
+  </div>
+</div>
+
+<p>The settings button has to be inserted next to the app's page title. At the moment the extension boots, that title doesn't exist yet &mdash; the app hasn't rendered it. So the code waits 400&nbsp;ms and tries then.</p>
+
+<div class="aside">
+<span class="lbl">Why this is a code smell, and worth recognising</span>
+<p>400 is a <strong>magic number</strong>: a value with no derivation behind it, chosen because it happened to work on someone's machine. It's a bet on timing. On a slow laptop, a throttled network, or a much larger method, the app may still not be ready at 400&nbsp;ms &mdash; and the button silently never appears.</p>
+<p>The sturdier principle: <strong>wait for a condition, not for a duration.</strong> Instead of &ldquo;wait 400&nbsp;ms then look&rdquo;, say &ldquo;tell me when the page changes, and look then&rdquo;. This code actually does both &mdash; the timer is a first attempt, and a <code>MutationObserver</code> subscription retries on every DOM change, so the button appears eventually even if 400&nbsp;ms was optimistic. The timer is the fast path; the observer is the correct one.</p>
+<p>You have the same choice in backends: <code>sleep(5)</code> before hitting a service you just started, versus polling its <code>/health</code> until it answers. The second is longer to write and right.</p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="chart">
+<span class="sec-num">PART 2</span>
+<h2>The chart, line by line</h2>
+
+<p>Now the whole thing should read differently. This traces one Automation Designer page from a cold browser start to a hovered textarea. Nothing below introduces a new idea &mdash; it's all Part 1, in order.</p>
+
+<ol class="steps">
+  <li class="step">
+    <div class="step-n">01</div>
+    <div>
+      <p class="step-code">runtime.onStartup &rarr; reconcileContentScripts()</p>
+      <p class="step-body">The browser starts and fires a <code>startup</code> event. The extension's background script wakes up and runs the reconcile from Part 1: read the saved site list, ask the browser what's currently registered, fix the difference.</p>
+      <p class="step-body">&ldquo;Worker then sleeps&rdquo; is important. In Manifest V3 the background script is <strong>not</strong> a long-running server &mdash; the browser shuts it down when it's idle and restarts it when an event arrives. So it can't hold anything in memory between events; everything it must remember goes to storage. If you've written AWS Lambda handlers, that's precisely the model: stateless, event-triggered, no persistence between invocations.</p>
+    </div>
+  </li>
+
+  <li class="step">
+    <div class="step-n">02</div>
+    <div>
+      <p class="step-code">page loads &mdash; DOM parsed, app scripts running</p>
+      <p class="step-body">You navigate to a designer page. The server returns HTML; the browser parses it into the <strong>DOM</strong> (the live tree of elements that JavaScript can read and change) and starts running the app's JavaScript. Nothing of ours yet.</p>
+    </div>
+  </li>
+
+  <li class="step">
+    <div class="step-n">03</div>
+    <div>
+      <p class="step-code">content script injected (document_idle)</p>
+      <p class="step-body">The browser inserts <code>ad-content.js</code> into the page and runs it. <code>document_idle</code> is one of three timing options &mdash; <code>document_start</code> (before anything), <code>document_end</code> (after HTML is parsed), <code>document_idle</code> (after that, when things have quieted down).</p>
+      <p class="step-body">Our file has no <code>main()</code>: the code at the top level simply runs, and the last thing it does is call <code>bootstrap()</code>. That's the extension's own startup sequence beginning.</p>
+    </div>
+  </li>
+
+  <li class="step">
+    <div class="step-n">04</div>
+    <div>
+      <p class="step-code">applyFeatureSettings(loadSettings(), 'init')</p>
+      <p class="step-body">Start the features the user has enabled. But reading <code>chrome.storage</code> is <strong>asynchronous</strong> &mdash; you ask, and the answer arrives later via a callback, the same way a database query doesn't return instantly. The settings haven't come back yet.</p>
+      <p class="step-body">So this first pass uses the <strong>defaults</strong> baked into the code. &ldquo;Synchronous&rdquo; here just means it happens immediately, in order, with no waiting. The features start optimistically now, and get corrected in a moment.</p>
+    </div>
+  </li>
+
+  <li class="step">
+    <div class="step-n">05</div>
+    <div>
+      <p class="step-code">storage callback &rarr; subscribers re-run</p>
+      <p class="step-body">Storage answers. Every subscriber (Part 1, term 04) is called with the real settings, and anything the user had switched off is stopped again.</p>
+      <p class="step-body">This is why a feature may briefly start and then immediately stop on page load &mdash; not a bug, but the cost of not making the user wait for storage before anything works. Backend equivalent: rendering a page from cache instantly, then re-rendering when the authoritative query returns.</p>
+    </div>
+  </li>
+
+  <li class="step">
+    <div class="step-n">06</div>
+    <div>
+      <p class="step-code">timers: settings button @400 ms, JSON button @1 s</p>
+      <p class="step-body">The two injected buttons need to attach to app markup that doesn't exist yet, so each waits before trying. See Part 1, term 09 &mdash; including why these numbers are a bet, and what backs them up.</p>
+    </div>
+  </li>
+
+  <li class="step hot">
+    <div class="step-n">07</div>
+    <div>
+      <p class="step-code">the host SPA finishes bootstrapping &mdash; AFTER us</p>
+      <p class="step-body">The punchline. The app we're augmenting only now finishes starting. We've been ready for a while, holding event listeners the page appears to ignore.</p>
+      <p class="step-body">Read &ldquo;<em>were observed to</em> never receive events&rdquo; carefully &mdash; that phrasing is deliberate. It means somebody watched it happen repeatedly but has <strong>not</strong> established the mechanism. Writing &ldquo;observed&rdquo; rather than &ldquo;because Angular replaces the document&rdquo; is a small act of intellectual honesty: it marks the difference between a measurement and an explanation. Get comfortable writing that distinction down; it's how you avoid building on a guess.</p>
+    </div>
+  </li>
+
+  <li class="step">
+    <div class="step-n">08</div>
+    <div>
+      <p class="step-code">overlay re-arms at 1 s / 3 s / 6 s, and on load + pageshow</p>
+      <p class="step-body">&ldquo;Re-arm&rdquo; means: remove the event listeners and add the same ones again. Someone noticed that toggling the feature off and on by hand fixed it &mdash; and toggling does exactly a detach-and-reattach. So the code does that automatically, a few times, spread across the first six seconds to cover a slow start.</p>
+      <p class="step-body">Three attempts rather than one because you don't know how slow the app will be; spacing them 1/3/6 covers a fast machine and a slow one without hammering. <code>load</code> and <code>pageshow</code> are browser events (page fully loaded; page shown, including when restored from the back button) &mdash; extra moments worth re-checking.</p>
+      <p class="step-body">The doc calls this &ldquo;a workaround, not a fix&rdquo;, and that's the right label: it reliably makes the symptom go away without anyone understanding the cause. Sometimes that's the correct engineering trade &mdash; but you write it down, so the next person knows there's a real answer still to find.</p>
+    </div>
+  </li>
+
+  <li class="step done">
+    <div class="step-n">09</div>
+    <div>
+      <p class="step-code">steady state: zero polling, zero scanning</p>
+      <p class="step-body">Everything's up, and now the extension does <strong>nothing at all</strong> until you act. No repeated searching for textareas, no timers doing busywork. Move the pointer, focus a field, scroll, or let the app change the page &mdash; only then does any code run.</p>
+      <p class="step-body">This is the goal for any code living inside somebody else's application: <em>invisible when idle</em>. The equivalent in your world is a background job that sits on an empty queue costing nothing, versus one that wakes every second to ask whether there's work.</p>
+    </div>
+  </li>
+</ol>
+</section>
+
+<!-- ============================================================ -->
+<section id="next">
+<span class="sec-num">PART 3</span>
+<h2>What's coming in the next sections</h2>
+
+<p>You asked what else to learn ahead of time. These appear later in the main document; here they are in advance so they don't stop you.</p>
+
+<h3>Events</h3>
+
+<div class="mini">
+  <div class="mini-item">
+    <h4>event delegation</h4>
+    <p>Instead of putting a listener on all 120 textareas, put <em>one</em> listener on the whole document and check what the pointer was actually over.</p>
+    <p>You know this: one route <code>/items/:id</code> rather than registering 120 separate routes. Fewer handlers, and it works for items that don't exist yet.</p>
+  </div>
+  <div class="mini-item">
+    <h4>capture vs bubble</h4>
+    <p>An event travels <em>down</em> from the document to the element (capture), then back <em>up</em> (bubble). You choose which leg to listen on.</p>
+    <p>Listening on capture means you hear it first &mdash; before the page's own handlers can cancel it. It's middleware that runs before the route handler.</p>
+  </div>
+  <div class="mini-item">
+    <h4>shadow DOM</h4>
+    <p>A component can hold a private, hidden DOM subtree that ordinary queries can't see into.</p>
+    <p>When an event escapes one, the browser rewrites its <code>target</code> to the outer component &mdash; &ldquo;retargeting&rdquo;. Hence <code>composedPath()[0]</code>, which recovers the element genuinely under the pointer.</p>
+  </div>
+  <div class="mini-item">
+    <h4>hit testing</h4>
+    <p>&ldquo;Which element is at pixel (x,&nbsp;y)?&rdquo; &mdash; <code>document.elementFromPoint(x, y)</code>.</p>
+    <p>Useful because a <code>disabled</code> field receives no mouse events at all, yet still occupies space; hit testing finds it when events cannot.</p>
+  </div>
+</div>
+
+<h3>Controlling how often things run</h3>
+
+<div class="mini">
+  <div class="mini-item">
+    <h4>debounce</h4>
+    <p>&ldquo;Wait until they've stopped for 250&nbsp;ms, then act once.&rdquo; Search-as-you-type: don't query on every keystroke, query when typing pauses.</p>
+  </div>
+  <div class="mini-item">
+    <h4>throttle</h4>
+    <p>&ldquo;Act at most once every 500&nbsp;ms, no matter how many events arrive.&rdquo; Closest to backend rate limiting.</p>
+  </div>
+  <div class="mini-item">
+    <h4>requestAnimationFrame</h4>
+    <p>&ldquo;Run just before the browser paints the next frame&rdquo; &mdash; about 60&times; a second, aligned with the screen.</p>
+    <p>Right for moving something on screen. Suspended in background tabs, which is why the code pairs it with a timeout as backup.</p>
+  </div>
+  <div class="mini-item">
+    <h4>coalescing</h4>
+    <p>Fifty scroll events arrive; you only need to reposition once. Collapse the burst into a single piece of work.</p>
+    <p>Same as batching many small writes into one transaction.</p>
+  </div>
+</div>
+
+<h3>Caching</h3>
+
+<div class="mini">
+  <div class="mini-item">
+    <h4>TTL</h4>
+    <p>Time to live &mdash; how long an entry stays valid. Here: fresh for 6&nbsp;hours, usable up to 14&nbsp;days.</p>
+  </div>
+  <div class="mini-item">
+    <h4>stale-while-revalidate (SWR)</h4>
+    <p>If data is old but not ancient, hand it over <em>immediately</em> and refresh in the background. The user gets an instant answer; the next request gets a fresh one.</p>
+    <p>It's a real HTTP <code>Cache-Control</code> directive &mdash; the same idea you'd put on a CDN.</p>
+  </div>
+  <div class="mini-item">
+    <h4>eviction</h4>
+    <p>What you throw out when the cache is full. Here: a cap of 800 entries, oldest discarded first.</p>
+  </div>
+  <div class="mini-item">
+    <h4>dedup key</h4>
+    <p>A string identifying &ldquo;the same thing&rdquo;, so you don't store one item twice. Here it's URL + start time.</p>
+    <p>A unique constraint, or the idempotency key you'd send with a payment request.</p>
+  </div>
+</div>
+
+<h3>A few one-liners</h3>
+
+<div class="mini">
+  <div class="mini-item">
+    <h4>HAR</h4>
+    <p>HTTP Archive &mdash; a JSON format listing network requests with their headers, timings and bodies. Just a log format; nothing clever.</p>
+  </div>
+  <div class="mini-item">
+    <h4>module singleton</h4>
+    <p>A variable at the top level of a file exists <em>once</em> per bundle. Bundle the file twice and you get two independent copies &mdash; the trap in the CodeMirror finding.</p>
+  </div>
+  <div class="mini-item">
+    <h4>ground truth</h4>
+    <p>A fact you can check directly, as opposed to something inferred. The PD Inspector section is really an argument about preferring the first to the second.</p>
+  </div>
+  <div class="mini-item">
+    <h4>negative control</h4>
+    <p>Deliberately break the thing and confirm your test <em>fails</em>. Proves the test actually detects the problem rather than passing for free.</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="habits">
+<span class="sec-num">PART 3 · CLOSING</span>
+<h2>The habits underneath all of it</h2>
+
+<p>The terminology is the easy half. What actually separates engineers is a handful of habits, and they're all visible in the document you were reading:</p>
+
+<ul>
+  <li><strong>Distinguish measured from explained.</strong> &ldquo;Listeners were <em>observed</em> to never receive events&rdquo; says: this is what happened, and I do not yet know why. Never quietly upgrade an observation into an explanation.</li>
+  <li><strong>Absent is not empty.</strong> Whenever a value can be missing, ask whether missing and blank should mean different things. Usually they should.</li>
+  <li><strong>Prefer a condition to a duration.</strong> <code>sleep(400)</code> is a guess about someone else's machine. Waiting for the thing you actually need is slower to write and doesn't break on a bad day.</li>
+  <li><strong>Make repeated work safe.</strong> If a function can run twice with no harm, you stop needing to know how many times it ran &mdash; which removes a whole category of bug.</li>
+  <li><strong>Write down what your fix doesn't cover.</strong> &ldquo;A workaround, not a fix&rdquo; costs one line and saves the next person hours.</li>
+  <li><strong>Measure before believing.</strong> Three plausible approaches in the PD Inspector scored 14%, 9% and 2%. All three <em>sounded</em> right. Only measurement said otherwise.</li>
+</ul>
+
+<p>One last thing, since you mentioned being scared off by these words. Every term here was invented by somebody who needed a short name for a thing they were doing anyway. There is no hidden layer of difficulty underneath &mdash; when a word looks impenetrable, it's nearly always a two-sentence idea with a bad name. Ask what the two sentences are.</p>
+</section>
+
+<footer>
+  <p>Companion to <strong>belz Extension Internals</strong>, which stays as it was &mdash; nothing here changes that document. Covers the terminology up to and including its <em>Lifecycle</em> section, plus the concepts that appear later.</p>
+  <p>Source: <code>docs/primer.html</code> in belz-extension.</p>
+</footer>
+
+</main>
+</div>
