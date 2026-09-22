@@ -10,7 +10,7 @@ A browser extension that augments Automation Designer (AD), Page Designer (PD), 
 
 - Plain JavaScript (ES modules) — no TypeScript, no React.
 - Manifest V3 (`manifest.json`).
-- Build: `bun build` (see `scripts/build.mjs`) per entry point, then `scripts/escape-non-ascii.mjs` for extension-loader compatibility.
+- Build: `scripts/build.mjs`, then `scripts/escape-non-ascii.mjs` over every output for extension-loader compatibility. The AD and PD content scripts are built together as **one code-split ES-module graph** into `dist/modules/`; every other entry is a standalone bundle. See "Content-script module graph" below.
 - Per-browser packaging: `scripts/pack.mjs` assembles `build/chrome/` and `build/firefox/` trees, the second adding `browser_specific_settings.gecko` for AMO signing.
 - Targets: **runtime-editable** — the manifest declares no static `host_permissions` at all; the user's granted hosts live in `chrome.storage.local` under `sdExtensionHostsV1` and are managed via the options page. `src/background.js` reconciles `chrome.scripting.registerContentScripts` against that list.
 - **No external dependencies at runtime.** The extension talks only to the site the user is inspecting, reusing that page's own session. There is no companion server, CLI, or localhost service.
@@ -154,19 +154,40 @@ Focus-hint shortcut: `Ctrl+Shift+A` / `Ctrl+Shift+P` fire background `chrome.com
 
 Measured node visits per single DOM mutation on a synthetic 40-step method (7,973 nodes, 120 textareas): **2,138,128 → 80**. Idle cost is zero. If you change this file, re-run the benchmark before and after.
 
+## Content-script module graph (lazy editor)
+
+The editor modal (`textarea-editor/modal.js`) carries CodeMirror and every language mode, ~590 KB. It used to be ~94% of each content script, parsed on every AD and PD page load. It is now reached only through `import('./modal.js')` in `textarea-editor/index.js`, and fetched on the first **Open** click.
+
+| | Before | After |
+|---|---|---|
+| Parsed on every AD page load | 641 KB | 53 KB |
+| Parsed on every PD page load | 638 KB | 50 KB |
+| Fetched on first Open click | — | 590 KB (then cached; reopen ~50 ms) |
+
+How it fits together:
+
+- `dist/ad-content.js` and `dist/pd-content.js` are **generated loaders**, written by `build.mjs`. Content scripts cannot be ES modules, so each loader just `import()`s the real entry from `dist/modules/`. They keep the paths `background.js` registers, so registrations did not change.
+- `dist/modules/` is one `bun build --splitting` over both entries: the entries, shared chunks, and the lazy editor chunk (`chunk-<hash>.js`). `build.mjs` wipes `dist/` first so a stale hashed chunk can never ship.
+- `manifest.json` lists `dist/modules/*` in `web_accessible_resources`. **This is required**: without it both Chromium and Firefox refuse the import (verified).
+
+**The rule that must not be broken: one `--splitting` call, never a separate build for the editor.** `modal.js` imports `core/state`, `core/settings` and `ui/modal-lock` — module-level singletons. Built separately, the chunk gets its own copies. That was tested deliberately in both browsers: the editor still opens and looks perfect, but `Ctrl+Shift+Enter` fires Run Test *behind the open editor*, because the shortcut checks a different copy of the modal lock. One graph makes the shared modules shared chunks, loaded once per page.
+
+To lazy-load something else, just use `import()` inside a module in this graph; the bundler handles the rest. Anything reached by a **static** import is eager. To check what a page load costs, walk the static-import closure of `dist/modules/ad-content.js`, not file sizes.
+
 ## Known risks
 
 - **DOM coupling is high.** Selectors in `src/config/constants.js` depend on the AD/PD UI's current class names. When the UI changes upstream, these break first.
 - **Inline styles in modals.** Heavy use of inline style strings — refactors here are noisy; keep them confined.
 - **Date picker / select internals.** AD's custom controls dispatch synthetic events on internal state changes; sync.js has hand-tuned event sequences.
 - **Console noise.** Bootstrap and JSON flows still log via `core/logger.js`. Levels gate output but the calls remain — review before shipping anything verbose.
+- **`dist/modules/*` is web-accessible on every `https://` page.** That is what lets a content script import it, but it also lets any https page request those files by URL. In Chromium the extension ID is stable, so a page that knows it could detect the extension is installed. (Firefox uses a random per-install UUID, so it cannot.) The files contain no secrets. `use_dynamic_url` would close this in Chromium but has not been tested.
 
 ## Safe-change checklist
 
 1. After selector edits, smoke test on a real AD page and a real PD page.
 2. After `sync.js` changes, exercise boolean / date / structured-data paths manually.
 3. After manifest changes, validate both Chromium (`build/chrome/manifest.json`) and Firefox (`build/firefox/manifest.json`) outputs from `scripts/pack.mjs`.
-4. After adding a new entry point, update `manifest.json`, `scripts/build.mjs`, `scripts/pack.mjs` SHARED list (if you're adding an HTML surface), and the table at the top of this file.
+4. After adding a new entry point, update `manifest.json`, `scripts/build.mjs`, `scripts/pack.mjs` SHARED list (if you're adding an HTML surface), and the table at the top of this file. A new **content script** that shares code with AD/PD belongs in the split graph (`splitEntries` in `build.mjs`), not as a standalone bundle.
 5. Rebuild `dist/` before shipping any change that touches `src/`.
 6. When adding a hardcoded string that looks like a URL, path, storage key, or DOM identifier — put it in `src/config/` instead of inlining. Grep for existing entries there before adding a new file.
 

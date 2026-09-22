@@ -11,6 +11,12 @@
   "optional_host_permissions": [
     "*://*/*"
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dist/modules/*"],
+      "matches": ["https://*/*"]
+    }
+  ],
   "devtools_page": "devtools.html",
   "background": {
     "service_worker": "dist/background.js",

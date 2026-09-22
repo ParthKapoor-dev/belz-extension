@@ -16,7 +16,6 @@ import { log } from '../../core/logger.js';
 import { showToast } from '../../ui/toast.js';
 import { copyText } from '../../utils/clipboard.js';
 import { TEXTAREA_EDITOR_LAUNCHER_CLASS } from '../../config/constants.js';
-import { closeTextareaEditor, openTextareaEditor } from './modal.js';
 import { createHoverOverlay } from '../../ui/hover-overlay.js';
 import {
   ICON_BUTTON_STYLE, ICON_BUTTON_HOVER, ICON_BUTTON_UNHOVER,
@@ -24,6 +23,40 @@ import {
 } from '../../ui/styles.js';
 
 const CONTROLS_ID = 'sdExtensionTextareaControls';
+
+// The editor modal is loaded on first use, not with the page.
+//
+// modal.js pulls in CodeMirror and every language mode: ~600 KB, which was
+// ~94% of each content script and was parsed on every AD and PD page load
+// whether or not anyone opened the editor. The bundler splits this dynamic
+// import into its own chunk, fetched the first time Open is clicked.
+//
+// The chunk shares core/state, core/settings and ui/modal-lock with the rest
+// of the content script through common chunks, so there is still exactly ONE
+// instance of each — see scripts/build.mjs for why that is not automatic.
+let modalModule = null;
+
+function loadModal() {
+  if (!modalModule) {
+    modalModule = import('./modal.js').catch((error) => {
+      // Forget the failure, so the next click retries instead of replaying a
+      // cached rejection forever.
+      modalModule = null;
+      throw error;
+    });
+  }
+  return modalModule;
+}
+
+async function openEditorFor(textarea) {
+  try {
+    const modal = await loadModal();
+    modal.openTextareaEditor(textarea);
+  } catch (error) {
+    console.error('[belz] textarea editor failed to load:', error);
+    showToast('Editor failed to load — see console');
+  }
+}
 const TEXTAREA_COPY_BUTTON_CLASS = 'sdExtensionTextareaCopyButton';
 
 // Read-only and disabled textareas qualify too.
@@ -79,7 +112,7 @@ const overlay = createHoverOverlay({
       adjust: (el, size) => {
         el.style.fontSize = `${Math.max(size.glyphSize, 11)}px`;
       },
-      onClick: (textarea) => openTextareaEditor(textarea)
+      onClick: (textarea) => openEditorFor(textarea)
     },
     {
       className: TEXTAREA_COPY_BUTTON_CLASS,
@@ -112,5 +145,9 @@ export function startTextareaEditorFeature() {
 
 export function stopTextareaEditorFeature() {
   overlay.stop();
-  closeTextareaEditor();
+  // Only an editor that was ever loaded can be open. Never trigger the load
+  // just to close something that cannot exist.
+  if (modalModule) {
+    modalModule.then((modal) => modal.closeTextareaEditor(), () => {});
+  }
 }

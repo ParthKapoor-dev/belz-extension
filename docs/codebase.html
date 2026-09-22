@@ -384,7 +384,7 @@ footer p { max-width: 74ch; }
     <li><a href="#adnet">AD Network panel</a></li>
     <li><a href="#pdi">PD Inspector</a></li>
     <li><a href="#perf">How it's optimized</a></li>
-    <li><a href="#finding">New finding: 620&nbsp;KB</a></li>
+    <li><a href="#finding">The lazy editor</a></li>
     <li><a href="#nots">Why JS, not TS</a></li>
     <li><a href="#frameworks">Framework verdict</a></li>
     <li><a href="#build">Build &amp; release</a></li>
@@ -398,16 +398,16 @@ footer p { max-width: 74ch; }
 <header class="masthead">
   <p class="eyebrow">belz-extension &middot; codebase field guide</p>
   <h1>belz Extension Internals</h1>
-  <p class="standfirst">Everything from &ldquo;what is a content script&rdquo; to why 620&nbsp;KB of CodeMirror is parsed on every page load &mdash; the mechanisms, the timings, and the reason behind each decision.</p>
+  <p class="standfirst">Everything from &ldquo;what is a content script&rdquo; to why the page loads 55&nbsp;KB instead of 656&nbsp;KB &mdash; the mechanisms, the timings, and the reason behind each decision.</p>
 </header>
 
 <div class="stamp">
   <div><span class="k">Commit</span><span class="v">2e832a7</span></div>
   <div><span class="k">Branch</span><span class="v">main</span></div>
-  <div><span class="k">As of</span><span class="v">2026-09-04</span></div>
+  <div><span class="k">As of</span><span class="v">2026-09-23</span></div>
   <div><span class="k">Source</span><span class="v">9,566 LOC</span></div>
   <div><span class="k">Files</span><span class="v">54 .js</span></div>
-  <div><span class="k">Build</span><span class="v">0.44 s</span></div>
+  <div><span class="k">Build</span><span class="v">0.39 s</span></div>
 </div>
 
 <!-- ============================================================ -->
@@ -663,7 +663,7 @@ footer p { max-width: 74ch; }
   <text x="20" y="164" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="700" fill="#3b82f6">03</text>
   <text x="20" y="180" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#3b82f6" opacity="0.8">idle</text>
   <text x="140" y="168" font-family="IBM Plex Mono, monospace" font-size="12.5" font-weight="600" fill="#3b82f6">content script injected (document_idle)</text>
-  <text x="140" y="186" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#3b82f6" opacity="0.8">ad-content.js top-level runs &rarr; bootstrap()</text>
+  <text x="140" y="186" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#3b82f6" opacity="0.8">loader imports the module graph &rarr; bootstrap()</text>
 
   <!-- 4 -->
   <circle cx="118" cy="228" r="5" fill="currentColor"/>
@@ -1093,6 +1093,7 @@ footer p { max-width: 74ch; }
 <thead><tr><th>Technique</th><th>Where</th><th>What it buys</th></tr></thead>
 <tbody>
 <tr><td>Shared hover overlay</td><td class="mono">ui/hover-overlay.js</td><td>O(1) injected DOM; no rescans; 2.1M &rarr; 80 node visits per mutation</td></tr>
+<tr><td>Lazy-loaded editor</td><td class="mono">textarea-editor/index.js</td><td>CodeMirror fetched on first Open, not every page load: 656&nbsp;KB &rarr; 55&nbsp;KB eager</td></tr>
 <tr><td>Split entry points</td><td class="mono">ad/pd-content.js</td><td>A PD tab never loads AD-only feature code; <code>/pages/*</code> loads no designer code at all</td></tr>
 <tr><td>One shared MutationObserver</td><td class="mono">core/observer.js</td><td>A single observer for every subscriber, not one each</td></tr>
 <tr><td>Fingerprinted fallback poll</td><td class="mono">core/observer.js</td><td>Live-collection length check skips the work when the DOM has not changed</td></tr>
@@ -1111,57 +1112,74 @@ footer p { max-width: 74ch; }
 
 <!-- ============================================================ -->
 <section id="finding">
-<span class="sec-label">Performance &middot; open</span>
-<h2>New finding: 620&nbsp;KB parsed on every page load</h2>
+<span class="sec-label">Performance &middot; done</span>
+<h2>The lazy editor: 656&nbsp;KB &rarr; 55&nbsp;KB per page load</h2>
 
-<p>This surfaced while evaluating build frameworks and has nothing to do with them. It is the largest remaining optimization in the codebase.</p>
+<p>This was found while evaluating build frameworks, and was the largest optimization left in the codebase. It is now implemented. CodeMirror, with every language mode, was about 94% of each content script and was parsed on every AD and PD page load, whether or not anyone opened the editor. It is now fetched on the first <em>Open</em> click and never before.</p>
 
 <figure>
 <div class="figframe">
-<svg viewBox="0 0 900 300" role="img" aria-label="Bar diagram: ad-content.js is 656 kilobytes of which 620 is CodeMirror, leaving a 36 kilobyte residual; splitting the editor into a lazily imported chunk leaves only the residual loading eagerly.">
-  <text x="20" y="26" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="currentColor" opacity="0.6">TODAY &mdash; loaded on every AD and PD page</text>
+<svg viewBox="0 0 900 250" role="img" aria-label="Bar diagram: before, the AD content script was 656 kilobytes loaded on every page; after, 55 kilobytes load with the page and a 590 kilobyte editor chunk loads only on the first Open click.">
+  <text x="20" y="26" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="currentColor" opacity="0.6">BEFORE &mdash; parsed on every AD page load</text>
+  <rect x="20" y="40" width="820" height="42" fill="#f85149" opacity="0.16"/>
+  <rect x="20" y="40" width="820" height="42" fill="none" stroke="#f85149" stroke-width="1.5"/>
+  <text x="430" y="66" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12.5" font-weight="600" fill="#f85149">ad-content.js &mdash; 656,095 bytes</text>
 
-  <rect x="20" y="42" width="820" height="46" fill="none" stroke="#f85149" stroke-width="1.5"/>
-  <rect x="20" y="42" width="775" height="46" fill="#f85149" opacity="0.16"/>
-  <line x1="795" y1="42" x2="795" y2="88" stroke="currentColor" stroke-width="1.5"/>
-  <text x="407" y="70" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" font-weight="600" fill="#f85149">CodeMirror &mdash; 620 KB</text>
-  <text x="818" y="70" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="currentColor">36</text>
-  <text x="20" y="108" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">ad-content.js 656 KB &nbsp;&middot;&nbsp; pd-content.js 653 KB &nbsp;&middot;&nbsp; ~94% is an editor most page loads never open</text>
+  <text x="20" y="124" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="currentColor" opacity="0.6">AFTER</text>
+  <rect x="20" y="138" width="68" height="42" fill="#3fb950" opacity="0.16"/>
+  <rect x="20" y="138" width="68" height="42" fill="none" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="54" y="164" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="#3fb950">55 KB</text>
+  <rect x="96" y="138" width="744" height="42" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.7"/>
+  <text x="468" y="164" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" font-weight="600" fill="currentColor" opacity="0.8">editor chunk &mdash; 590 KB &mdash; first Open click only</text>
 
-  <text x="20" y="152" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="currentColor" opacity="0.6">AFTER SPLITTING</text>
-
-  <rect x="20" y="168" width="45" height="46" fill="none" stroke="#3fb950" stroke-width="1.5"/>
-  <rect x="20" y="168" width="45" height="46" fill="#3fb950" opacity="0.16"/>
-  <text x="42" y="196" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="#3fb950">36</text>
-  <text x="80" y="190" font-family="IBM Plex Mono, monospace" font-size="11.5" font-weight="600" fill="#3fb950">eager &mdash; the actual features</text>
-  <text x="80" y="207" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.65">overlays, shortcuts, title updater, JSON extractor</text>
-
-  <rect x="480" y="168" width="360" height="46" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 4"/>
-  <text x="660" y="190" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" font-weight="600" fill="currentColor">editor chunk &mdash; 620 KB</text>
-  <text x="660" y="207" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.65">fetched on first Open click, never before</text>
-
-  <text x="20" y="258" font-family="IBM Plex Mono, monospace" font-size="10.5" font-weight="600" fill="#d29922">CAUTION</text>
-  <text x="115" y="258" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.8">a separate `bun build` call duplicates core/state.js, core/settings.js and ui/modal-lock.js &mdash;</text>
-  <text x="115" y="276" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.8">module singletons. Two copies means `state` is two objects. Use one --splitting call over both entries.</text>
+  <text x="20" y="206" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#3fb950">green: every page load</text>
+  <text x="220" y="206" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">dashed: fetched once, when someone actually opens the editor; cached after</text>
+  <text x="20" y="232" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity="0.7">first open: 139 ms Chromium, 85 ms Firefox &middot; reopen: ~50 ms in both</text>
 </svg>
 </div>
-<figcaption>Measured, not estimated: <code>modal.js</code> bundles alone to 620&nbsp;KB, and stripping it leaves a 36&nbsp;KB residual. Only one of the two content scripts loads per page, so this is parse cost per page load, not double-download.</figcaption>
+<figcaption>Measured, not estimated: the eager figure is the <em>static-import closure</em> of the built entry plus its loader, walked file by file. CodeMirror is identified by content &mdash; a class name only its view layer contains &mdash; so the check is &ldquo;CodeMirror is unreachable without <code>import()</code>&rdquo;, not &ldquo;a file got smaller&rdquo;. Run against the old build, the same check fails.</figcaption>
 </figure>
 
-<h3>The fix, and the trap in it</h3>
-<p>Build <code>features/textarea-editor/modal.js</code> as its own chunk and have <code>index.js</code> load it on first use:</p>
+<h3>How it's built</h3>
 
-<pre><code>const mod = await import(chrome.runtime.getURL('dist/textarea-modal.js'));
-mod.openTextareaEditor(textarea);</code></pre>
+<ul>
+  <li><code>textarea-editor/index.js</code> reaches the editor through <code>import('./modal.js')</code>, cached after the first load. A failed load is forgotten rather than cached, so the next click retries, and it shows a toast rather than failing silently.</li>
+  <li>The AD and PD content scripts are now built together as <strong>one code-split ES-module graph</strong> into <code>dist/modules/</code>: two small entries, shared chunks, and the lazy editor chunk.</li>
+  <li>A content script cannot itself be an ES module, so <code>dist/ad-content.js</code> and <code>dist/pd-content.js</code> are now 268-byte generated <em>loaders</em> that <code>import()</code> the real entry. They keep the file paths the background worker registers, so no registration changed.</li>
+  <li><code>manifest.json</code> lists <code>dist/modules/*</code> as <code>web_accessible_resources</code>. That is not a formality: without it, both Chromium and Firefox refuse the import.</li>
+</ul>
 
-<p>This needs a <code>web_accessible_resources</code> entry. Firefox supports dynamic import in content scripts and requires the same declaration, so the approach is cross-browser &mdash; worth verifying on Zen, which is the daily driver here.</p>
+<h3>The trap, now measured instead of argued</h3>
 
-<div class="note bad">
-<span class="tag">Do not build it as a separate invocation</span>
-<p>The current build loop runs one <code>bun build</code> per entry, and following that pattern here would be a correctness bug, not just duplication. <code>modal.js</code> imports <code>core/state.js</code>, <code>core/settings.js</code> and <code>ui/modal-lock.js</code> &mdash; all <strong>module-level singletons</strong>. A separate bundle gets its own copies, so <code>state</code> becomes a different object, <code>subscribeSettings</code> a different subscriber list, and the modal lock a different counter. It must be one <code>bun build --splitting</code> call across both entries so the shared modules land in a shared chunk. That means <code>build.mjs</code> moves from one-invocation-per-entry to a grouped call, and the emitted chunk names must be covered by the <code>web_accessible_resources</code> entry.</p>
+<p>Earlier this page warned that building the editor as a <em>separate</em> bundle would duplicate the module-level singletons. That was reasoning. It has since been tested, by deliberately building it the wrong way and running the same end-to-end test in both browsers.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Check</th><th>Shipped build</th><th>Separate editor bundle</th></tr></thead>
+<tbody>
+<tr><td>Editor opens, shows the text, detects SQL</td><td><span class="pill ok">yes</span></td><td><span class="pill ok">yes</span></td></tr>
+<tr><td><code>Ctrl+Shift+Enter</code> while the editor is open</td><td><span class="pill ok">blocked</span></td><td><span class="pill no">fires Run Test</span></td></tr>
+<tr><td><code>Ctrl+Shift+Enter</code> after closing it</td><td><span class="pill ok">fires</span></td><td><span class="pill ok">fires</span></td></tr>
+</tbody>
+</table>
 </div>
 
-<p><span class="pill hm">Status</span> Recorded in <code>tasks.md</code>, not yet implemented &mdash; it is an architecture change to the build, and worth doing deliberately.</p>
+<div class="note bad">
+<span class="tag">Why the wrong build is dangerous</span>
+<p>It looks perfect. The editor opens, the content is right, and nothing errors. But the Run Test shortcut lives in the eager code and the editor sets the modal lock from the lazy chunk. With two copies of <code>ui/modal-lock.js</code> they check different counters, so the shortcut fires a test <strong>behind the open editor</strong>. Only one <code>bun build --splitting</code> call over both entries puts the shared modules in shared chunks, which is the rule now written into <code>build.mjs</code> and <code>AGENTS.md</code>.</p>
+</div>
+
+<h3>Verified</h3>
+<ul>
+  <li>The real built extension, headless, in <strong>Chromium 149 and Firefox 151</strong>. Firefox was driven over WebDriver BiDi and Chromium over the DevTools protocol, both in real time.</li>
+  <li>Under a <strong>strict page CSP</strong> (<code>script-src 'self'</code>), with identical results in both browsers. The import comes from the extension's own world, not the page's. Neither real site sends a CSP.</li>
+  <li>An earlier Chromium run under <code>--virtual-time-budget</code> appeared to fail. That was the harness: virtual time fast-forwards the test's timers past a real file read. Re-run in real time, it passes.</li>
+</ul>
+
+<div class="note warn">
+<span class="tag">The cost</span>
+<p>Web-accessible files can be requested by any <code>https://</code> page. In Chromium the extension ID is stable, so a page that knows it could detect that the extension is installed. Firefox uses a random per-install ID, so it cannot. The files contain no secrets. Chromium's <code>use_dynamic_url</code> would close this but has not been tested.</p>
+</div>
 </section>
 
 <!-- ============================================================ -->
@@ -1177,7 +1195,7 @@ mod.openTextareaEditor(textarea);</code></pre>
 
 <p><strong>External JSON cannot be honestly typed.</strong> The chain v1/v2 responses and the deployable page configs are third-party payloads of unverified shape. The code already defends with normalizers &mdash; <code>firstString(raw.name, raw.aliasName, metadata.name)</code>, defensive <code>JSON.parse</code> in <code>try</code> blocks, stub entries when a component fetch fails. Writing interfaces for those shapes would produce <em>assertions</em>, not guarantees, and a confidently wrong assertion is worse than an honest unknown.</p>
 
-<p><strong>The build stays trivial.</strong> Eight entry points, one <code>bun build</code> each, 0.44 seconds, no config file, no compile step to debug. Adding TypeScript adds a toolchain to a build that currently has none.</p>
+<p><strong>The build stays trivial.</strong> One short build script, 0.39 seconds, no config file, no compile step to debug. Adding TypeScript adds a toolchain to a build that currently has none.</p>
 
 <p><strong>The intent is already documented.</strong> There are 58 JSDoc annotations &mdash; 33 <code>@param</code>, 17 <code>@returns</code>, 8 <code>@typedef</code> &mdash; concentrated exactly where they earn their keep: the module boundaries. <code>hover-overlay.js</code> documents its whole config object; <code>resolve.js</code> defines an <code>IndexedNode</code> typedef; <code>config.js</code> defines <code>PageContext</code>, <code>PageConfig</code> and <code>ComponentConfig</code>. Editors give IntelliSense from those without a build step.</p>
 
@@ -1239,7 +1257,7 @@ mod.openTextareaEditor(textarea);</code></pre>
 </table>
 </div>
 
-<p><strong>Why one <code>bun build</code> per entry.</strong> A single shared build would mirror the <code>src/</code> subdirectories into the output; building each entry separately lands everything flat in <code>dist/</code>, which is what the manifest paths expect. (This is exactly the pattern the lazy-load finding says must change &mdash; carefully.)</p>
+<p><strong>Two kinds of build.</strong> The AD and PD content scripts are built together as one code-split module graph, so the editor can load lazily while sharing one copy of every singleton (see <a href="#finding">the lazy editor</a>). Every other entry is built alone, one <code>bun build</code> each, because a single shared build would mirror the <code>src/</code> subdirectories into the output instead of landing flat in <code>dist/</code>. <code>dist/</code> is wiped first, because chunk names carry a content hash and a stale one would otherwise ship.</p>
 
 <p><strong>Why the non-ASCII escape pass.</strong> <code>scripts/escape-non-ascii.mjs</code> runs over every bundle for extension-loader compatibility.</p>
 
@@ -1280,8 +1298,11 @@ mod.openTextareaEditor(textarea);</code></pre>
 <table>
 <thead><tr><th>Output</th><th class="num">Bytes</th><th>Loaded when</th></tr></thead>
 <tbody>
-<tr><td class="mono">dist/ad-content.js</td><td class="num">656,095</td><td>Any <code>/automation-designer/*</code> page</td></tr>
-<tr><td class="mono">dist/pd-content.js</td><td class="num">653,067</td><td>Any <code>/ui-designer/*</code> page</td></tr>
+<tr><td class="mono">dist/modules/chunk-* (editor)</td><td class="num">603,655</td><td>First <em>Open</em> click in the textarea editor, then cached</td></tr>
+<tr><td class="mono">dist/modules/chunk-* (shared)</td><td class="num">51,190</td><td>Any AD or PD page &mdash; two chunks, 36,325 + 14,865</td></tr>
+<tr><td class="mono">dist/modules/ad-content.js</td><td class="num">3,244</td><td>Any <code>/automation-designer/*</code> page</td></tr>
+<tr><td class="mono">dist/modules/pd-content.js</td><td class="num">183</td><td>Any <code>/ui-designer/*</code> page</td></tr>
+<tr><td class="mono">dist/ad-content.js, pd-content.js</td><td class="num">268</td><td>Loaders &mdash; what the browser actually injects</td></tr>
 <tr><td class="mono">dist/panel.js</td><td class="num">30,355</td><td>First click on the AD Network tab</td></tr>
 <tr><td class="mono">dist/pd-inspector.js</td><td class="num">12,002</td><td>Any <code>/pages/*</code> page</td></tr>
 <tr><td class="mono">dist/panel-pd.js</td><td class="num">6,996</td><td>First click on the PD Inspector tab</td></tr>
@@ -1298,7 +1319,7 @@ mod.openTextareaEditor(textarea);</code></pre>
 <thead><tr><th>File</th><th class="num">Lines</th><th>Note</th></tr></thead>
 <tbody>
 <tr><td class="mono">devtools/panel.js</td><td class="num">1,143</td><td>Three capture feeds plus the whole detail pane</td></tr>
-<tr><td class="mono">textarea-editor/modal.js</td><td class="num">1,063</td><td>CodeMirror setup + language detection &mdash; the 620&nbsp;KB file</td></tr>
+<tr><td class="mono">textarea-editor/modal.js</td><td class="num">1,063</td><td>CodeMirror setup + language detection &mdash; loaded lazily</td></tr>
 <tr><td class="mono">json-editor/sync.js</td><td class="num">596</td><td>The most fragile piece</td></tr>
 <tr><td class="mono">features/settings/modal.js</td><td class="num">394</td><td></td></tr>
 <tr><td class="mono">json-editor/modal.js</td><td class="num">391</td><td></td></tr>
@@ -1323,7 +1344,6 @@ mod.openTextareaEditor(textarea);</code></pre>
 
 <h3>Open items</h3>
 <ul>
-  <li>Lazy-load CodeMirror out of the content scripts <span class="pill hm">largest win</span></li>
   <li>Find the root cause behind the overlay re-arm workaround</li>
   <li>Move the throwaway test harnesses into <code>bun test</code></li>
   <li>Decide whether the feature-lifecycle console logging stays now that the bug it chased is closed</li>
