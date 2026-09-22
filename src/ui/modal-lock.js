@@ -1,3 +1,6 @@
+/*! belz-singleton: ui/modal-lock */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 let lockCount = 0;
 let lockedScrollY = 0;
 let previousBodyStyles = null;

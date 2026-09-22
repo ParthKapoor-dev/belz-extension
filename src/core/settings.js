@@ -1,3 +1,6 @@
+/*! belz-singleton: core/settings */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 import { SETTINGS_STORAGE_KEY } from '../config/storage-keys.js';
 
 export const TEXTAREA_EDITOR_WRAP_OPTIONS = ['nowrap', 'wrap'];

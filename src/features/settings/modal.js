@@ -1,3 +1,6 @@
+/*! belz-singleton: features/settings/modal */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 import {
   EDITOR_SETTING_DEFINITIONS,
   FEATURE_SETTING_DEFINITIONS,

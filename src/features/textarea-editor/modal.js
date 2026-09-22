@@ -1,3 +1,6 @@
+/*! belz-singleton: features/textarea-editor/modal */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
 import { defaultKeymap, indentWithTab, history } from '@codemirror/commands';

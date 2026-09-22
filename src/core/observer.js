@@ -1,3 +1,6 @@
+/*! belz-singleton: core/observer */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 import { OBSERVER_OPTIONS } from '../config/constants.js';
 
 // The MutationObserver only watches document.body, so changes inside a shadow

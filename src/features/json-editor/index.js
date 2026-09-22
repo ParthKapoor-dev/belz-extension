@@ -1,3 +1,6 @@
+/*! belz-singleton: features/json-editor/index */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 import { subscribeObserver } from '../../core/observer.js';
 import { debouncedInjectJSONButton } from './injector.js';
 import { closeModal } from './modal.js';

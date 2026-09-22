@@ -1,3 +1,6 @@
+/*! belz-singleton: features/title-updater/index */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 import { state } from '../../core/state.js';
 import { extractMethodName, extractPageName } from '../../utils/dom.js';
 import { subscribeObserver } from '../../core/observer.js';

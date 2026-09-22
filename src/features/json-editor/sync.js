@@ -1,3 +1,6 @@
+/*! belz-singleton: features/json-editor/sync */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 import { log } from '../../core/logger.js';
 import { extractAllInputs } from './extractor.js';
 

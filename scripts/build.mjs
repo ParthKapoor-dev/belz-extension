@@ -80,4 +80,8 @@ for (const { src, out } of standalone) {
   escape(`dist/${out}`);
 }
 
+// ---- 3. guard: every stateful module bundled exactly once ------------------
+// Throws (failing the build) if the rule in the header was broken.
+run('node scripts/check-singletons.mjs');
+
 console.log('extension build complete');

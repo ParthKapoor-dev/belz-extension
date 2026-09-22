@@ -1,3 +1,6 @@
+/*! belz-singleton: features/settings/index */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 import {
   EXTENSION_OWNED_ATTR,
   HEADER_BANNER_SELECTOR,

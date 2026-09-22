@@ -1,3 +1,6 @@
+/*! belz-singleton: features/textarea-editor/index */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 // Textarea editor launcher — a single floating overlay shared by every
 // textarea on the page.
 //
@@ -57,6 +60,7 @@ async function openEditorFor(textarea) {
     showToast('Editor failed to load — see console');
   }
 }
+
 const TEXTAREA_COPY_BUTTON_CLASS = 'sdExtensionTextareaCopyButton';
 
 // Read-only and disabled textareas qualify too.

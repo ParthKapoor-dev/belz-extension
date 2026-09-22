@@ -1,3 +1,6 @@
+/*! belz-singleton: core/state */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 // Global state management
 export const state = {
   lastMethodName: null,

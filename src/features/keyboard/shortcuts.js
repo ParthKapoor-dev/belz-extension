@@ -1,3 +1,6 @@
+/*! belz-singleton: features/keyboard/shortcuts */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
 import { triggerRunTest } from '../run-test/index.js';
 import { isModalInteractionLocked } from '../../ui/modal-lock.js';
 import { extractMethodName, extractServiceCategory } from '../../utils/dom.js';
