@@ -1,7 +1,7 @@
 // Registers the DevTools panels — "AD Network" and "PD Inspector".
 //
 // This runs in the devtools-page context (one per open DevTools window). It
-// only registers the panels; all logic lives in panel.js / panel-pd.js, which
+// only registers the panels; all logic lives in ad-network/panel.js / pd-inspector/panel.js, which
 // the browser loads when the user first opens each panel tab.
 //
 // The panel pages (`panel.html`, `panel-pd.html`) live at the extension root

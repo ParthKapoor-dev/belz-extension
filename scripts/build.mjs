@@ -26,9 +26,8 @@
 //    output lands flat in dist/ (a single shared build would mirror the src/
 //    subdirectories). None of these are pages that load CodeMirror.
 //
-// The DevTools HTML shells (devtools.html, panel.html) stay at the extension
-// root and are NOT copied into dist/ — keeping them at the root makes the
-// panel page path resolve the same way in Chromium and Firefox.
+// HTML pages are not handled here: scripts/pack.mjs copies them from src/ to
+// the root of each packaged tree, where their <script src="dist/…"> resolves.
 import { execSync } from 'node:child_process';
 import { readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -47,7 +46,7 @@ const MODULES_DIR = 'dist/modules';
 const splitEntries = ['ad-content', 'pd-content'];
 
 run(
-  `bun build ${splitEntries.map((n) => `src/${n}.js`).join(' ')} ` +
+  `bun build ${splitEntries.map((n) => `src/designer/${n}.js`).join(' ')} ` +
     `--splitting --minify --outdir ${MODULES_DIR} ` +
     `--entry-naming '[name].[ext]' --chunk-naming 'chunk-[hash].[ext]'`
 );
@@ -67,16 +66,16 @@ for (const name of splitEntries) {
 
 // ---- 2. everything else: standalone bundles --------------------------------
 const standalone = [
-  { src: 'src/pd-inspector.js', out: 'pd-inspector.js' },
-  { src: 'src/background.js', out: 'background.js' },
-  { src: 'src/options.js', out: 'options.js' },
+  { src: 'src/pd-inspector/index.js', out: 'pd-inspector.js' },
+  { src: 'src/background/index.js', out: 'background.js' },
+  { src: 'src/options/index.js', out: 'options.js' },
   { src: 'src/devtools/devtools-page.js', out: 'devtools-page.js' },
-  { src: 'src/devtools/panel.js', out: 'panel.js' },
-  { src: 'src/devtools/panel-pd.js', out: 'panel-pd.js' }
+  { src: 'src/devtools/ad-network/panel.js', out: 'panel.js' },
+  { src: 'src/devtools/pd-inspector/panel.js', out: 'panel-pd.js' }
 ];
 
 for (const { src, out } of standalone) {
-  run(`bun build ${src} --outdir dist --minify`);
+  run(`bun build ${src} --minify --outfile dist/${out}`);
   escape(`dist/${out}`);
 }
 

@@ -86,18 +86,16 @@ for (const file of inScope) {
 
 const problems = [];
 
-// Stateful modules that nobody marked. Only the designer content-script
-// source is scanned: these directories and files run in other worlds, where a
-// separate copy is correct.
-const OTHER_WORLD_SRC = [
-  'src/background.js', 'src/options.js', 'src/pd-inspector.js',
-  'src/devtools/', 'src/features/pd-inspector/'
-];
+// Stateful modules that nobody marked. Only source the designer content
+// scripts can reach is scanned: every other top-level directory of src/ is a
+// separate world (background, options, DevTools, the PD inspector), where a
+// module holding its own copy of state is correct.
+const DESIGNER_SRC = ['src/designer/', 'src/config/'];
 const STATEFUL_RE = /^(?:export\s+)?(?:let|var)\s|^(?:export\s+)?const\s+\w+\s*=\s*new\s+(?:Set|Map|WeakMap|WeakSet)\b|^export\s+const\s+state\s*=/m;
 
 for (const file of walk(path.join(root, 'src')).filter((f) => f.endsWith('.js'))) {
   const r = rel(file);
-  if (OTHER_WORLD_SRC.some((p) => (p.endsWith('/') ? r.startsWith(p) : r === p))) continue;
+  if (!DESIGNER_SRC.some((p) => r.startsWith(p))) continue;
   const src = readFileSync(file, 'utf8');
   MARKER_RE.lastIndex = 0;
   if (STATEFUL_RE.test(src) && !MARKER_RE.test(src)) {

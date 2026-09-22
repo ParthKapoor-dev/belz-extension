@@ -7,8 +7,8 @@
 //   build/firefox/   — Firefox manifest (scripts background + gecko id/update_url)
 //
 // The GitHub Actions release workflow runs this, then packs build/chrome into a
-// signed CRX and signs build/firefox into an XPI. Locally it is also handy for
-// `belz extension` testing.
+// signed CRX and signs build/firefox into an XPI. Locally, load build/chrome or
+// build/firefox as an unpacked extension.
 //
 // Usage: node scripts/pack.mjs [--version X.Y.Z]
 
@@ -39,18 +39,26 @@ const version = versionArg ?? manifest.version;
 // 1. Build dist/.
 execSync('node scripts/build.mjs', { cwd: root, stdio: 'inherit' });
 
-// 2. Files every packaged tree needs (besides the manifest, written per-browser).
+// 2. Files every packaged tree needs (besides the manifest, written per-browser),
+// as [source in the repo, path in the packaged tree].
+//
+// The HTML pages live next to their scripts in src/ but are placed at the ROOT
+// of the packaged tree. That location is load-bearing: Chromium resolves a
+// DevTools panel's page path against the extension root, Firefox against the
+// devtools page, and both agree only when the devtools page and the panels
+// sit together at the root. See src/devtools/devtools-page.js.
+//
 // `sites.default.json` is optional and gitignored — when the user keeps one it
 // ships in the tree so a fresh install can restore their site list. stage()
 // skips any entry that does not exist.
 const SHARED = [
-  'dist',
-  'devtools.html',
-  'panel.html',
-  'panel-pd.html',
-  'options.html',
-  'fonts',
-  'sites.default.json'
+  ['dist', 'dist'],
+  ['fonts', 'fonts'],
+  ['src/devtools/devtools.html', 'devtools.html'],
+  ['src/devtools/ad-network/panel.html', 'panel.html'],
+  ['src/devtools/pd-inspector/panel.html', 'panel-pd.html'],
+  ['src/options/options.html', 'options.html'],
+  ['sites.default.json', 'sites.default.json']
 ];
 
 /** Copy the shared payload into build/<target>/. */
@@ -58,9 +66,9 @@ function stage(target) {
   const dest = path.join(buildDir, target);
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
-  for (const item of SHARED) {
-    const from = path.join(root, item);
-    if (existsSync(from)) cpSync(from, path.join(dest, item), { recursive: true });
+  for (const [from, to] of SHARED) {
+    const source = path.join(root, from);
+    if (existsSync(source)) cpSync(source, path.join(dest, to), { recursive: true });
   }
   return dest;
 }

@@ -1,7 +1,7 @@
 {
   "name": "belz-extension",
   "version": "1.0.1",
-  "description": "DevTools browser extension — AD Network panel and designer helpers",
+  "description": "DevTools browser extension \u2014 AD Network panel and designer helpers",
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",
     "@codemirror/commands": "^6.10.0",
@@ -18,6 +18,6 @@
   "scripts": {
     "build": "node scripts/pack.mjs",
     "build:dist": "node scripts/build.mjs",
-    "dev": "bun build src/ad-content.js src/pd-content.js src/devtools/panel.js --outdir dist --watch"
+    "dev": "node scripts/dev.mjs"
   }
 }

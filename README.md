@@ -149,10 +149,9 @@ Click the **⚙** button next to the page title in AD or PD, or press `Alt+Shift
 | `bun install` | Install dependencies |
 | `bun run build` | Bundle everything and assemble `build/chrome` + `build/firefox`. The only command you normally need. |
 | `bun run build:dist` | Bundle to `dist/` only, without the per-browser folders |
+| `bun run dev` | Rebuild `build/chrome` + `build/firefox` every time you save a file |
 
-**The edit loop:** change code → `bun run build` → click the extension's **reload** icon (`chrome://extensions`, or **Reload** in `about:debugging`) → reload the page. Reloading keeps your sites and permissions, but removing and re-adding the extension clears them.
-
-> `bun run dev` isn't usable yet. It writes to `dist/` using a different file layout, and the extension you loaded reads from `build/`. Use the loop above.
+**The edit loop:** run `bun run dev` and leave it running. After each save, click the extension's **reload** icon (`chrome://extensions`, or **Reload** in `about:debugging`), then reload the page. Reloading keeps your sites and permissions, but removing and re-adding the extension clears them.
 
 **Keeping your sites across reinstalls.** Browsers delete an extension's data when it's removed, and so does Firefox's temporary-add-on reload. To avoid retyping your sites, copy `sites.default.json.example` to `sites.default.json` and list them there:
 
@@ -162,18 +161,17 @@ Click the **⚙** button next to the page title in AD or PD, or press `Alt+Shift
 
 On a fresh install they're restored automatically. You still need to click **Grant** once for each, because only you can approve a site permission. The file is gitignored so that your internal hostnames stay out of the repository.
 
-**How it works.** Start with [`AGENTS.md`](./AGENTS.md), the maintained map of the codebase. [`docs/codebase.html`](./docs/codebase.html) covers the architecture, timing and optimizations in depth, and [`docs/primer.html`](./docs/primer.html) explains the terminology from scratch.
+**How it works.** Start with [`AGENTS.md`](./AGENTS.md), the maintained map of the codebase. Each top-level folder of `src/` is one part of the extension, and they run separately from each other:
 
 ```
 src/
-  ad-content.js / pd-content.js   content scripts for AD and PD pages
-  pd-inspector.js                 PD Inspector engine, on published pages
-  background.js                   site registration, shortcuts, message relay
-  options.js                      the Allowed sites page
-  devtools/                       the AD Network and PD Inspector panels
-  features/                       one folder per feature
-  core/ ui/ utils/ config/        shared plumbing
-scripts/                          build and per-browser packaging
+  designer/       content scripts on Automation Designer and Page Designer pages
+  pd-inspector/   the PD Inspector engine, on published pages
+  devtools/       the AD Network and PD Inspector DevTools panels
+  background/     site registration, shortcuts, message relay
+  options/        the Allowed sites page
+  config/         constants shared by all of the above
+scripts/          build, per-browser packaging, dev watcher
 ```
 
 ### Releasing

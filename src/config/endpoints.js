@@ -4,7 +4,7 @@
 // instance the user is already signed in to. The extension talks to no
 // third-party service: method names, categories and designer URLs are read
 // straight from the platform's own REST API, reusing the session the page
-// already holds. See src/devtools/ad-api.js for the client.
+// already holds. See src/devtools/ad-network/api.js for the client.
 
 /** AD chain URL detector — matches both fetch and execute variants. */
 export const CHAIN_PATH_RE = /\/rest\/api\/automation\/chain\//i;
