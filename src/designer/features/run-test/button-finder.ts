@@ -1,8 +1,8 @@
-import { RUN_TEST_EXP_BUTTON_SELECTORS } from '../../../config/constants';
+import { AD } from '../../../config/selectors';
 
 // Button selector logic
 export function findRunTestButton(): HTMLButtonElement | null {
-  for (const selector of RUN_TEST_EXP_BUTTON_SELECTORS) {
+  for (const selector of AD.runTestButtons) {
     const expButtons = document.querySelectorAll<HTMLElement>(selector);
     for (const exp of expButtons) {
       if (exp.offsetParent === null) continue;

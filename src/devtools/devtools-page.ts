@@ -17,6 +17,9 @@
 
 import { isHostsChange, readEnabledHosts } from '../shared/hosts';
 import { evalInPage } from './inspected';
+import { createLogger } from '../shared/logger';
+
+const log = createLogger('devtools');
 
 const PANELS = [
   { title: 'AD Network', page: 'panel.html' },
@@ -48,7 +51,7 @@ async function tryCreatePanels(): Promise<void> {
     chrome.devtools.panels.create(title, '', page, () => {
       if (chrome.runtime && chrome.runtime.lastError) {
         created.delete(title);
-        console.error(`[${title}] panel registration failed:`, chrome.runtime.lastError);
+        log.error(`[${title}] panel registration failed:`, chrome.runtime.lastError);
       }
     });
   }

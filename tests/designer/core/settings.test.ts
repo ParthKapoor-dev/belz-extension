@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { fakeChrome } from '../../fakes/chrome';
 import { SETTINGS_STORAGE_KEY } from '../../../src/config/storage-keys';
 import {
-  DEFAULT_SETTINGS,
   loadSettings,
   setSetting,
   subscribeSettings
 } from '../../../src/designer/core/settings';
+import { DEFAULT_SETTINGS } from '../../../src/config/settings';
 
 /** Simulate a change arriving from another tab or the options page. */
 function storeFromElsewhere(value: unknown) {

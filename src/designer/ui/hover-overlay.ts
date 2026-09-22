@@ -18,8 +18,11 @@
 //     free, so features using this need no MutationObserver subscription
 //   - only one element is ever measured or positioned
 
-import { EXTENSION_OWNED_ATTR } from '../../config/constants';
+import { EXTENSION_OWNED_ATTR } from '../../config/namespace';
 import { applyHoverEffect, type StyleMap } from './styles';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('hover-overlay');
 
 /** Button dimensions for one target, from the optional `sizeFor` hook. */
 export interface OverlaySize {
@@ -324,7 +327,7 @@ export function createHoverOverlay<T extends HTMLElement>(
     attachedDocument = document;
     if (!loggedAttach) {
       loggedAttach = true;
-      console.log(`[belz] ${config.label}: listeners attached`);
+      log.debug(`${config.label}: listeners attached`);
     }
     document.addEventListener('mouseover', onPointerOver, true);
     document.addEventListener('focusin', onFocusIn, true);
@@ -354,7 +357,7 @@ export function createHoverOverlay<T extends HTMLElement>(
   function rearmListeners(): void {
     if (!started) return;
     if (attachedDocument !== document) {
-      console.log(`[belz] ${config.label}: document was replaced — re-arming`);
+      log.debug(`${config.label}: document was replaced — re-arming`);
     }
     detachListeners();
     attachListeners();

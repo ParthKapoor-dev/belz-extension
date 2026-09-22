@@ -2,152 +2,25 @@
 // Holds module-level state, so it must be bundled exactly once;
 // the build fails otherwise. See scripts/check-singletons.mjs.
 import { SETTINGS_STORAGE_KEY } from '../../config/storage-keys';
+import {
+  DEFAULT_SETTINGS,
+  isSettingKey,
+  sanitizeSetting,
+  sanitizeSettings,
+  type Settings
+} from '../../config/settings';
+import { createLogger } from '../../shared/logger';
 
-export const TEXTAREA_EDITOR_WRAP_OPTIONS = ['nowrap', 'wrap'] as const;
-export const TEXTAREA_EDITOR_FONT_SIZE_OPTIONS = [12, 13, 14, 16, 18] as const;
+const log = createLogger('settings');
 
-export type WrapMode = (typeof TEXTAREA_EDITOR_WRAP_OPTIONS)[number];
-export type EditorFontSize = (typeof TEXTAREA_EDITOR_FONT_SIZE_OPTIONS)[number];
+// The schema (keys, defaults, valid values) lives in config/settings.ts.
+// This module holds the live copy for the page and keeps it in step with
+// chrome.storage.
 
-export interface Settings {
-  titleUpdater: boolean;
-  runTestShortcut: boolean;
-  jsonEditor: boolean;
-  outputCopy: boolean;
-  textareaEditor: boolean;
-  textareaEditorWrap: WrapMode;
-  textareaEditorFontSize: EditorFontSize;
-}
-export type SettingKey = keyof Settings;
 export type SettingsListener = (settings: Settings) => void;
-
-export const DEFAULT_SETTINGS: Readonly<Settings> = {
-  titleUpdater: true,
-  runTestShortcut: true,
-  jsonEditor: true,
-  outputCopy: true,
-  textareaEditor: true,
-  textareaEditorWrap: 'wrap',
-  textareaEditorFontSize: 13
-};
-
-/** An on/off setting, shown as a switch. */
-export interface FeatureSettingDefinition {
-  key: SettingKey;
-  label: string;
-  description: string;
-}
-
-/** A setting with a fixed set of values, shown as a dropdown. */
-export interface SelectSettingDefinition extends FeatureSettingDefinition {
-  type: 'select';
-  options: Array<{ value: string; label: string }>;
-}
-
-export const FEATURE_SETTING_DEFINITIONS: FeatureSettingDefinition[] = [
-  {
-    key: 'titleUpdater',
-    label: 'Title Updater',
-    description: 'Update tab title with AD/PD method/page name'
-  },
-  {
-    key: 'runTestShortcut',
-    label: 'Keyboard Shortcuts',
-    description: 'Ctrl+Shift+Enter run test · Shift+L copy link · Esc Esc unfocus'
-  },
-  {
-    key: 'jsonEditor',
-    label: 'JSON Editor',
-    description: 'Show JSON input button and modal editor'
-  },
-  {
-    key: 'outputCopy',
-    label: 'Output Copy',
-    description: 'Show Copy button near output containers'
-  },
-  {
-    key: 'textareaEditor',
-    label: 'Textarea Editor',
-    description: 'Show Open button for native textareas'
-  }
-];
-
-// The editor language is not listed here: it is always detected from the
-// content, and the editor's own header dropdown reports what was detected
-// (and allows a one-off override). A stored default would only fight the
-// detector.
-export const EDITOR_SETTING_DEFINITIONS: SelectSettingDefinition[] = [
-  {
-    key: 'textareaEditorWrap',
-    label: 'Editor Wrap',
-    description: 'Wrap long lines in the large editor',
-    type: 'select',
-    options: [
-      { value: 'nowrap', label: 'No Wrap' },
-      { value: 'wrap', label: 'Wrap' }
-    ]
-  },
-  {
-    key: 'textareaEditorFontSize',
-    label: 'Editor Font Size',
-    description: 'Default font size for large editor',
-    type: 'select',
-    options: TEXTAREA_EDITOR_FONT_SIZE_OPTIONS.map((value) => ({
-      value: String(value),
-      label: `${value}px`
-    }))
-  }
-];
 
 const settingListeners = new Set<SettingsListener>();
 let cachedSettings: Settings = { ...DEFAULT_SETTINGS };
-
-function sanitizeSettingValue<K extends SettingKey>(key: K, value: unknown): Settings[K];
-function sanitizeSettingValue(key: SettingKey, value: unknown): Settings[SettingKey] {
-  if (key === 'titleUpdater'
-    || key === 'runTestShortcut'
-    || key === 'jsonEditor'
-    || key === 'outputCopy'
-    || key === 'textareaEditor') {
-    return Boolean(value);
-  }
-
-  if (key === 'textareaEditorWrap') {
-    return TEXTAREA_EDITOR_WRAP_OPTIONS.includes(value as WrapMode)
-      ? (value as WrapMode)
-      : DEFAULT_SETTINGS.textareaEditorWrap;
-  }
-
-  if (key === 'textareaEditorFontSize') {
-    const parsed = Number.parseInt(String(value), 10);
-    return TEXTAREA_EDITOR_FONT_SIZE_OPTIONS.includes(parsed as EditorFontSize)
-      ? (parsed as EditorFontSize)
-      : DEFAULT_SETTINGS.textareaEditorFontSize;
-  }
-
-  return DEFAULT_SETTINGS[key];
-}
-
-function isSettingKey(key: string): key is SettingKey {
-  return Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key);
-}
-
-function sanitizeSettings(input: unknown): Settings {
-  const next: Settings = { ...DEFAULT_SETTINGS };
-
-  if (!input || typeof input !== 'object') {
-    return next;
-  }
-
-  const record = input as Record<string, unknown>;
-  for (const key of Object.keys(DEFAULT_SETTINGS) as SettingKey[]) {
-    if (Object.prototype.hasOwnProperty.call(record, key)) {
-      (next as Record<SettingKey, unknown>)[key] = sanitizeSettingValue(key, record[key]);
-    }
-  }
-
-  return next;
-}
 
 // chrome.storage.local is the durable, extension-wide store: the content
 // scripts on every designer host share one live view of it.
@@ -161,7 +34,7 @@ function callListener(listener: SettingsListener, snapshot: Settings): void {
   try {
     listener(snapshot);
   } catch (error) {
-    console.error('Settings listener failed:', error);
+    log.error('Settings listener failed:', error);
   }
 }
 
@@ -226,7 +99,7 @@ export function setSetting(key: string, value: unknown): Settings {
     return { ...cachedSettings };
   }
 
-  const normalizedValue = sanitizeSettingValue(key, value);
+  const normalizedValue = sanitizeSetting(key, value);
   if (cachedSettings[key] === normalizedValue) {
     return { ...cachedSettings };
   }

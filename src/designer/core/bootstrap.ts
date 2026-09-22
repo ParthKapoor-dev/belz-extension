@@ -7,13 +7,11 @@
 
 import { startSettingsFeature } from '../features/settings/index';
 import { startCurlAutofillFeature } from '../features/curl-autofill/index';
-import {
-  loadSettings,
-  setSetting,
-  subscribeSettings,
-  type SettingKey,
-  type Settings
-} from './settings';
+import { loadSettings, setSetting, subscribeSettings } from './settings';
+import type { SettingKey, Settings } from '../../config/settings';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('bootstrap');
 
 /** Starts a feature; may return the function that stops it. */
 export type FeatureStarter = () => void | (() => void);
@@ -45,14 +43,14 @@ export function bootstrap(featureStarters: FeatureStarters, options: BootstrapOp
     try {
       cleanup = startFeatureFn();
     } catch (error) {
-      console.error(`[belz] feature "${key}" FAILED to start:`, error);
+      log.error(`feature "${key}" FAILED to start:`, error);
       throw error;
     }
     activeFeatureStops.set(
       key,
       typeof cleanup === 'function' ? cleanup : () => {}
     );
-    console.log(`[belz] feature ON  : ${key}`);
+    log.debug(`feature ON  : ${key}`);
   }
 
   function stopFeature(key: SettingKey): void {
@@ -62,18 +60,18 @@ export function bootstrap(featureStarters: FeatureStarters, options: BootstrapOp
     try {
       cleanup();
     } catch (error) {
-      console.error(`Failed stopping feature "${key}":`, error);
+      log.error(`Failed stopping feature "${key}":`, error);
     } finally {
       activeFeatureStops.delete(key);
       // Logged because an unexpected stop — from a stale stored setting, say —
       // is otherwise indistinguishable from a feature that never started.
-      console.log(`[belz] feature OFF : ${key}`);
+      log.debug(`feature OFF : ${key}`);
     }
   }
 
   function applyFeatureSettings(settings: Settings, source: string): void {
-    console.log(
-      `[belz] applying settings (${source}):`,
+    log.debug(
+      `applying settings (${source}):`,
       featureKeys.map((k) => `${k}=${Boolean(settings[k])}`).join(' ')
     );
     for (const key of featureKeys) {
@@ -84,13 +82,13 @@ export function bootstrap(featureStarters: FeatureStarters, options: BootstrapOp
           stopFeature(key);
         }
       } catch (error) {
-        console.error(`Failed applying feature "${key}":`, error);
+        log.error(`Failed applying feature "${key}":`, error);
       }
     }
   }
 
   function init(): void {
-    console.log('Extension initializing...');
+    log.debug('Extension initializing...');
 
     applyFeatureSettings(loadSettings(), 'init');
     // Fires immediately with the current snapshot, then again once
@@ -110,7 +108,7 @@ export function bootstrap(featureStarters: FeatureStarters, options: BootstrapOp
       startCurlAutofillFeature();
     }
 
-    console.log('Extension initialized successfully');
+    log.debug('Extension initialized successfully');
   }
 
   if (document.readyState === 'loading') {

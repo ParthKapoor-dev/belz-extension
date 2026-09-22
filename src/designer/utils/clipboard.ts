@@ -1,5 +1,7 @@
-import { EXTENSION_OWNED_ATTR } from '../../config/constants';
-import { log } from '../core/logger';
+import { EXTENSION_OWNED_ATTR } from '../../config/namespace';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('clipboard');
 
 export async function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard?.writeText) {
@@ -7,7 +9,7 @@ export async function copyText(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text);
       return true;
     } catch (error) {
-      log('Navigator clipboard copy failed, using fallback:', error);
+      log.debug('Navigator clipboard copy failed, using fallback:', error);
     }
   }
 
@@ -31,7 +33,7 @@ export async function copyText(text: string): Promise<boolean> {
   try {
     copied = document.execCommand('copy');
   } catch (error) {
-    console.error('Clipboard fallback copy failed:', error);
+    log.error('Clipboard fallback copy failed:', error);
   }
 
   textarea.remove();

@@ -22,20 +22,23 @@ Each top-level folder of `src/` runs in its own JavaScript world: its own bundle
 ```
 src/
   config/                    constants shared by every world (no state)
-    constants.ts             DOM selectors, observer config, feature flags
+    settings.ts              the settings schema: keys, defaults, valid values, modal rows
+    selectors.ts             every selector read from the AD/PD pages
+    timings.ts               every wait tuned against the AD/PD pages
     routes.ts                /automation-designer/, /ui-designer/, /pages/
     endpoints.ts             CHAIN_PATH_RE, chain/designer path builders
     storage-keys.ts          SETTINGS/HOSTS/FOCUS/AD_CACHE storage keys
-    namespace.ts             EXT_PREFIX + ns() helper for DOM identifiers
+    namespace.ts             ns() + EXTENSION_OWNED_ATTR: the extension's own DOM names
   shared/                    stateless helpers shared by every world
     hosts.ts                 the allowed-sites list: validation + storage
+    logger.ts                createLogger(scope): the only console output
     messages.ts              runtime message shapes + type guards
     dom.ts                   required(): an element the page's own HTML must have
 
   designer/                  content scripts on AD and PD designer pages
     ad-content.ts            entry, /automation-designer/*
     pd-content.ts            entry, /ui-designer/*
-    core/                    bootstrap, settings, state, logger, observer
+    core/                    bootstrap, settings store, state, observer
     features/                one folder per feature (see below)
     ui/                      modal frame, modal lock, toast, styles, theme, hover overlay
     utils/                   dom + clipboard helpers
@@ -109,6 +112,16 @@ A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see
 2. Each feature module exports `start()` / `stop()` and registers a MutationObserver if it needs to react to DOM changes.
 3. Settings UI (`Ctrl + ,`) toggles features in real time and persists to `chrome.storage.local`.
 
+### Settings, selectors, timings: one place each
+
+- **Settings.** `src/config/settings.ts` is the only list of settings. Each entry gives its label, description, default, allowed values and the settings-modal section (`features`, `editor`, `advanced`). The `Settings` type, `DEFAULT_SETTINGS`, validation (`sanitizeSetting`) and the modal's rows are all derived from it. To add a setting, add one entry there. `designer/core/settings.ts` only holds the page's live copy and keeps it in step with `chrome.storage`.
+- **Host-page selectors.** Every selector that reads the designers' own markup is in `src/config/selectors.ts`, grouped by area (`HEADER`, `AD`, `PD`, `AD_INPUTS`, `AD_WIDGETS`). A list means "try in order, first match wins" (`firstMatch()` in `designer/utils/dom.ts`). The extension's own ids and classes are not there: they are built with `ns()` next to the code that creates them.
+- **Host-page timings.** Waits tuned against the designers' rendering (widget polls, pauses after clicks, first-try delays) are in `src/config/timings.ts`. Timings of the extension's own UI (hover grace, Esc Esc window) stay next to their code.
+
+### Logging
+
+All console output goes through `createLogger(scope)` from `src/shared/logger.ts`: `log.debug/info/warn/error`, printed as `[belz:<scope>] …`. Warnings and errors always print; debug and info print only while the **Debug Logging** setting is on (settings modal → Advanced). Each JavaScript world follows that setting through `chrome.storage`. `tests/shared/logger.test.ts` fails if any other file calls `console.*`. Code injected into the inspected page (`pending-capture.ts`) runs without extension APIs and does not log.
+
 ## Runtime host management
 
 1. The manifest has no `host_permissions` at all, only `optional_host_permissions: ["*://*/*"]`.
@@ -121,7 +134,7 @@ A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see
 
 ## JSON sync engine (the most fragile piece)
 
-- `designer/features/json-editor/extractor.ts` walks the AD Inputs DOM via `config/constants.ts` selectors to produce a `{ key, value, type, control }` set.
+- `designer/features/json-editor/extractor.ts` walks the AD Inputs DOM via the `AD_INPUTS` selectors in `config/selectors.ts` to produce a `{ key, value, type, control }` set.
 - `designer/features/json-editor/sync.ts` normalizes incoming JSON values against each input's declared type:
   - Text / Number / Integer / Boolean / Date / DateTime / Json / Array / Map / StructuredData
 - Special controls handled inline:
@@ -202,10 +215,9 @@ To lazy-load something else, just use `import()` inside a module in this graph; 
 
 ## Known risks
 
-- **DOM coupling is high.** Selectors in `src/config/constants.ts` depend on the AD/PD UI's current class names. When the UI changes upstream, these break first.
+- **DOM coupling is high.** Selectors in `src/config/selectors.ts` depend on the AD/PD UI's current class names. When the UI changes upstream, these break first.
 - **Inline styles in modals.** Heavy use of inline style strings — refactors here are noisy; keep them confined.
 - **Date picker / select internals.** AD's custom controls dispatch synthetic events on internal state changes; sync.ts has hand-tuned event sequences.
-- **Console noise.** Bootstrap and JSON flows still log via `core/logger.ts`. Levels gate output but the calls remain — review before shipping anything verbose.
 - **`dist/modules/*` is web-accessible on every `https://` page.** That is what lets a content script import it, but it also lets any https page request those files by URL. In Chromium the extension ID is stable, so a page that knows it could detect the extension is installed. (Firefox uses a random per-install UUID, so it cannot.) The files contain no secrets. `use_dynamic_url` would close this in Chromium but has not been tested.
 
 ## Safe-change checklist

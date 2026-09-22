@@ -1,6 +1,11 @@
-import { log } from '../../core/logger';
 import { state } from '../../core/state';
 import { normalizeDataType, type DataType, type ExtractedInput } from './types';
+import { AD_INPUTS, AD_WIDGETS } from '../../../config/selectors';
+import { TIMINGS } from '../../../config/timings';
+import { firstMatch } from '../../utils/dom';
+import { createLogger } from '../../../shared/logger';
+
+const log = createLogger('json-editor');
 
 /** An input key and the element that carries it. */
 interface KeyElement {
@@ -23,10 +28,10 @@ export function findAllInputKeys(): KeyElement[] {
 
         let key: string | null = null;
 
-        if (id.startsWith('INPUT_LIST_')) {
-          key = id.substring('INPUT_LIST_'.length);
+        if (id.startsWith(AD_INPUTS.keyIdPrefix)) {
+          key = id.substring(AD_INPUTS.keyIdPrefix.length);
         } else {
-          const fallbackMatch = id.match(/^INPUT_LIST\d+\.(.+)$/);
+          const fallbackMatch = id.match(AD_INPUTS.numberedKeyId);
           if (fallbackMatch) {
             key = fallbackMatch[1] ?? null;
           }
@@ -35,21 +40,21 @@ export function findAllInputKeys(): KeyElement[] {
         if (!key || seenKeys.has(key)) continue;
         seenKeys.add(key);
         keys.push({ key, element: el });
-        log('Found input key:', key);
+        log.debug('Found input key:', key);
       }
     };
 
     // Primary selector used by current implementation.
-    collectKeys(document.querySelectorAll('[id^="INPUT_LIST_"]'));
+    collectKeys(document.querySelectorAll(AD_INPUTS.keyElements));
 
     // Fallback for pages that only expose numeric INPUT_LIST ids.
     if (keys.length === 0) {
-      collectKeys(document.querySelectorAll('[id^="INPUT_LIST"]'));
+      collectKeys(document.querySelectorAll(AD_INPUTS.numberedKeyElements));
     }
 
     // Published page fallback: no INPUT_LIST ids — keys live in .fieldCode spans
     if (keys.length === 0) {
-      const fieldCodeDivs = document.querySelectorAll('.fieldCode');
+      const fieldCodeDivs = document.querySelectorAll(AD_INPUTS.publishedFieldCode);
       for (const div of fieldCodeDivs) {
         const spans = Array.from(div.querySelectorAll('span'));
         let key: string | null = null;
@@ -63,14 +68,14 @@ export function findAllInputKeys(): KeyElement[] {
         if (!key || seenKeys.has(key)) continue;
         seenKeys.add(key);
         keys.push({ key, element: div });
-        log('Found input key (published page):', key);
+        log.debug('Found input key (published page):', key);
       }
     }
 
-    log(`Total input keys found: ${keys.length}`);
+    log.debug(`Total input keys found: ${keys.length}`);
     return keys;
   } catch (error) {
-    console.error('Error finding input keys:', error);
+    log.error('Error finding input keys:', error);
     return [];
   }
 }
@@ -83,18 +88,18 @@ export function findInputContainer(element: Element): HTMLElement | null {
     const maxDepth = 15;
 
     while (current && depth < maxDepth) {
-      if (current.classList && current.classList.contains('service-designer__grid-row')) {
-        log('Found container at depth:', depth);
+      if (current.matches(AD_INPUTS.row)) {
+        log.debug('Found container at depth:', depth);
         return current as HTMLElement;
       }
       current = current.parentElement;
       depth++;
     }
 
-    log('Container not found within max depth');
+    log.debug('Container not found within max depth');
     return null;
   } catch (error) {
-    console.error('Error finding container:', error);
+    log.error('Error finding container:', error);
     return null;
   }
 }
@@ -106,20 +111,20 @@ export function extractDataType(container: Element): DataType {
     // the cells of a nested `_test-case-row` can never shadow the real one
     // (querying `.service-designer__grid-cell` unscoped picked those up too).
     const typeCell =
-      container.querySelector(':scope > .service-designer__grid-cell._type') ||
-      container.querySelector('.service-designer__grid-cell._type');
+      container.querySelector(`:scope > ${AD_INPUTS.typeCell}`) ||
+      container.querySelector(AD_INPUTS.typeCell);
 
     if (!typeCell) {
-      log('Type cell not found, defaulting to Text');
+      log.debug('Type cell not found, defaulting to Text');
       return 'Text';
     }
 
     // Draft mode: type is an editable select.
-    const selectText = typeCell.querySelector('.ui-select-match-text')?.textContent?.trim();
+    const selectText = typeCell.querySelector(AD_INPUTS.typeSelectText)?.textContent?.trim();
     if (selectText) return normalizeDataType(selectText);
 
     // Newer UI: a `.type_name` div.
-    const typeName = typeCell.querySelector('.type_name')?.textContent?.trim();
+    const typeName = typeCell.querySelector(AD_INPUTS.typeName)?.textContent?.trim();
     if (typeName) return normalizeDataType(typeName);
 
     // Published mode: the cell is plain text (e.g. "Date", "Structured Data").
@@ -128,10 +133,10 @@ export function extractDataType(container: Element): DataType {
       return normalizeDataType(text);
     }
 
-    log('Type text empty, defaulting to Text');
+    log.debug('Type text empty, defaulting to Text');
     return 'Text';
   } catch (error) {
-    console.error('Error extracting data type:', error);
+    log.error('Error extracting data type:', error);
     return 'Text';
   }
 }
@@ -144,96 +149,73 @@ export function extractDataType(container: Element): DataType {
 // sync layer can report it as "skipped" rather than silently dropping the key.
 export function findTestValueElement(container: Element, type: DataType): HTMLElement | null {
   try {
-    const testCaseRow = container.querySelector('.service-designer__grid-row._test-case-row');
+    const testCaseRow = container.querySelector(AD_INPUTS.testCaseRow);
     if (!testCaseRow) {
-      log('Test case row not found (is Test Mode on?)');
+      log.debug('Test case row not found (is Test Mode on?)');
       return null;
     }
 
-    let element: HTMLElement | null = null;
-
-    switch (type) {
-      case 'Boolean':
-        element =
-          testCaseRow.querySelector('.boolean_response exp-select') ||
-          testCaseRow.querySelector('exp-select');
-        break;
-
-      case 'Date':
-        element = testCaseRow.querySelector('exp-date-picker');
-        break;
-
-      case 'DateTime':
-        element =
-          testCaseRow.querySelector('exp-date-time') ||
-          testCaseRow.querySelector('exp-date-picker');
-        break;
-
-      case 'File':
-        element = testCaseRow.querySelector('input[type="file"]');
-        break;
-
-      case 'Integer':
-      case 'Number':
-        element =
-          testCaseRow.querySelector('input[type="number"]') ||
-          testCaseRow.querySelector('input[placeholder="Enter Here"]') ||
-          testCaseRow.querySelector('input.input_default') ||
-          testCaseRow.querySelector('input:not([type="file"]):not([type="checkbox"])');
-        break;
-
-      default:
-        // Text, Url, Json, Array, Map, StructuredData — plain textareas.
-        element =
-          testCaseRow.querySelector('textarea') ||
-          testCaseRow.querySelector('input[placeholder="Enter Here"]') ||
-          testCaseRow.querySelector('input:not([type="file"]):not([type="checkbox"])');
-    }
+    const element = firstMatch(testCaseRow, testValueSelectors(type));
 
     if (!element) {
-      log(`Test value element not found for type: ${type}`);
+      log.debug(`Test value element not found for type: ${type}`);
       return null;
     }
 
-    log(`Found test value <${element.tagName.toLowerCase()}> for type ${type}`);
+    log.debug(`Found test value <${element.tagName.toLowerCase()}> for type ${type}`);
     return element;
   } catch (error) {
-    console.error('Error finding test value element:', error);
+    log.error('Error finding test value element:', error);
     return null;
+  }
+}
+
+function testValueSelectors(type: DataType): readonly string[] {
+  switch (type) {
+    case 'Boolean':
+    case 'Date':
+    case 'DateTime':
+    case 'File':
+    case 'Number':
+      return AD_INPUTS.testValue[type];
+    case 'Integer':
+      return AD_INPUTS.testValue.Number;
+    default:
+      return AD_INPUTS.testValue.Text;
   }
 }
 
 // ===== Step 5: Input Name Extraction =====
 export function extractInputName(container: Element, key: string): string {
   try {
-    const cells = container.querySelectorAll('.service-designer__grid-cell');
+    const cells = container.querySelectorAll(AD_INPUTS.cell);
     
     if (cells.length < 1) {
-      log('No grid cells found for name extraction');
+      log.debug('No grid cells found for name extraction');
       return key;
     }
 
     const nameCell = cells[0]!; // 1st cell
 
     // Strategy 1: Find input with placeholder "Enter Here"
-    const nameInput = nameCell.querySelector<HTMLInputElement>('input[placeholder="Enter Here"]');
+    const nameInput = nameCell.querySelector<HTMLInputElement>(AD_INPUTS.nameInput);
     if (nameInput && nameInput.value && nameInput.value.trim()) {
-      log('Found name from input:', nameInput.value);
+      log.debug('Found name from input:', nameInput.value);
       return nameInput.value.trim();
     }
 
     // Strategy 2: Extract from Field Code
     const fieldCodeMatch = container.textContent?.match(/Field Code:\s*#\{([^}]+)\}/);
     if (fieldCodeMatch && fieldCodeMatch[1]) {
-      log('Found name from field code:', fieldCodeMatch[1]);
+      log.debug('Found name from field code:', fieldCodeMatch[1]);
       return fieldCodeMatch[1];
     }
 
     // Fallback: Use key
-    log('Using key as name:', key);
+    log.debug('Using key as name:', key);
     return key;
   } catch (error) {
-    console.error('Error extracting input name:', error);
+    log.error('Error extracting input name:', error);
     return key;
   }
 }
@@ -246,7 +228,7 @@ export function isMandatory(container: Element): boolean {
     
     // Check for asterisk or "Yes" in mandatory cell
     if (/\*|mandatory|required/i.test(text)) {
-      const mandatoryCells = container.querySelectorAll('.service-designer__grid-cell._mandatory');
+      const mandatoryCells = container.querySelectorAll(AD_INPUTS.mandatoryCell);
       if (mandatoryCells.length > 0) {
         const cellText = mandatoryCells[0]!.textContent?.trim().toLowerCase();
         return cellText === 'yes';
@@ -256,7 +238,7 @@ export function isMandatory(container: Element): boolean {
 
     return false;
   } catch (error) {
-    console.error('Error checking mandatory:', error);
+    log.error('Error checking mandatory:', error);
     return false;
   }
 }
@@ -264,21 +246,21 @@ export function isMandatory(container: Element): boolean {
 // ===== Main Input Extraction with Caching =====
 export function extractAllInputs(forceRefresh = false): ExtractedInput[] {
   try {
-    // Use cache if available and recent (within 2 seconds)
+    // Reuse a recent scan.
     const now = Date.now();
-    if (!forceRefresh && state.cachedInputs && (now - state.lastInputScanTime) < 2000) {
-      log('Using cached inputs');
+    if (!forceRefresh && state.cachedInputs && (now - state.lastInputScanTime) < TIMINGS.inputScanCache) {
+      log.debug('Using cached inputs');
       return state.cachedInputs;
     }
 
-    log('Starting input extraction...');
+    log.debug('Starting input extraction...');
     const inputs: ExtractedInput[] = [];
 
     // Step 1: Find all input keys
     const keyElements = findAllInputKeys();
 
     if (keyElements.length === 0) {
-      log('No input keys found');
+      log.debug('No input keys found');
       state.cachedInputs = [];
       state.lastInputScanTime = now;
       return [];
@@ -290,7 +272,7 @@ export function extractAllInputs(forceRefresh = false): ExtractedInput[] {
         // Step 2: Find container
         const container = findInputContainer(element);
         if (!container) {
-          log(`Container not found for key: ${key}`);
+          log.debug(`Container not found for key: ${key}`);
           continue;
         }
 
@@ -303,7 +285,7 @@ export function extractAllInputs(forceRefresh = false): ExtractedInput[] {
         // Step 4: Find test value element
         const testValueElement = findTestValueElement(container, type);
         if (!testValueElement) {
-          log(`Test value element not found for key: ${key}`);
+          log.debug(`Test value element not found for key: ${key}`);
           continue;
         }
 
@@ -315,19 +297,19 @@ export function extractAllInputs(forceRefresh = false): ExtractedInput[] {
 
         // For boolean exp-select, get value from match text
         if (type === 'Boolean' && testValueElement.tagName.toLowerCase() === 'exp-select') {
-          const matchText = testValueElement.querySelector('.ui-select-match-text');
+          const matchText = testValueElement.querySelector(AD_WIDGETS.select.text);
           currentValue = matchText?.textContent?.trim() ?? '';
-          log(`Got boolean value from select: ${currentValue}`);
+          log.debug(`Got boolean value from select: ${currentValue}`);
         }
 
         // For structured data, if the main textarea contains "[object Object]", try the default_value textarea
         if (isStructuredData && currentValue === '[object Object]') {
-          const testCaseRow = container.querySelector('.service-designer__grid-row._test-case-row');
+          const testCaseRow = container.querySelector(AD_INPUTS.testCaseRow);
           if (testCaseRow) {
-            const defaultTextarea = testCaseRow.querySelector<HTMLTextAreaElement>('.wrapper-content.textarea_outer.default_value textarea');
+            const defaultTextarea = testCaseRow.querySelector<HTMLTextAreaElement>(AD_INPUTS.structuredDefault);
             if (defaultTextarea && defaultTextarea.value && defaultTextarea.value !== '[object Object]') {
               currentValue = defaultTextarea.value;
-              log(`Using default_value textarea for structured data: ${currentValue.substring(0, 50)}...`);
+              log.debug(`Using default_value textarea for structured data: ${currentValue.substring(0, 50)}...`);
             }
           }
         }
@@ -345,13 +327,13 @@ export function extractAllInputs(forceRefresh = false): ExtractedInput[] {
           container
         });
 
-        log(`Extracted input: ${key} (${name}) - Type: ${type}, Mandatory: ${mandatory}`);
+        log.debug(`Extracted input: ${key} (${name}) - Type: ${type}, Mandatory: ${mandatory}`);
       } catch (error) {
-        console.error(`Error processing input ${key}:`, error);
+        log.error(`Error processing input ${key}:`, error);
       }
     }
 
-    log(`Successfully extracted ${inputs.length} inputs`);
+    log.debug(`Successfully extracted ${inputs.length} inputs`);
     
     // Update cache
     state.cachedInputs = inputs;
@@ -359,7 +341,7 @@ export function extractAllInputs(forceRefresh = false): ExtractedInput[] {
 
     return inputs;
   } catch (error) {
-    console.error('Error in extractAllInputs:', error);
+    log.error('Error in extractAllInputs:', error);
     return [];
   }
 }

@@ -8,19 +8,19 @@
 // and a querySelectorAll sweep per mutation batch.
 //
 // It is now a single hover-positioned overlay that touches nothing on the page.
-// See designer/ui/hover-overlay.js.
+// See designer/ui/hover-overlay.ts.
 
-import {
-  OUTPUT_CONTAINER_SELECTOR,
-  EXTENSION_OWNED_ATTR
-} from '../../../config/constants';
+import { AD } from '../../../config/selectors';
+import { EXTENSION_OWNED_ATTR } from '../../../config/namespace';
 import { showToast } from '../../ui/toast';
 import { copyText } from '../../utils/clipboard';
-import { log } from '../../core/logger';
 import { createHoverOverlay } from '../../ui/hover-overlay';
 import {
   ICON_BUTTON_STYLE, ICON_BUTTON_HOVER, ICON_BUTTON_UNHOVER
 } from '../../ui/styles';
+import { createLogger } from '../../../shared/logger';
+
+const log = createLogger('output-copy');
 
 const CONTROLS_ID = 'sdExtensionOutputCopyControls';
 
@@ -48,7 +48,7 @@ function resolveOutputContainer(node: Element, event: Event): HTMLElement | null
     const under = document.elementFromPoint(clientX, clientY);
     if (under && under.tagName === 'TEXTAREA') return null;
   }
-  return node.closest<HTMLElement>(OUTPUT_CONTAINER_SELECTOR);
+  return node.closest<HTMLElement>(AD.outputContainer);
 }
 
 const overlay = createHoverOverlay({
@@ -76,7 +76,7 @@ const overlay = createHoverOverlay({
 });
 
 export function startOutputCopyFeature(): () => void {
-  log('Initializing output copy feature...');
+  log.debug('Initializing output copy feature...');
   overlay.start();
   return stopOutputCopyFeature;
 }

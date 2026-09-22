@@ -8,6 +8,9 @@
 import { HOSTS_STORAGE_KEY } from '../config/storage-keys';
 import { AD_ROUTE_PREFIX, PD_ROUTE_PREFIX, PAGES_ROUTE_PREFIX } from '../config/routes';
 import { readEnabledHosts, writeHosts, type HostEntry } from '../shared/hosts';
+import { createLogger } from '../shared/logger';
+
+const log = createLogger('background');
 
 interface ScriptTemplate {
   /** Id prefix: the registration id is `<key>-<host>`. */
@@ -78,7 +81,7 @@ export async function reconcileContentScripts(): Promise<void> {
       await chrome.scripting.updateContentScripts(toUpdate);
     }
   } catch (err) {
-    console.error('[belz-extension] content script reconcile failed:', err);
+    log.error('content script reconcile failed:', err);
   }
 }
 
@@ -127,8 +130,8 @@ export async function seedHostsIfEmpty(): Promise<void> {
     if (!hosts.length) return;
 
     await writeHosts(hosts);
-    console.info(
-      `[belz-extension] seeded ${hosts.length} site(s) from sites.default.json — ` +
+    log.info(
+      `seeded ${hosts.length} site(s) from sites.default.json — ` +
         'open the options page to grant them.'
     );
   } catch {

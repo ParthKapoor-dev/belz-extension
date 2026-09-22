@@ -1,7 +1,9 @@
 /*! belz-singleton: designer/core/observer */
 // Holds module-level state, so it must be bundled exactly once;
 // the build fails otherwise. See scripts/check-singletons.mjs.
-import { OBSERVER_OPTIONS } from '../../config/constants';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('observer');
 
 // The MutationObserver only watches document.body, so changes inside a shadow
 // root never reach it. The poll is the safety net for those — but it used to
@@ -24,7 +26,7 @@ function fireAll(): void {
     try {
       callback();
     } catch (error) {
-      console.error('Observer subscriber failed:', error);
+      log.error('Observer subscriber failed:', error);
     }
   }
 }
@@ -61,7 +63,7 @@ export function subscribeObserver(callback: Subscriber): () => void {
 
   if (!observer) {
     observer = new MutationObserver(onMutations);
-    observer.observe(document.body, OBSERVER_OPTIONS);
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   if (!pollTimer) {
@@ -72,7 +74,7 @@ export function subscribeObserver(callback: Subscriber): () => void {
   try {
     callback();
   } catch (error) {
-    console.error('Observer subscriber failed on initial call:', error);
+    log.error('Observer subscriber failed on initial call:', error);
   }
 
   return () => unsubscribeObserver(callback);

@@ -106,7 +106,7 @@ Open a **published** page (a `/pages/...` URL) on an allowed site, open DevTools
 
 ### Settings
 
-Click the **⚙** button next to the page title in AD or PD, or press `Alt+Shift+S`. Here you can switch any feature on or off and set the editor's default font size and line wrapping. Changes apply immediately and are shared across all your sites.
+Click the **⚙** button next to the page title in AD or PD, or press `Alt+Shift+S`. Here you can switch any feature on or off and set the editor's default font size and line wrapping. Under **Advanced**, **Debug Logging** prints the extension's step-by-step messages to the browser console. Changes apply immediately and are shared across all your sites.
 
 ---
 
@@ -138,7 +138,7 @@ Click the **⚙** button next to the page title in AD or PD, or press `Alt+Shift
 
 **The extension disappeared in Firefox.** Temporary add-ons are removed when Firefox closes. Load it again (see [Install](#install)).
 
-**A feature stopped working after an upstream UI change.** The extension relies on the AD/PD page structure, so that's the likeliest cause. Please [open an issue](https://github.com/ParthKapoor-dev/belz-extension/issues).
+**A feature stopped working after an upstream UI change.** The extension relies on the AD/PD page structure, so that's the likeliest cause. Turn on **Debug Logging** in settings, reload, and check the console for `[belz:…]` messages. The page selectors all live in `src/config/selectors.ts`. Please [open an issue](https://github.com/ParthKapoor-dev/belz-extension/issues).
 
 ---
 
@@ -173,7 +173,7 @@ src/
   devtools/       the AD Network and PD Inspector DevTools panels
   background/     site registration, shortcuts, message relay
   options/        the Allowed sites page
-  config/         constants shared by all of the above
+  config/         settings schema, host-page selectors and timings, constants
   shared/         helpers shared by all of the above
 tests/            unit tests (mirroring src/), e2e/ for real browsers
 scripts/          build, per-browser packaging, dev watcher

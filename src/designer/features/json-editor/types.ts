@@ -1,5 +1,8 @@
 // The AD input model: the data types an input can declare, what the extractor
 // reads for each input, and conversion of page values back to JSON.
+import { createLogger } from '../../../shared/logger';
+
+const log = createLogger('json-editor');
 
 /** Every data type an AD input can declare, normalised. */
 export type DataType =
@@ -77,7 +80,7 @@ function toJsonValue(input: Pick<ExtractedInput, 'key' | 'type' | 'currentValue'
       try {
         return JSON.parse(value);
       } catch (e) {
-        console.error(`Error parsing value for ${input.key}:`, e);
+        log.error(`Error parsing value for ${input.key}:`, e);
         return value;
       }
 

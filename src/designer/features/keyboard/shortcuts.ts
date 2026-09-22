@@ -8,12 +8,10 @@ import { showToast } from '../../ui/toast';
 import { subscribeObserver } from '../../core/observer';
 import { showModal as showJsonInputModal } from '../json-editor/modal';
 import { AD_ROUTE_PREFIX } from '../../../config/routes';
+import { TIMINGS } from '../../../config/timings';
 
 // Window within which a second Escape press counts as an "Esc Esc".
 const DOUBLE_ESCAPE_WINDOW_MS = 500;
-// Pause after committing a field so the AD app processes the blur/change
-// before the test is triggered.
-const COMMIT_SETTLE_MS = 150;
 
 let observerUnsubscribe: (() => void) | null = null;
 let lastEscapeTime = 0;
@@ -54,7 +52,7 @@ export function handleKeydown(event: KeyboardEvent): void {
     event.stopPropagation();
     if (commitActiveElement()) {
       // Give the AD app a moment to register the blur before running.
-      setTimeout(triggerRunTest, COMMIT_SETTLE_MS);
+      setTimeout(triggerRunTest, TIMINGS.runTestCommitSettle);
     } else {
       triggerRunTest();
     }

@@ -1,17 +1,19 @@
 /*! belz-singleton: designer/features/settings/index */
 // Holds module-level state, so it must be bundled exactly once;
 // the build fails otherwise. See scripts/check-singletons.mjs.
-import {
-  EXTENSION_OWNED_ATTR,
-  HEADER_BANNER_SELECTOR,
-  SETTINGS_BUTTON_ID
-} from '../../../config/constants';
-import { log } from '../../core/logger';
+import { EXTENSION_OWNED_ATTR, ns } from '../../../config/namespace';
+import { HEADER } from '../../../config/selectors';
+import { TIMINGS } from '../../../config/timings';
 import { hideSettingsModal, openSettingsModal } from './modal';
 import { subscribeObserver } from '../../core/observer';
 import { PRIMARY_BUTTON_STYLE } from '../../ui/styles';
 import { isOpenSettings } from '../../../shared/messages';
-import type { Settings } from '../../core/settings';
+import type { Settings } from '../../../config/settings';
+import { createLogger } from '../../../shared/logger';
+
+const log = createLogger('settings');
+
+const SETTINGS_BUTTON_ID = ns('SettingsButton');
 
 /** How the settings UI reads and writes settings. */
 export interface SettingsAccess {
@@ -57,16 +59,16 @@ function injectSettingsButton(onOpen: () => void): boolean {
     return true;
   }
 
-  const headerBanner = document.querySelector(HEADER_BANNER_SELECTOR);
+  const headerBanner = document.querySelector(HEADER.banner);
   if (!headerBanner) {
-    log('Settings injection skipped: .header_banner not found');
+    log.debug('Settings injection skipped: no header banner', HEADER.banner);
     return false;
   }
 
   const button = createSettingsButton(onOpen);
-  const pageTitle = headerBanner.querySelector<HTMLElement>('.page_title');
+  const pageTitle = headerBanner.querySelector<HTMLElement>(HEADER.title);
   if (!pageTitle) {
-    log('Settings injection skipped: .header_banner .page_title not found');
+    log.debug('Settings injection skipped: no title in the header banner', HEADER.title);
     return false;
   }
 
@@ -88,7 +90,7 @@ function debouncedInjectSettingsButton(onOpen: () => void): void {
 
   settingsInjectionTimer = setTimeout(() => {
     injectSettingsButton(onOpen);
-  }, 250);
+  }, TIMINGS.settingsButtonDebounce);
 }
 
 export function startSettingsFeature({ getSettings, setSetting }: SettingsAccess): () => void {
@@ -96,7 +98,7 @@ export function startSettingsFeature({ getSettings, setSetting }: SettingsAccess
 
   settingsInitialTimer = setTimeout(() => {
     injectSettingsButton(openSettings);
-  }, 400);
+  }, TIMINGS.settingsButtonFirstTry);
 
   if (!unsubscribe) {
     unsubscribe = subscribeObserver(() => {

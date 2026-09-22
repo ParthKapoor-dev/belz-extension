@@ -37,6 +37,9 @@ import { AUTOFILL_PARAM } from '../../config/endpoints';
 import { required } from '../../shared/dom';
 import { watchFocusFlag } from '../focus-flag';
 import type { HarEntry, MethodSummary, PendingEntry } from './types';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('ad-network');
 
 type StatusGroup = 'ok' | 'redir' | 'clienterr' | 'srverr' | 'error';
 type DetailTab = 'headers' | 'payload' | 'response' | 'timing';
@@ -471,7 +474,7 @@ async function flushResolve(): Promise<void> {
         applySummary(uuid, summary);
       } catch (err) {
         lastError = err;
-        console.warn('[AD Network] resolve failed for ' + uuid, err);
+        log.warn('resolve failed for ' + uuid, err);
         failed.push(uuid);
       }
     }

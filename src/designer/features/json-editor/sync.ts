@@ -1,7 +1,12 @@
-import { log } from '../../core/logger';
 import { extractAllInputs } from './extractor';
 import { DATE_TYPES, normalizeValueForType, padTwo, type DateInfo } from './values';
 import type { DataType } from './types';
+import { AD_WIDGETS } from '../../../config/selectors';
+import { TIMINGS } from '../../../config/timings';
+import { firstMatch } from '../../utils/dom';
+import { createLogger } from '../../../shared/logger';
+
+const log = createLogger('json-editor');
 
 /** Outcome of writing one value into one input. */
 export interface PopulateResult {
@@ -45,7 +50,7 @@ function sleep(ms: number): Promise<void> {
 // Polls `fn` until it returns a truthy value or the attempts run out.
 async function waitFor<T>(
   fn: () => T | null | undefined | false,
-  { tries = 24, interval = 30 } = {}
+  { tries, interval }: { tries: number; interval: number } = TIMINGS.widgetPoll
 ): Promise<T | null> {
   for (let i = 0; i < tries; i++) {
     try {
@@ -123,7 +128,7 @@ function setTextValue(element: HTMLInputElement | HTMLTextAreaElement, stringVal
 // Boolean <exp-select>: open the dropdown, click the matching option.
 async function setBooleanValue(expSelect: HTMLElement, stringValue: string): Promise<boolean> {
   const currentText = () =>
-    expSelect.querySelector('.ui-select-match-text')?.textContent?.trim() || '';
+    expSelect.querySelector(AD_WIDGETS.select.text)?.textContent?.trim() || '';
 
   if (stringValue === '') {
     // No reliable "clear" affordance — treat an already-empty select as done.
@@ -131,18 +136,14 @@ async function setBooleanValue(expSelect: HTMLElement, stringValue: string): Pro
   }
   if (currentText().toLowerCase() === stringValue.toLowerCase()) return true;
 
-  const trigger =
-    expSelect.querySelector('[data-testid="select-option-wrapper-container"]') ||
-    expSelect.querySelector('.ui-select-container') ||
-    expSelect.querySelector('.select-box-text') ||
-    expSelect;
+  const trigger = firstMatch(expSelect, AD_WIDGETS.select.triggers) || expSelect;
   mouseClick(trigger);
 
   const wanted = stringValue.toLowerCase();
   const option = await waitFor(() => {
     const scopes = [expSelect, document];
     for (const scope of scopes) {
-      for (const opt of scope.querySelectorAll<HTMLElement>('.select-option-text')) {
+      for (const opt of scope.querySelectorAll<HTMLElement>(AD_WIDGETS.select.option)) {
         if (
           opt.offsetParent !== null &&
           opt.textContent?.trim().toLowerCase() === wanted
@@ -156,7 +157,7 @@ async function setBooleanValue(expSelect: HTMLElement, stringValue: string): Pro
   if (!option) return false;
 
   mouseClick(option);
-  await sleep(60);
+  await sleep(TIMINGS.afterSelectOption);
   return currentText().toLowerCase() === wanted;
 }
 
@@ -174,23 +175,20 @@ function parseMonthLabel(text: string): { year: number; month: number } | null {
 // Opens AD's custom calendar for an <exp-date-picker> and returns its root.
 async function openAdCalendar(datePickerRoot: HTMLElement): Promise<Element | null> {
   const findCalendar = () =>
-    datePickerRoot.querySelector('.calendar') || document.querySelector('.calendar');
+    datePickerRoot.querySelector(AD_WIDGETS.datePicker.calendar) ||
+    document.querySelector(AD_WIDGETS.datePicker.calendar);
 
   const existing = findCalendar();
   if (existing) return existing;
 
   const triggers = [
-    datePickerRoot.querySelector('.datepicker_input-icon exp-svg-icon'),
-    datePickerRoot.querySelector('exp-svg-icon'),
-    datePickerRoot.querySelector('.datepicker_input-icon'),
-    datePickerRoot.querySelector('input.datepicker_input-form'),
-    datePickerRoot.querySelector('.datepicker_input-wrapper'),
+    ...AD_WIDGETS.datePicker.triggers.map((s) => datePickerRoot.querySelector(s)),
     datePickerRoot
   ].filter(Boolean);
 
   for (const trigger of triggers) {
     mouseClick(trigger);
-    const calendar = await waitFor(findCalendar, { tries: 10, interval: 35 });
+    const calendar = await waitFor(findCalendar, TIMINGS.popupPoll);
     if (calendar) return calendar;
   }
   return null;
@@ -200,7 +198,7 @@ async function openAdCalendar(datePickerRoot: HTMLElement): Promise<Element | nu
 // the day cell. AD ships its own calendar markup (`.calendar_*`).
 async function setDateValue(datePickerRoot: HTMLElement, isoDate: string): Promise<boolean> {
   const input =
-    datePickerRoot.querySelector<HTMLInputElement>('input.datepicker_input-form') ||
+    datePickerRoot.querySelector<HTMLInputElement>(AD_WIDGETS.datePicker.input) ||
     datePickerRoot.querySelector<HTMLInputElement>('input');
 
   if (!isoDate) {
@@ -220,7 +218,7 @@ async function setDateValue(datePickerRoot: HTMLElement, isoDate: string): Promi
 
   // Page month-by-month to the target.
   for (let i = 0; i < 60; i++) {
-    const label = calendar.querySelector('.calendar_header_month_label_text');
+    const label = calendar.querySelector(AD_WIDGETS.datePicker.monthLabel);
     const current = label && parseMonthLabel(label.textContent || '');
     if (!current) break;
 
@@ -230,20 +228,20 @@ async function setDateValue(datePickerRoot: HTMLElement, isoDate: string): Promi
 
     const navButton = calendar.querySelector(
       currentIndex < targetIndex
-        ? '.calendar_header_month_navigate_next'
-        : '.calendar_header_month_navigate_prev'
+        ? AD_WIDGETS.datePicker.nextMonth
+        : AD_WIDGETS.datePicker.prevMonth
     );
     if (!navButton) break;
     // The arrow's click handler lives on an inner <button>.
     mouseClick(navButton.querySelector('button') || navButton);
-    await sleep(120);
+    await sleep(TIMINGS.afterCalendarPage);
   }
 
   // Click the matching current-month day cell.
   const dayCell = await waitFor(() => {
-    for (const cell of calendar.querySelectorAll('.calendar_body_row_date.curr_month')) {
+    for (const cell of calendar.querySelectorAll(AD_WIDGETS.datePicker.day)) {
       if (/disable/.test(cell.className)) continue;
-      const valueEl = cell.querySelector('.calendar_body_row_date_val') || cell;
+      const valueEl = cell.querySelector(AD_WIDGETS.datePicker.dayValue) || cell;
       if ((valueEl.textContent || '').trim() === String(day)) return cell;
     }
     return null;
@@ -251,7 +249,7 @@ async function setDateValue(datePickerRoot: HTMLElement, isoDate: string): Promi
   if (!dayCell) return false;
 
   mouseClick(dayCell);
-  await sleep(80);
+  await sleep(TIMINGS.afterDayClick);
 
   const finalValue = (input?.value || '').trim();
   return finalValue === isoDate || finalValue.includes(isoDate);
@@ -260,13 +258,11 @@ async function setDateValue(datePickerRoot: HTMLElement, isoDate: string): Promi
 // DateTime <exp-timepicker>: hour/minute are editable inputs; AM-PM is a
 // spinner toggled with its chevron.
 async function setTimeValue(expDateTime: HTMLElement, hour24: number, minute: number): Promise<boolean> {
-  const timepicker = expDateTime.querySelector('exp-timepicker');
+  const timepicker = expDateTime.querySelector(AD_WIDGETS.timePicker.host);
   if (!timepicker) return false;
 
   const triggers = [
-    timepicker.querySelector('.timepicker-placeholder'),
-    timepicker.querySelector('.timepicker'),
-    timepicker.querySelector('.timepicker-icon'),
+    ...AD_WIDGETS.timePicker.triggers.map((s) => timepicker.querySelector(s)),
     timepicker
   ].filter(Boolean);
 
@@ -275,10 +271,10 @@ async function setTimeValue(expDateTime: HTMLElement, hour24: number, minute: nu
     mouseClick(trigger);
     inputs = await waitFor(() => {
       const visible = Array.from(
-        document.querySelectorAll<HTMLInputElement>('input.time_select-input')
+        document.querySelectorAll<HTMLInputElement>(AD_WIDGETS.timePicker.inputs)
       ).filter((el) => el.offsetParent !== null);
       return visible.length >= 2 ? visible : null;
-    }, { tries: 10, interval: 35 });
+    }, TIMINGS.popupPoll);
     if (inputs) break;
   }
   if (!inputs) return false;
@@ -298,16 +294,16 @@ async function setTimeValue(expDateTime: HTMLElement, hour24: number, minute: nu
 
   if (ampmInput && ampmInput.value.trim().toUpperCase() !== ampm) {
     const column = ampmInput.parentElement;
-    const chevron = column && column.querySelector('exp-svg-icon.chevron, .chevron');
+    const chevron = column && column.querySelector(AD_WIDGETS.timePicker.ampmToggle);
     if (chevron) {
       mouseClick(chevron.querySelector('button') || chevron);
-      await sleep(80);
+      await sleep(TIMINGS.afterAmPmToggle);
     }
   }
 
   // Commit by clicking away from the popup.
   mouseClick(document.body);
-  await sleep(40);
+  await sleep(TIMINGS.afterTimeCommit);
 
   const hourOk = String(hourInput.value).trim() === String(hour);
   const minuteOk = Number(minuteInput.value) === Number(minute);
@@ -317,7 +313,7 @@ async function setTimeValue(expDateTime: HTMLElement, hour24: number, minute: nu
 
 // DateTime <exp-date-time>: a calendar plus a timepicker.
 async function setDateTimeValue(expDateTime: HTMLElement, dateInfo: DateInfo): Promise<boolean> {
-  const datePicker = expDateTime.querySelector<HTMLElement>('exp-date-picker') || expDateTime;
+  const datePicker = expDateTime.querySelector<HTMLElement>(AD_WIDGETS.datePicker.host) || expDateTime;
   let ok = await setDateValue(datePicker, dateInfo.date);
   if (dateInfo.date && dateInfo.hasTime) {
     ok = (await setTimeValue(expDateTime, dateInfo.hour, dateInfo.minute)) && ok;
@@ -365,7 +361,7 @@ export async function populateTestValue(
   if (!ok) {
     return { success: false, error: `Could not confirm ${type} value on the page` };
   }
-  log(`Populated ${type} input`);
+  log.debug(`Populated ${type} input`);
   return { success: true };
 }
 
@@ -438,10 +434,10 @@ export async function syncJSONToInputs(jsonString: string): Promise<SyncResult> 
       filledCount++;
     } else if (result.skipped) {
       fileSkippedKeys.push(key);
-      log(`Skipped ${key}: ${result.error}`);
+      log.debug(`Skipped ${key}: ${result.error}`);
     } else {
       failedKeys.push(key);
-      log(`Failed to populate ${key}: ${result.error}`);
+      log.debug(`Failed to populate ${key}: ${result.error}`);
     }
   }
 

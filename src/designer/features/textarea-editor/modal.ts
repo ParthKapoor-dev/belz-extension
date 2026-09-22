@@ -13,14 +13,20 @@ import { python } from '@codemirror/lang-python';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/autocomplete';
 import {
-  DEFAULT_SETTINGS,
   loadSettings,
   setSetting,
   subscribeSettings
 } from '../../core/settings';
+import {
+  SETTINGS,
+  sanitizeSetting,
+  type EditorFontSize,
+  type Settings,
+  type WrapMode
+} from '../../../config/settings';
 import { state } from '../../core/state';
 import { showToast } from '../../ui/toast';
-import { EXTENSION_OWNED_ATTR } from '../../../config/constants';
+import { EXTENSION_OWNED_ATTR } from '../../../config/namespace';
 import { lockModalInteraction, unlockModalInteraction } from '../../ui/modal-lock';
 import { openSettingsModal } from '../settings/modal';
 import { T, FONT_MONO, RADIUS } from '../../ui/theme';
@@ -36,7 +42,6 @@ import { LANGUAGE_OPTIONS, detectLanguage, type LanguageMode } from './language'
 import { copyText } from '../../utils/clipboard';
 import type { Extension } from '@codemirror/state';
 import type { CompletionContext, CompletionResult } from '@codemirror/autocomplete';
-import type { Settings, WrapMode } from '../../core/settings';
 
 const OVERLAY_ID = 'sdTextareaEditorOverlay';
 const TITLE_ID = 'sdTextareaEditorTitle';
@@ -312,31 +317,36 @@ function destroyEditorView(): void {
   editorView = null;
 }
 
+/** A setting's options as <option>s, its default selected. */
+function appendOptions(
+  select: HTMLSelectElement,
+  spec: { default: string | number; options: ReadonlyArray<{ value: string | number; label: string }> }
+): void {
+  for (const option of spec.options) {
+    const optionEl = document.createElement('option');
+    optionEl.value = String(option.value);
+    optionEl.textContent = option.label;
+    optionEl.selected = option.value === spec.default;
+    select.appendChild(optionEl);
+  }
+}
+
 function getEditorText(): string {
   if (!editorView) return '';
   return editorView.state.doc.toString();
 }
 
-function getSelectedFontSize(): number {
-  const fontSizeSelect = byId<HTMLSelectElement>(FONT_SIZE_SELECT_ID);
-  const value = Number.parseInt(fontSizeSelect?.value || '13', 10);
-  if (Number.isFinite(value) && [12, 13, 14, 16, 18].includes(value)) {
-    return value;
-  }
-  return 13;
+function getSelectedFontSize(): EditorFontSize {
+  return sanitizeSetting('textareaEditorFontSize', byId<HTMLSelectElement>(FONT_SIZE_SELECT_ID)?.value);
 }
 
 function getSelectedWrapMode(): WrapMode {
-  const wrapSelect = byId<HTMLSelectElement>(WRAP_SELECT_ID);
-  return (wrapSelect?.value as WrapMode | undefined) || DEFAULT_SETTINGS.textareaEditorWrap;
+  return sanitizeSetting('textareaEditorWrap', byId<HTMLSelectElement>(WRAP_SELECT_ID)?.value);
 }
 
-function getEditorSettings(): { wrap: WrapMode; fontSize: number } {
+function getEditorSettings(): { wrap: WrapMode; fontSize: EditorFontSize } {
   const settings = loadSettings();
-  return {
-    wrap: settings.textareaEditorWrap || DEFAULT_SETTINGS.textareaEditorWrap,
-    fontSize: Number.parseInt(String(settings.textareaEditorFontSize || 13), 10) || 13
-  };
+  return { wrap: settings.textareaEditorWrap, fontSize: settings.textareaEditorFontSize };
 }
 
 function syncEditorControlValuesFromSettings(): void {
@@ -521,12 +531,8 @@ function applyEditorSettingsFromStore(settings: Settings): void {
 
   // Language is not a stored setting — it is detected, or overridden in the
   // header — so a settings change never touches it.
-  reconfigureEditorWrapMode(
-    settings.textareaEditorWrap || DEFAULT_SETTINGS.textareaEditorWrap
-  );
-  applyEditorFontSize(
-    Number.parseInt(String(settings.textareaEditorFontSize || 13), 10) || 13
-  );
+  reconfigureEditorWrapMode(settings.textareaEditorWrap);
+  applyEditorFontSize(settings.textareaEditorFontSize);
 }
 
 function ensureEditorSettingsSubscription(): void {
@@ -714,14 +720,7 @@ export function createTextareaEditorModal(): HTMLDivElement {
     outline: 'none',
     cursor: 'pointer'
   });
-  const fontOptions = ['12', '13', '14', '16', '18'];
-  for (const optionValue of fontOptions) {
-    const optionEl = document.createElement('option');
-    optionEl.value = optionValue;
-    optionEl.textContent = `${optionValue}px`;
-    if (optionValue === '13') optionEl.selected = true;
-    fontSizeSelect.appendChild(optionEl);
-  }
+  appendOptions(fontSizeSelect, SETTINGS.textareaEditorFontSize);
 
   const wrapSelect = document.createElement('select');
   wrapSelect.id = WRAP_SELECT_ID;
@@ -735,17 +734,7 @@ export function createTextareaEditorModal(): HTMLDivElement {
     outline: 'none',
     cursor: 'pointer'
   });
-  const wrapOptions = [
-    { value: 'nowrap', label: 'No Wrap' },
-    { value: 'wrap', label: 'Wrap' }
-  ];
-  for (const option of wrapOptions) {
-    const optionEl = document.createElement('option');
-    optionEl.value = option.value;
-    optionEl.textContent = option.label;
-    if (option.value === DEFAULT_SETTINGS.textareaEditorWrap) optionEl.selected = true;
-    wrapSelect.appendChild(optionEl);
-  }
+  appendOptions(wrapSelect, SETTINGS.textareaEditorWrap);
 
   const languageSelect = document.createElement('select');
   languageSelect.id = LANG_SELECT_ID;

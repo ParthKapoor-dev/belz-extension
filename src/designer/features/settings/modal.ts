@@ -1,22 +1,21 @@
 /*! belz-singleton: designer/features/settings/modal */
 // Holds module-level state, so it must be bundled exactly once;
 // the build fails otherwise. See scripts/check-singletons.mjs.
+import { loadSettings } from '../../core/settings';
 import {
-  EDITOR_SETTING_DEFINITIONS,
-  FEATURE_SETTING_DEFINITIONS,
-  loadSettings,
-  type FeatureSettingDefinition,
-  type SelectSettingDefinition
-} from '../../core/settings';
+  settingsIn,
+  type SelectSpec,
+  type SettingKey,
+  type SettingSection,
+  type ToggleSpec
+} from '../../../config/settings';
 import type { SettingsAccess } from './index';
-import {
-  EXTENSION_OWNED_ATTR,
-  SETTINGS_MODAL_ID
-} from '../../../config/constants';
+import { EXTENSION_OWNED_ATTR, ns } from '../../../config/namespace';
 import { lockModalInteraction, unlockModalInteraction } from '../../ui/modal-lock';
 import { T, RADIUS } from '../../ui/theme';
 
-const CONTENT_ID = 'sdExtensionSettingsContent';
+const SETTINGS_MODAL_ID = ns('SettingsModal');
+const CONTENT_ID = ns('SettingsContent');
 const CHECKBOX_ATTR = 'data-sd-setting-key';
 const SELECT_ATTR = 'data-sd-setting-select-key';
 const SWITCH_TRACK_ATTR = 'data-sd-setting-switch-track';
@@ -40,9 +39,9 @@ function syncSwitchVisual(settingKey: string, isEnabled: boolean): void {
   thumb.style.transform = isEnabled ? 'translateX(18px)' : 'translateX(0)';
 }
 
-function createSettingRow(definition: FeatureSettingDefinition): HTMLLabelElement {
+function createSettingRow(key: SettingKey, definition: ToggleSpec): HTMLLabelElement {
   const row = document.createElement('label');
-  row.setAttribute(CHECKBOX_ATTR, definition.key);
+  row.setAttribute(CHECKBOX_ATTR, key);
   Object.assign(row.style, {
     position: 'relative',
     display: 'grid',
@@ -78,7 +77,7 @@ function createSettingRow(definition: FeatureSettingDefinition): HTMLLabelElemen
 
   const checkbox = document.createElement('input');
   checkbox.type = 'checkbox';
-  checkbox.setAttribute(CHECKBOX_ATTR, definition.key);
+  checkbox.setAttribute(CHECKBOX_ATTR, key);
   Object.assign(checkbox.style, {
     position: 'absolute',
     opacity: '0',
@@ -88,7 +87,7 @@ function createSettingRow(definition: FeatureSettingDefinition): HTMLLabelElemen
   });
 
   const switchTrack = document.createElement('span');
-  switchTrack.setAttribute(SWITCH_TRACK_ATTR, definition.key);
+  switchTrack.setAttribute(SWITCH_TRACK_ATTR, key);
   Object.assign(switchTrack.style, {
     width: '42px',
     height: '24px',
@@ -100,7 +99,7 @@ function createSettingRow(definition: FeatureSettingDefinition): HTMLLabelElemen
   });
 
   const switchThumb = document.createElement('span');
-  switchThumb.setAttribute(SWITCH_THUMB_ATTR, definition.key);
+  switchThumb.setAttribute(SWITCH_THUMB_ATTR, key);
   Object.assign(switchThumb.style, {
     position: 'absolute',
     top: '2px',
@@ -115,9 +114,9 @@ function createSettingRow(definition: FeatureSettingDefinition): HTMLLabelElemen
   switchTrack.appendChild(switchThumb);
 
   checkbox.onchange = () => {
-    syncSwitchVisual(definition.key, checkbox.checked);
+    syncSwitchVisual(key, checkbox.checked);
     if (typeof settingsSetFn === 'function') {
-      settingsSetFn(definition.key, checkbox.checked);
+      settingsSetFn(key, checkbox.checked);
     }
   };
 
@@ -127,9 +126,9 @@ function createSettingRow(definition: FeatureSettingDefinition): HTMLLabelElemen
   return row;
 }
 
-function createEditorSettingRow(definition: SelectSettingDefinition): HTMLDivElement {
+function createSelectRow(key: SettingKey, definition: SelectSpec): HTMLDivElement {
   const row = document.createElement('div');
-  row.setAttribute(SELECT_ATTR, definition.key);
+  row.setAttribute(SELECT_ATTR, key);
   Object.assign(row.style, {
     display: 'grid',
     gridTemplateColumns: '1fr auto',
@@ -163,7 +162,7 @@ function createEditorSettingRow(definition: SelectSettingDefinition): HTMLDivEle
   textWrap.appendChild(description);
 
   const select = document.createElement('select');
-  select.setAttribute(SELECT_ATTR, definition.key);
+  select.setAttribute(SELECT_ATTR, key);
   Object.assign(select.style, {
     minWidth: '120px',
     background: 'rgba(15, 23, 42, 0.75)',
@@ -176,20 +175,15 @@ function createEditorSettingRow(definition: SelectSettingDefinition): HTMLDivEle
     cursor: 'pointer'
   });
 
-  for (const option of definition.options || []) {
+  for (const option of definition.options) {
     const optionEl = document.createElement('option');
-    optionEl.value = option.value;
+    optionEl.value = String(option.value);
     optionEl.textContent = option.label;
     select.appendChild(optionEl);
   }
 
-  select.onchange = () => {
-    if (typeof settingsSetFn !== 'function') return;
-    const value = definition.key === 'textareaEditorFontSize'
-      ? Number.parseInt(select.value, 10)
-      : select.value;
-    settingsSetFn(definition.key, value);
-  };
+  // The store turns the option's text back into the setting's value type.
+  select.onchange = () => settingsSetFn?.(key, select.value);
 
   row.appendChild(textWrap);
   row.appendChild(select);
@@ -200,18 +194,37 @@ function refreshSettingRows(): void {
   if (!settingsModalEl) return;
   const settings = settingsGetFn();
 
-  for (const def of FEATURE_SETTING_DEFINITIONS) {
-    const checkbox = settingsModalEl.querySelector<HTMLInputElement>(`input[${CHECKBOX_ATTR}="${def.key}"]`);
-    if (!checkbox) continue;
-    checkbox.checked = Boolean(settings[def.key]);
-    syncSwitchVisual(def.key, checkbox.checked);
+  for (const checkbox of settingsModalEl.querySelectorAll<HTMLInputElement>(`input[${CHECKBOX_ATTR}]`)) {
+    const key = checkbox.getAttribute(CHECKBOX_ATTR) as SettingKey;
+    checkbox.checked = Boolean(settings[key]);
+    syncSwitchVisual(key, checkbox.checked);
   }
 
-  for (const def of EDITOR_SETTING_DEFINITIONS) {
-    const select = settingsModalEl.querySelector<HTMLSelectElement>(`select[${SELECT_ATTR}="${def.key}"]`);
-    if (!select) continue;
-    const value = settings[def.key];
-    select.value = value == null ? '' : String(value);
+  for (const select of settingsModalEl.querySelectorAll<HTMLSelectElement>(`select[${SELECT_ATTR}]`)) {
+    const key = select.getAttribute(SELECT_ATTR) as SettingKey;
+    select.value = String(settings[key]);
+  }
+}
+
+function sectionTitle(text: string): HTMLDivElement {
+  const title = document.createElement('div');
+  title.textContent = text;
+  Object.assign(title.style, {
+    color: T.accent,
+    fontSize: '12px',
+    fontWeight: '600',
+    letterSpacing: '0.4px',
+    marginTop: '6px',
+    textTransform: 'uppercase'
+  });
+  return title;
+}
+
+/** One row per setting of `section` (see config/settings.ts), under an optional title. */
+function appendSection(content: HTMLElement, section: SettingSection, title: string | null): void {
+  if (title) content.appendChild(sectionTitle(title));
+  for (const [key, spec] of settingsIn(section)) {
+    content.appendChild(spec.kind === 'toggle' ? createSettingRow(key, spec) : createSelectRow(key, spec));
   }
 }
 
@@ -307,25 +320,9 @@ function createSettingsModal(): HTMLDivElement {
     gap: '10px'
   });
 
-  for (const def of FEATURE_SETTING_DEFINITIONS) {
-    content.appendChild(createSettingRow(def));
-  }
-
-  const editorSectionTitle = document.createElement('div');
-  editorSectionTitle.textContent = 'Textarea Editor Defaults';
-  Object.assign(editorSectionTitle.style, {
-    color: T.accent,
-    fontSize: '12px',
-    fontWeight: '600',
-    letterSpacing: '0.4px',
-    marginTop: '6px',
-    textTransform: 'uppercase'
-  });
-  content.appendChild(editorSectionTitle);
-
-  for (const def of EDITOR_SETTING_DEFINITIONS) {
-    content.appendChild(createEditorSettingRow(def));
-  }
+  appendSection(content, 'features', null);
+  appendSection(content, 'editor', 'Textarea Editor Defaults');
+  appendSection(content, 'advanced', 'Advanced');
 
   const footer = document.createElement('div');
   Object.assign(footer.style, {

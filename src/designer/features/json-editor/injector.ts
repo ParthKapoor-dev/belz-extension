@@ -1,7 +1,13 @@
-import { log } from '../../core/logger';
 import { state } from '../../core/state';
 import { showModal } from './modal';
 import { T, FONT_MONO, RADIUS } from '../../ui/theme';
+import { AD_INPUTS } from '../../../config/selectors';
+import { ns } from '../../../config/namespace';
+import { createLogger } from '../../../shared/logger';
+
+const log = createLogger('json-editor');
+
+export const JSON_BUTTON_ID = ns('JSONButton');
 
 // Button injection
 export function findInputsSection(): HTMLElement | null {
@@ -22,33 +28,26 @@ export function findInputsSection(): HTMLElement | null {
     if (textNode) {
       const el = textNode.parentElement;
       if (el && el.children.length === 0) {
-        log('Found inputs section via text match');
+        log.debug('Found inputs section via text match');
         return el.parentElement;
       }
     }
 
     // Strategy 2: Look for specific patterns
-    const possibleSelectors = [
-      '[class*="input"]',
-      '[class*="Input"]',
-      '[id*="input"]',
-      '[id*="Input"]'
-    ];
-
-    for (const selector of possibleSelectors) {
+    for (const selector of AD_INPUTS.sectionCandidates) {
       const elements = document.querySelectorAll<HTMLElement>(selector);
       for (const el of elements) {
         if (/inputs?/i.test(el.textContent ?? '')) {
-          log('Found inputs section via selector match');
+          log.debug('Found inputs section via selector match');
           return el;
         }
       }
     }
 
-    log('Inputs section not found');
+    log.debug('Inputs section not found');
     return null;
   } catch (error) {
-    console.error('Error finding inputs section:', error);
+    log.error('Error finding inputs section:', error);
     return null;
   }
 }
@@ -64,7 +63,7 @@ export function createJSONButton(): HTMLButtonElement {
     '<path d="M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1"/>' +
     '</svg><span>JSON</span>';
   button.setAttribute('title', 'Edit inputs as JSON');
-  button.id = 'sdExtensionJSONButton';
+  button.id = JSON_BUTTON_ID;
 
   Object.assign(button.style, {
     display: 'inline-flex',
@@ -96,7 +95,7 @@ export function createJSONButton(): HTMLButtonElement {
   button.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    log('JSON button clicked');
+    log.debug('JSON button clicked');
     showModal();
   };
   
@@ -107,15 +106,15 @@ export function createJSONButton(): HTMLButtonElement {
 export function injectJSONButton(): boolean {
   try {
     // Don't inject if already present
-    if (document.getElementById('sdExtensionJSONButton')) {
-      log('JSON button already injected');
+    if (document.getElementById(JSON_BUTTON_ID)) {
+      log.debug('JSON button already injected');
       return true;
     }
 
     const section = findInputsSection();
     
     if (!section) {
-      log('Inputs section not found for button injection');
+      log.debug('Inputs section not found for button injection');
       return false;
     }
 
@@ -150,10 +149,10 @@ export function injectJSONButton(): boolean {
     const button = createJSONButton();
     titleElement.appendChild(button);
     
-    log('JSON button successfully injected');
+    log.debug('JSON button successfully injected');
     return true;
   } catch (error) {
-    console.error('Error injecting JSON button:', error);
+    log.error('Error injecting JSON button:', error);
     return false;
   }
 }

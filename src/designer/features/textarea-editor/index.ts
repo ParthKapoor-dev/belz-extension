@@ -15,15 +15,17 @@
 // file is just what makes a textarea overlay a textarea overlay: which
 // elements qualify, which buttons appear, and how they shrink for a short box.
 
-import { log } from '../../core/logger';
 import { showToast } from '../../ui/toast';
 import { copyText } from '../../utils/clipboard';
-import { TEXTAREA_EDITOR_LAUNCHER_CLASS } from '../../../config/constants';
+import { ns } from '../../../config/namespace';
 import { createHoverOverlay, type OverlaySize } from '../../ui/hover-overlay';
 import {
   ICON_BUTTON_STYLE, ICON_BUTTON_HOVER, ICON_BUTTON_UNHOVER,
   PRIMARY_BUTTON_STYLE, PRIMARY_BUTTON_HOVER, PRIMARY_BUTTON_UNHOVER
 } from '../../ui/styles';
+import { createLogger } from '../../../shared/logger';
+
+const log = createLogger('textarea-editor');
 
 const CONTROLS_ID = 'sdExtensionTextareaControls';
 
@@ -56,7 +58,7 @@ async function openEditorFor(textarea: HTMLTextAreaElement): Promise<void> {
     const modal = await loadModal();
     modal.openTextareaEditor(textarea);
   } catch (error) {
-    console.error('[belz] textarea editor failed to load:', error);
+    log.error('textarea editor failed to load:', error);
     showToast('Editor failed to load — see console');
   }
 }
@@ -109,7 +111,7 @@ const overlay = createHoverOverlay({
   sizeFor: sizeForTextarea,
   buttons: [
     {
-      className: TEXTAREA_EDITOR_LAUNCHER_CLASS,
+      className: ns('TextareaLauncher'),
       glyph: '⤢',
       title: 'Open large editor',
       style: PRIMARY_BUTTON_STYLE,
@@ -143,7 +145,7 @@ const overlay = createHoverOverlay({
 });
 
 export function startTextareaEditorFeature(): () => void {
-  log('Initializing textarea editor feature...');
+  log.debug('Initializing textarea editor feature...');
   overlay.start();
   return stopTextareaEditorFeature;
 }

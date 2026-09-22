@@ -6,7 +6,7 @@ import { generateInputJSON } from './types';
 import { extractAllInputs } from './extractor';
 import { syncJSONToInputs } from './sync';
 import { showToast } from '../../ui/toast';
-import { EXTENSION_OWNED_ATTR } from '../../../config/constants';
+import { EXTENSION_OWNED_ATTR } from '../../../config/namespace';
 import { lockModalInteraction, unlockModalInteraction } from '../../ui/modal-lock';
 import { T, FONT_MONO, RADIUS } from '../../ui/theme';
 import {
@@ -18,6 +18,9 @@ import {
   PRIMARY_BUTTON_STYLE, PRIMARY_BUTTON_HOVER, PRIMARY_BUTTON_UNHOVER,
   applyHoverEffect
 } from '../../ui/styles';
+import { createLogger } from '../../../shared/logger';
+
+const log = createLogger('json-editor');
 
 // The JSON input editor: shows the method's inputs as a JSON object, and
 // writes an edited object back into the page's test inputs.
@@ -265,10 +268,10 @@ export function loadInputsIntoModal(forceRefresh = false): void {
         }
 
         title.textContent = `Edit Input JSON (${inputs.length} input${inputs.length !== 1 ? 's' : ''})`;
-        console.log(`Loaded ${inputs.length} inputs into modal`);
+        log.debug(`Loaded ${inputs.length} inputs into modal`);
       }
     } catch (error) {
-      console.error('Error loading inputs into modal:', error);
+      log.error('Error loading inputs into modal:', error);
       showMessage(errors, 'Error:', [error instanceof Error ? error.message : String(error)], true);
     }
     textarea.style.display = 'block';
