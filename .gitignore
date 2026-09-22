@@ -34,3 +34,7 @@ Thumbs.db
 # Personal site seed — holds internal hostnames, never committed.
 # Copy sites.default.json.example to create it.
 sites.default.json
+
+# Personal working notes, kept locally only.
+tasks.md
+refactor.md

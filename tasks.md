@@ -6,6 +6,10 @@ Enhacement/Optimization
 
 --- to implement without increasing the complexity of the application.
 
+- Text editor to IDE:
+  auto complete variables that exist previous to current step
+  better intellisense
+
 - PD Inspector — researched in depth, see src/features/pd-inspector/RESEARCH.md.
   All three complaints traced to ONE defect: the expected anchor list came from
   the content page's config while the actual anchor list was read from the whole
@@ -72,37 +76,37 @@ Enhacement/Optimization
 
 Frameworks — EVALUATED, answer is no (for all three). Measured against this repo:
 
-  build.mjs + pack.mjs = ~140 lines, 8 entries, 0.44s, fully deterministic.
-  dist: ad-content 656 KB, pd-content 653 KB, every other entry <= 30 KB.
+build.mjs + pack.mjs = ~140 lines, 8 entries, 0.44s, fully deterministic.
+dist: ad-content 656 KB, pd-content 653 KB, every other entry <= 30 KB.
 
-  - wxt.dev (Vite). Requires restructuring src/ into its `entrypoints/`
-    convention, and adds auto-imports (implicit code, a downgrade for this
-    codebase). It does have a devtools entrypoint. But its content-script ESM
-    support is documented as work-in-progress — that is exactly the capability
-    the one real optimization below needs. Costs a restructure, does not buy
-    the thing that matters.
+- wxt.dev (Vite). Requires restructuring src/ into its `entrypoints/`
+  convention, and adds auto-imports (implicit code, a downgrade for this
+  codebase). It does have a devtools entrypoint. But its content-script ESM
+  support is documented as work-in-progress — that is exactly the capability
+  the one real optimization below needs. Costs a restructure, does not buy
+  the thing that matters.
 
-  - extension.js (Rspack). Least invasive of the three — designed to adopt
-    existing extensions. Real win is `dev` with HMR + auto-launching browser,
-    i.e. it removes the manual "reload the extension" step. Cost: swaps a
-    0.44s build we own outright for a large toolchain, and its cross-browser
-    build would displace pack.mjs, which is hand-tuned for the gecko id +
-    update_url and the dual background style. Not worth it for one step of
-    reload friction.
+- extension.js (Rspack). Least invasive of the three — designed to adopt
+  existing extensions. Real win is `dev` with HMR + auto-launching browser,
+  i.e. it removes the manual "reload the extension" step. Cost: swaps a
+  0.44s build we own outright for a large toolchain, and its cross-browser
+  build would displace pack.mjs, which is hand-tuned for the gecko id +
+  update_url and the dual background style. Not worth it for one step of
+  reload friction.
 
-  - webdriver.io. The only one filling a real gap (there is no test suite),
-    but it cannot drive DevTools panels — the same restriction that killed the
-    panel-focus shortcut — and the two panels are half this extension's
-    surface. It would cover content-script features on a live page at the cost
-    of chromedriver in CI.
+- webdriver.io. The only one filling a real gap (there is no test suite),
+  but it cannot drive DevTools panels — the same restriction that killed the
+  panel-focus shortcut — and the two panels are half this extension's
+  surface. It would cover content-script features on a live page at the cost
+  of chromedriver in CI.
 
-    Better first move: `bun test` in-repo, zero new dependencies, since bun is
-    already the toolchain. The throwaway harnesses written while building the
-    last few features were all pure-function tests and should simply live here:
-    extract.js classifyChainUrl, textarea-editor detectLanguage (54 cases),
-    pd-inspector buildConfigIndex (25), json-editor/sync.js type coercion.
-    That is where the regressions actually are. Revisit WDIO only if the
-    DOM-integration layer starts breaking in ways unit tests miss.
+  Better first move: `bun test` in-repo, zero new dependencies, since bun is
+  already the toolchain. The throwaway harnesses written while building the
+  last few features were all pure-function tests and should simply live here:
+  extract.js classifyChainUrl, textarea-editor detectLanguage (54 cases),
+  pd-inspector buildConfigIndex (25), json-editor/sync.js type coercion.
+  That is where the regressions actually are. Revisit WDIO only if the
+  DOM-integration layer starts breaking in ways unit tests miss.
 
 - Lazy-load CodeMirror out of the content scripts (the real optimization —
   found while evaluating the frameworks above, and unrelated to them).
