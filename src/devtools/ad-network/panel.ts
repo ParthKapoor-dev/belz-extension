@@ -5,14 +5,14 @@
 //   1. chrome.devtools.network — the log DevTools already records, replayed
 //      on init via getHAR() and streamed live via onRequestFinished. Zero
 //      page overhead, but only sees COMPLETED requests.
-//   2. pending-capture.js — a fetch/XHR wrapper injected into the inspected
+//   2. pending-capture.ts — a fetch/XHR wrapper injected into the inspected
 //      page via inspectedWindow.eval. Reports in-flight requests so we can
 //      show pending rows the same way the OG Network tab does.
 //
 // Name + category come from two sources:
 //   - definition fetches  -> the name is in the recorded response body
-//   - api.js              -> the platform's own chain endpoint on the
-//                            inspected host, cached SWR in cache.js
+//   - api.ts              -> the platform's own chain endpoint on the
+//                            inspected host, cached SWR in cache.ts
 
 import {
   classifyChainUrl,
@@ -589,7 +589,7 @@ function onRequest(har: HarEntry): void {
   if (atBottom && isAppend) listPane.scrollTop = listPane.scrollHeight;
 
   // Name: definition fetches carry it in their body — read it instantly.
-  // HAR entries from getHAR() lack a working getContent(); api.js fills in.
+  // HAR entries from getHAR() lack a working getContent(); api.ts fills in.
   if (info.kind === 'fetch' && typeof har.getContent === 'function') {
     try {
       har.getContent((body: string) => {
@@ -1067,7 +1067,7 @@ chrome.devtools.network.onNavigated.addListener(() => {
 
 // ---- pending / in-flight rows --------------------------------------------
 // chrome.devtools.network only fires onRequestFinished — a slow or hung
-// request is invisible in our panel while it's alive. pending-capture.js
+// request is invisible in our panel while it's alive. pending-capture.ts
 // injects a fetch/XHR wrapper into the inspected page that tracks live
 // requests; we render them here as a separate "in-flight" block below the
 // finished rows. When a request completes it drops out of the pending list

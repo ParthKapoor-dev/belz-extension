@@ -92,9 +92,11 @@ const problems = [];
 // (background, options, DevTools, the PD inspector), where a module holding
 // its own copy of state is correct.
 const DESIGNER_SRC = ['src/designer/', 'src/config/', 'src/shared/'];
-// A SCREAMING_CASE `new Set(...)` is a constant lookup table by convention
-// (DATE_TYPES, say), not state, so it does not count.
-const STATEFUL_RE = /^(?:export\s+)?(?:let|var)\s|^(?:export\s+)?const\s+(?![A-Z0-9_]+\b)\w+\s*=\s*new\s+(?:Set|Map|WeakMap|WeakSet)\b|^export\s+const\s+state\s*=/m;
+// State is a top-level `let`/`var`, or a top-level object built with `new`:
+// a Set or Map, or a class instance such as `export const settings = new
+// SettingsStore(...)`. A SCREAMING_CASE `new Set(...)` is a constant lookup
+// table by convention (DATE_TYPES, say), not state, so it does not count.
+const STATEFUL_RE = /^(?:export\s+)?(?:let|var)\s|^(?:export\s+)?const\s+(?![A-Z0-9_]+\b)\w+\s*(?::[^=]+)?=\s*new\s+[A-Z]\w*|^export\s+const\s+state\s*=/m;
 
 for (const file of walk(path.join(root, 'src')).filter((f) => f.endsWith('.ts'))) {
   const r = rel(file);

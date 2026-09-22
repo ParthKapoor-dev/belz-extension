@@ -38,7 +38,7 @@ src/
   designer/                  content scripts on AD and PD designer pages
     ad-content.ts            entry, /automation-designer/*
     pd-content.ts            entry, /ui-designer/*
-    core/                    bootstrap, settings store, state, observer
+    core/                    bootstrap, Feature contract, settings store, page observer
     features/                one folder per feature (see below)
     ui/                      modal frame, modal lock, toast, styles, theme, hover overlay
     utils/                   dom + clipboard helpers
@@ -108,9 +108,17 @@ A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see
 
 ## Feature flow (AD/PD)
 
-1. On load, the content script reads persisted settings and starts only the features marked enabled.
-2. Each feature module exports `start()` / `stop()` and registers a MutationObserver if it needs to react to DOM changes.
+1. Each entry (`ad-content.ts`, `pd-content.ts`) creates its features and passes them to `bootstrap()`, keyed by the setting that switches each on.
+2. `bootstrap()` subscribes to the settings store and starts or stops each feature as its setting changes, for the life of the page. A feature that throws while starting is logged and retried on the next change.
 3. Settings UI (`Ctrl + ,`) toggles features in real time and persists to `chrome.storage.local`.
+
+### Classes and singletons
+
+Code that holds state or has a lifecycle is a class; pure helpers stay functions.
+
+- **`Feature`** (`core/feature.ts`): `start()` / `stop()`. Each toggleable feature is a class implementing it: `TitleUpdater`, `KeyboardShortcuts`, `JsonEditor`, `OutputCopy`, `TextareaEditor`, plus the always-on `SettingsLauncher`. Both must be safe to call twice, and `stop()` must undo everything `start()` did (listeners, timers, observer subscriptions, injected DOM). Event handlers are arrow-function properties so `removeEventListener` gets the same function.
+- **Page-wide singletons**: one instance per page, exported next to the class. `settings` (`SettingsStore`, with its storage injected: `chromeSettingsStorage()` in the extension, an in-memory one in tests), `pageObserver` (`PageObserver`), `modalLock` (`ModalLock`), `toast` (`Toast`), and the three modals: `jsonEditorModal`, `settingsModal`, `textareaEditorModal`. They are shared by several features and by the lazily loaded editor chunk, which is why each must be bundled once (see "Content-script module graph").
+- **`HoverOverlay`** (`ui/hover-overlay.ts`) is a class the features own an instance of: `OutputCopy` and `TextareaEditor` each create one.
 
 ### Settings, selectors, timings: one place each
 
@@ -207,9 +215,9 @@ How it fits together:
 - `dist/modules/` is one `bun build --splitting` over both entries (`src/designer/ad-content.ts`, `src/designer/pd-content.ts`): the entries, shared chunks, and the lazy editor chunk (`chunk-<hash>.js`). `build.mjs` wipes `dist/` first so a stale hashed chunk can never ship.
 - `manifest.json` lists `dist/modules/*` in `web_accessible_resources`. **This is required**: without it both Chromium and Firefox refuse the import (verified).
 
-**The rule that must not be broken: one `--splitting` call, never a separate build for the editor.** `modal.ts` imports `core/state`, `core/settings` and `ui/modal-lock` — module-level singletons. Built separately, the chunk gets its own copies. That was tested deliberately in both browsers: the editor still opens and looks perfect, but `Ctrl+Shift+Enter` fires Run Test *behind the open editor*, because the shortcut checks a different copy of the modal lock. One graph makes the shared modules shared chunks, loaded once per page.
+**The rule that must not be broken: one `--splitting` call, never a separate build for the editor.** `modal.ts` imports `core/settings`, `ui/modal-lock`, `ui/toast` and the settings modal — module-level singletons. Built separately, the chunk gets its own copies. That was tested deliberately in both browsers: the editor still opens and looks perfect, but `Ctrl+Shift+Enter` fires Run Test *behind the open editor*, because the shortcut checks a different copy of the modal lock. One graph makes the shared modules shared chunks, loaded once per page.
 
-**This rule is enforced.** `scripts/check-singletons.mjs` runs at the end of every build and fails it if any stateful module is bundled more than once into the designer content scripts. Each stateful module starts with a marker, `/*! belz-singleton: designer/core/state */`. It is a "legal" comment, so the minifier keeps it and it travels with the module into whichever output file holds it. Each marker must then appear in exactly one designer output file. The check also scans `src/designer/` and `src/config/` for top-level state (`let`/`var`, a module-level `Set`/`Map`, the `state` object) and fails on any such module that has no marker, so a new stateful module can't slip past unprotected. When it fails, the message names the module and files, or the exact marker line to add. It was verified against five ways of breaking the rule: the editor added as a standalone entry, a separate bundle dropped into `dist/modules`, a marker stripped from the output, a marker deleted from the source, and a new unmarked module. All five fail the build, including through `pack.mjs`. Output files that run in a different JavaScript world (background, options, DevTools pages, `pd-inspector.js`) are excluded by an explicit, reasoned list in the script. Do not add a file there to make the check pass.
+**This rule is enforced.** `scripts/check-singletons.mjs` runs at the end of every build and fails it if any stateful module is bundled more than once into the designer content scripts. Each stateful module starts with a marker, `/*! belz-singleton: designer/core/settings */`. It is a "legal" comment, so the minifier keeps it and it travels with the module into whichever output file holds it. Each marker must then appear in exactly one designer output file. The check also scans `src/designer/`, `src/config/` and `src/shared/` for top-level state (`let`/`var`, or a top-level object built with `new`: a `Set`/`Map` or a class instance such as `export const settings = new SettingsStore(…)`) and fails on any such module that has no marker, so a new stateful module can't slip past unprotected. When it fails, the message names the module and files, or the exact marker line to add. It was verified against five ways of breaking the rule: the editor added as a standalone entry, a separate bundle dropped into `dist/modules`, a marker stripped from the output, a marker deleted from the source, and a new unmarked module. All five fail the build, including through `pack.mjs`. Output files that run in a different JavaScript world (background, options, DevTools pages, `pd-inspector.js`) are excluded by an explicit, reasoned list in the script. Do not add a file there to make the check pass.
 
 To lazy-load something else, just use `import()` inside a module in this graph; the bundler handles the rest. Anything reached by a **static** import is eager. To check what a page load costs, walk the static-import closure of `dist/modules/ad-content.js`, not file sizes.
 

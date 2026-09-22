@@ -1,46 +1,39 @@
-/*! belz-singleton: designer/features/title-updater/index */
-// Holds module-level state, so it must be bundled exactly once;
-// the build fails otherwise. See scripts/check-singletons.mjs.
-import { state } from '../../core/state';
+// Title updater: names the browser tab after the open method or page, as
+// "AD: <method>" or "PD: <page>", so many open tabs can be told apart.
 import { extractMethodName, extractPageName } from '../../utils/dom';
-import { subscribeObserver } from '../../core/observer';
+import { pageObserver } from '../../core/observer';
 import { AD_ROUTE_PREFIX, PD_ROUTE_PREFIX } from '../../../config/routes';
+import type { Feature } from '../../core/feature';
 
-let unsubscribe: (() => void) | null = null;
+export class TitleUpdater implements Feature {
+  /** The last name written, so the title is only written when it changes. */
+  private lastName: string | null = null;
+  private unsubscribe: (() => void) | null = null;
 
-// Title update logic
-export function updateTitle(): void {
-  const pathname = window.location.pathname;
-  let name = null;
-  let prefix = '';
-
-  if (pathname.startsWith(AD_ROUTE_PREFIX)) {
-    name = extractMethodName();
-    prefix = 'AD';
-  } else if (pathname.startsWith(PD_ROUTE_PREFIX)) {
-    name = extractPageName();
-    prefix = 'PD';
+  start(): void {
+    this.unsubscribe ??= pageObserver.subscribe(() => this.update());
   }
 
-  if (!name || name === state.lastMethodName) return;
-
-  state.lastMethodName = name;
-  document.title = `${prefix}: ${name}`;
-}
-
-export function startTitleUpdaterFeature(): () => void {
-  updateTitle();
-
-  if (!unsubscribe) {
-    unsubscribe = subscribeObserver(updateTitle);
+  stop(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
   }
 
-  return stopTitleUpdaterFeature;
-}
+  update(): void {
+    const pathname = window.location.pathname;
+    let name: string | null = null;
+    let prefix = '';
 
-export function stopTitleUpdaterFeature(): void {
-  if (unsubscribe) {
-    unsubscribe();
-    unsubscribe = null;
+    if (pathname.startsWith(AD_ROUTE_PREFIX)) {
+      name = extractMethodName();
+      prefix = 'AD';
+    } else if (pathname.startsWith(PD_ROUTE_PREFIX)) {
+      name = extractPageName();
+      prefix = 'PD';
+    }
+
+    if (!name || name === this.lastName) return;
+    this.lastName = name;
+    document.title = `${prefix}: ${name}`;
   }
 }

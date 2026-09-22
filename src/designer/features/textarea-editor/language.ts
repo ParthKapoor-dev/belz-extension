@@ -4,7 +4,7 @@
 // dropdown reports what it found. Picking from the dropdown overrides the
 // detector until the editor is closed and reopened.
 //
-// Pure: no DOM, no CodeMirror. Kept apart from modal.js so it can be tested
+// Pure: no DOM, no CodeMirror. Kept apart from modal.ts so it can be tested
 // (and reasoned about) without loading the ~600 KB editor.
 
 /** Every mode the editor can be in, in dropdown order. */

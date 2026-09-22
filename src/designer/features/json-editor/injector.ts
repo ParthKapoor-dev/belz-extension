@@ -1,5 +1,3 @@
-import { state } from '../../core/state';
-import { showModal } from './modal';
 import { T, FONT_MONO, RADIUS } from '../../ui/theme';
 import { AD_INPUTS } from '../../../config/selectors';
 import { ns } from '../../../config/namespace';
@@ -52,8 +50,8 @@ export function findInputsSection(): HTMLElement | null {
   }
 }
 
-export function createJSONButton(): HTMLButtonElement {
-  if (state.jsonButtonEl) return state.jsonButtonEl;
+/** The JSON button; `onClick` opens the editor. */
+export function createJSONButton(onClick: () => void): HTMLButtonElement {
   const button = document.createElement('button');
   button.innerHTML =
     '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" ' +
@@ -91,28 +89,28 @@ export function createJSONButton(): HTMLButtonElement {
     button.style.background = T.ink;
     button.style.borderColor = T.line2;
   });
-  
+
   button.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
     log.debug('JSON button clicked');
-    showModal();
+    onClick();
   };
-  
-  state.jsonButtonEl = button;
+
   return button;
 }
 
-export function injectJSONButton(): boolean {
+/** Put `button` next to the Inputs heading, unless it is already on the page. */
+export function injectJSONButton(button: HTMLButtonElement): boolean {
   try {
     // Don't inject if already present
-    if (document.getElementById(JSON_BUTTON_ID)) {
+    if (button.isConnected || document.getElementById(JSON_BUTTON_ID)) {
       log.debug('JSON button already injected');
       return true;
     }
 
     const section = findInputsSection();
-    
+
     if (!section) {
       log.debug('Inputs section not found for button injection');
       return false;
@@ -146,9 +144,8 @@ export function injectJSONButton(): boolean {
       });
     }
 
-    const button = createJSONButton();
     titleElement.appendChild(button);
-    
+
     log.debug('JSON button successfully injected');
     return true;
   } catch (error) {

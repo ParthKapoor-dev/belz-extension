@@ -3,7 +3,7 @@
 // Responsibilities:
 //
 //   1. Reconcile registered content scripts against the user's host list
-//      (see content-scripts.js) on install, on startup, and whenever the list
+//      (see content-scripts.ts) on install, on startup, and whenever the list
 //      changes.
 //
 //   2. Relay panel-pd messages so the PD Inspector DevTools panel can reach

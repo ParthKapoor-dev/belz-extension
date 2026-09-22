@@ -1,50 +1,55 @@
-import { state } from '../core/state';
+/*! belz-singleton: designer/ui/toast */
+// Holds module-level state, so it must be bundled exactly once;
+// the build fails otherwise. See scripts/check-singletons.mjs.
+//
+// A short message in the bottom-right corner. One element, reused.
 import { T, FONT_MONO, RADIUS, SHADOW } from './theme';
 
-// Toast notification component
-export function ensureToast(): HTMLDivElement {
-  if (state.toastEl) return state.toastEl;
+const VISIBLE_MS = 1200;
 
-  const toast = document.createElement('div');
-  toast.textContent = 'Run Test triggered';
+export class Toast {
+  private el: HTMLDivElement | null = null;
+  private hideTimer: ReturnType<typeof setTimeout> | null = null;
 
-  Object.assign(toast.style, {
-    position: 'fixed',
-    bottom: '24px',
-    right: '24px',
-    zIndex: '999999',
-    padding: '8px 12px',
-    background: T.surface,
-    color: T.fg,
-    border: `1px solid ${T.line2}`,
-    fontFamily: FONT_MONO,
-    fontSize: '12px',
-    borderRadius: RADIUS,
-    boxShadow: SHADOW,
-    opacity: '0',
-    transform: 'translateY(8px)',
-    transition: 'opacity 150ms ease, transform 150ms ease',
-    pointerEvents: 'none'
-  });
+  show(message: string): void {
+    const el = this.element();
+    el.textContent = message;
+    if (this.hideTimer) clearTimeout(this.hideTimer);
 
-  document.body.appendChild(toast);
-  state.toastEl = toast;
-  return toast;
-}
-
-export function showToast(message = 'Run Test triggered'): void {
-  const el = ensureToast();
-  el.textContent = message;
-
-  if (state.toastTimeout) {
-    clearTimeout(state.toastTimeout);
+    el.style.opacity = '1';
+    el.style.transform = 'translateY(0)';
+    this.hideTimer = setTimeout(() => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(8px)';
+    }, VISIBLE_MS);
   }
 
-  el.style.opacity = '1';
-  el.style.transform = 'translateY(0)';
-
-  state.toastTimeout = setTimeout(() => {
-    el.style.opacity = '0';
-    el.style.transform = 'translateY(8px)';
-  }, 1200);
+  private element(): HTMLDivElement {
+    if (this.el) return this.el;
+    const el = document.createElement('div');
+    Object.assign(el.style, {
+      position: 'fixed',
+      bottom: '24px',
+      right: '24px',
+      zIndex: '999999',
+      padding: '8px 12px',
+      background: T.surface,
+      color: T.fg,
+      border: `1px solid ${T.line2}`,
+      fontFamily: FONT_MONO,
+      fontSize: '12px',
+      borderRadius: RADIUS,
+      boxShadow: SHADOW,
+      opacity: '0',
+      transform: 'translateY(8px)',
+      transition: 'opacity 150ms ease, transform 150ms ease',
+      pointerEvents: 'none'
+    });
+    document.body.appendChild(el);
+    this.el = el;
+    return el;
+  }
 }
+
+/** The page's toast. */
+export const toast = new Toast();

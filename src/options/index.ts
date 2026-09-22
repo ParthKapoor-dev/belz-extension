@@ -3,7 +3,7 @@
 // Each host in the list is (a) an origin the user has granted us
 // chrome.permissions on (host_permissions is dynamic at runtime in MV3), and
 // (b) a set of registered content scripts the background worker reconciles
-// against this same list. See src/background/index.js for the reconcile loop.
+// against this same list. See src/background/content-scripts.ts for the reconcile loop.
 
 import {
   isHostsChange,

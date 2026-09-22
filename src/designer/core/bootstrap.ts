@@ -1,108 +1,93 @@
 // Shared content-script bootstrap.
 //
-// Both designer bundles (ad-content.js, pd-content.js) call this with their own
-// feature-starter map. Splitting the entry points means a Page Designer tab
-// never even loads the AD-only feature code, and no designer code ships to
-// general/published pages at all.
+// Both designer bundles (ad-content.ts, pd-content.ts) call this with their
+// own features, keyed by the setting that switches each on. Splitting the
+// entry points means a Page Designer tab never even loads the AD-only feature
+// code, and no designer code ships to general/published pages at all.
 
-import { startSettingsFeature } from '../features/settings/index';
+import { SettingsLauncher } from '../features/settings/index';
 import { startCurlAutofillFeature } from '../features/curl-autofill/index';
-import { loadSettings, setSetting, subscribeSettings } from './settings';
+import { settings } from './settings';
+import type { Feature } from './feature';
 import type { SettingKey, Settings } from '../../config/settings';
 import { createLogger } from '../../shared/logger';
 
 const log = createLogger('bootstrap');
 
-/** Starts a feature; may return the function that stops it. */
-export type FeatureStarter = () => void | (() => void);
-
-/** Which feature each on/off setting starts. */
-export type FeatureStarters = Partial<Record<SettingKey, FeatureStarter>>;
+/** The features of one designer, keyed by the on/off setting of each. */
+export type Features = Partial<Record<SettingKey, Feature>>;
 
 export interface BootstrapOptions {
   /** Consume the AD Network panel's autofill parameter (AD pages only). */
   curlAutofill?: boolean;
 }
 
-/** Wire up a designer content script. */
-export function bootstrap(featureStarters: FeatureStarters, options: BootstrapOptions = {}): void {
-  const activeFeatureStops = new Map<SettingKey, () => void>();
-  const featureKeys = Object.keys(featureStarters) as SettingKey[];
+/**
+ * Starts and stops each feature as its setting changes, for the life of the
+ * page.
+ */
+class FeatureSwitchboard {
+  private readonly running = new Set<SettingKey>();
 
-  function startFeature(key: SettingKey): void {
-    if (activeFeatureStops.has(key)) return;
+  constructor(private readonly features: Features) {}
 
-    const startFeatureFn = featureStarters[key];
-    if (!startFeatureFn) return;
+  apply(current: Settings, source: string): void {
+    const keys = Object.keys(this.features) as SettingKey[];
+    log.debug(`applying settings (${source}):`, keys.map((k) => `${k}=${Boolean(current[k])}`).join(' '));
+    for (const key of keys) {
+      if (current[key]) this.start(key);
+      else this.stop(key);
+    }
+  }
 
-    // A feature that throws while starting leaves nothing in
-    // activeFeatureStops, so the next settings pass silently retries it and
-    // the failure is invisible. Report it loudly — a half-started feature is
+  private start(key: SettingKey): void {
+    const feature = this.features[key];
+    if (!feature || this.running.has(key)) return;
+    // A feature that throws while starting is not marked running, so the next
+    // settings pass retries it. Report it loudly: a half-started feature is
     // how the textarea overlay ended up dead-until-toggled once already.
-    let cleanup: void | (() => void);
     try {
-      cleanup = startFeatureFn();
+      feature.start();
     } catch (error) {
       log.error(`feature "${key}" FAILED to start:`, error);
-      throw error;
+      return;
     }
-    activeFeatureStops.set(
-      key,
-      typeof cleanup === 'function' ? cleanup : () => {}
-    );
+    this.running.add(key);
     log.debug(`feature ON  : ${key}`);
   }
 
-  function stopFeature(key: SettingKey): void {
-    const cleanup = activeFeatureStops.get(key);
-    if (!cleanup) return;
-
+  private stop(key: SettingKey): void {
+    const feature = this.features[key];
+    if (!feature || !this.running.has(key)) return;
     try {
-      cleanup();
+      feature.stop();
     } catch (error) {
       log.error(`Failed stopping feature "${key}":`, error);
     } finally {
-      activeFeatureStops.delete(key);
+      this.running.delete(key);
       // Logged because an unexpected stop — from a stale stored setting, say —
       // is otherwise indistinguishable from a feature that never started.
       log.debug(`feature OFF : ${key}`);
     }
   }
+}
 
-  function applyFeatureSettings(settings: Settings, source: string): void {
-    log.debug(
-      `applying settings (${source}):`,
-      featureKeys.map((k) => `${k}=${Boolean(settings[k])}`).join(' ')
-    );
-    for (const key of featureKeys) {
-      try {
-        if (settings[key]) {
-          startFeature(key);
-        } else {
-          stopFeature(key);
-        }
-      } catch (error) {
-        log.error(`Failed applying feature "${key}":`, error);
-      }
-    }
-  }
-
+/** Wire up a designer content script. */
+export function bootstrap(features: Features, options: BootstrapOptions = {}): void {
   function init(): void {
     log.debug('Extension initializing...');
 
-    applyFeatureSettings(loadSettings(), 'init');
+    const switchboard = new FeatureSwitchboard(features);
     // Fires immediately with the current snapshot, then again once
     // chrome.storage has been read (and on every later change).
-    let firstNotify = true;
-    subscribeSettings((settings) => {
-      applyFeatureSettings(settings, firstNotify ? 'subscribe' : 'storage');
-      firstNotify = false;
+    let first = true;
+    settings.subscribe((current) => {
+      switchboard.apply(current, first ? 'init' : 'storage');
+      first = false;
     });
 
-    startSettingsFeature({
-      getSettings: loadSettings,
-      setSetting
-    });
+    // Always on: the way back to turning features on.
+    new SettingsLauncher().start();
 
     if (options.curlAutofill) {
       startCurlAutofillFeature();

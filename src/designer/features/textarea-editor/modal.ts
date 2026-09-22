@@ -12,11 +12,7 @@ import { java } from '@codemirror/lang-java';
 import { python } from '@codemirror/lang-python';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/autocomplete';
-import {
-  loadSettings,
-  setSetting,
-  subscribeSettings
-} from '../../core/settings';
+import { settings } from '../../core/settings';
 import {
   SETTINGS,
   sanitizeSetting,
@@ -24,11 +20,10 @@ import {
   type Settings,
   type WrapMode
 } from '../../../config/settings';
-import { state } from '../../core/state';
-import { showToast } from '../../ui/toast';
+import { toast } from '../../ui/toast';
 import { EXTENSION_OWNED_ATTR } from '../../../config/namespace';
-import { lockModalInteraction, unlockModalInteraction } from '../../ui/modal-lock';
-import { openSettingsModal } from '../settings/modal';
+import { modalLock } from '../../ui/modal-lock';
+import { settingsModal } from '../settings/modal';
 import { T, FONT_MONO, RADIUS } from '../../ui/theme';
 import {
   MODAL_OVERLAY, MODAL_DIALOG, MODAL_HEADER, MODAL_FOOTER
@@ -61,17 +56,6 @@ const EDITOR_FONT_FAMILY = FONT_MONO;
 function byId<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
 }
-
-let editorView: EditorView | null = null;
-let resolvedEditorLanguage: LanguageMode = 'plain';
-// Set once the user picks a language by hand, which suspends detection for the
-// rest of the session with that textarea. Cleared every time the editor opens,
-// so detection is what you get by default, always.
-let languageOverridden = false;
-const languageCompartment = new Compartment();
-const wrapCompartment = new Compartment();
-const autocompleteCompartment = new Compartment();
-let unsubscribeEditorSettings: (() => void) | null = null;
 
 // SpEL completion source
 const SPEL_KEYWORDS = [
@@ -311,11 +295,6 @@ const editorTheme = EditorView.theme(
   { dark: true }
 );
 
-function destroyEditorView(): void {
-  if (!editorView) return;
-  editorView.destroy();
-  editorView = null;
-}
 
 /** A setting's options as <option>s, its default selected. */
 function appendOptions(
@@ -331,10 +310,6 @@ function appendOptions(
   }
 }
 
-function getEditorText(): string {
-  if (!editorView) return '';
-  return editorView.state.doc.toString();
-}
 
 function getSelectedFontSize(): EditorFontSize {
   return sanitizeSetting('textareaEditorFontSize', byId<HTMLSelectElement>(FONT_SIZE_SELECT_ID)?.value);
@@ -345,41 +320,26 @@ function getSelectedWrapMode(): WrapMode {
 }
 
 function getEditorSettings(): { wrap: WrapMode; fontSize: EditorFontSize } {
-  const settings = loadSettings();
-  return { wrap: settings.textareaEditorWrap, fontSize: settings.textareaEditorFontSize };
+  const current = settings.get();
+  return { wrap: current.textareaEditorWrap, fontSize: current.textareaEditorFontSize };
 }
 
 function syncEditorControlValuesFromSettings(): void {
-  const settings = getEditorSettings();
+  const editor = getEditorSettings();
   const wrapSelect = byId<HTMLSelectElement>(WRAP_SELECT_ID);
   const fontSizeSelect = byId<HTMLSelectElement>(FONT_SIZE_SELECT_ID);
 
-  if (wrapSelect && wrapSelect.value !== settings.wrap) {
-    wrapSelect.value = settings.wrap;
+  if (wrapSelect && wrapSelect.value !== editor.wrap) {
+    wrapSelect.value = editor.wrap;
   }
   if (fontSizeSelect) {
-    const nextFontValue = String(settings.fontSize);
+    const nextFontValue = String(editor.fontSize);
     if (fontSizeSelect.value !== nextFontValue) {
       fontSizeSelect.value = nextFontValue;
     }
   }
 }
 
-function openMainSettingsFromEditor(): void {
-  openSettingsModal({
-    getSettings: loadSettings,
-    setSetting
-  });
-}
-
-function applyEditorFontSize(fontSize: number): void {
-  if (!editorView) return;
-  const fontSizePx = `${fontSize}px`;
-  editorView.dom.style.fontSize = fontSizePx;
-  editorView.dom.style.fontFamily = EDITOR_FONT_FAMILY;
-  editorView.dom.style.letterSpacing = 'normal';
-  editorView.dom.style.wordSpacing = 'normal';
-}
 
 function getLanguageExtensionForMode(mode: LanguageMode): Extension {
   if (mode === 'sql') return sql();
@@ -400,17 +360,6 @@ function syncLanguageSelectValue(mode: LanguageMode): void {
   }
 }
 
-function reconfigureEditorLanguage(mode: LanguageMode): void {
-  if (!editorView) return;
-  resolvedEditorLanguage = mode;
-  syncLanguageSelectValue(mode);
-  editorView.dispatch({
-    effects: [
-      languageCompartment.reconfigure(getLanguageExtensionForMode(mode)),
-      autocompleteCompartment.reconfigure(getAutocompleteExtensionsForMode(mode))
-    ]
-  });
-}
 
 function getWrapExtensionForMode(mode: WrapMode): Extension[] {
   if (mode === 'wrap') {
@@ -443,114 +392,13 @@ function getWrapExtensionForMode(mode: WrapMode): Extension[] {
   ];
 }
 
-function reconfigureEditorWrapMode(mode: WrapMode): void {
-  if (!editorView) return;
-  editorView.dispatch({
-    effects: wrapCompartment.reconfigure(getWrapExtensionForMode(mode))
-  });
-}
 
-function createEditorForSource(sourceEl: HTMLTextAreaElement): void {
-  const host = byId<HTMLElement>(EDITOR_HOST_ID);
-  if (!host) return;
 
-  const textValue = sourceEl.value || '';
-  const readOnly = sourceEl.readOnly || sourceEl.disabled;
-  const selectedWrapMode = getSelectedWrapMode();
-  // Every open re-detects. A manual pick from the previous open does not carry
-  // over — otherwise one override would silently mislabel every later step.
-  const initialLanguageMode = detectLanguage(textValue);
-  resolvedEditorLanguage = initialLanguageMode;
-  languageOverridden = false;
-  syncLanguageSelectValue(initialLanguageMode);
 
-  const extensions = [
-    lineNumbers(),
-    history(),
-    highlightActiveLine(),
-    search({ top: false }),
-    keymap.of([...completionKeymap, ...searchKeymap, indentWithTab, ...defaultKeymap]),
-    EditorState.tabSize.of(4),
-    EditorState.readOnly.of(readOnly),
-    editorTheme,
-    oneDark,
-    languageCompartment.of(getLanguageExtensionForMode(initialLanguageMode)),
-    autocompleteCompartment.of(getAutocompleteExtensionsForMode(initialLanguageMode)),
-    wrapCompartment.of(getWrapExtensionForMode(selectedWrapMode)),
-    EditorView.updateListener.of((update) => {
-      if (!update.docChanged || !editorView) return;
-      if (languageOverridden) return;
 
-      const nextMode = detectLanguage(update.state.doc.toString());
-      if (nextMode === resolvedEditorLanguage) return;
-      reconfigureEditorLanguage(nextMode);
-    })
-  ];
 
-  destroyEditorView();
-  editorView = new EditorView({
-    state: EditorState.create({
-      doc: textValue,
-      selection: { anchor: textValue.length },
-      extensions
-    }),
-    parent: host
-  });
 
-  applyEditorFontSize(getSelectedFontSize());
-}
 
-function handleLanguageSelectionChange(): void {
-  if (!editorView) return;
-
-  const languageSelect = byId<HTMLSelectElement>(LANG_SELECT_ID);
-  const selectedMode = languageSelect?.value as LanguageMode | undefined;
-  if (!selectedMode) return;
-
-  // Deliberately not persisted: the mode belongs to the text, not to the user.
-  languageOverridden = true;
-  reconfigureEditorLanguage(selectedMode);
-}
-
-function handleWrapSelectionChange(): void {
-  if (!editorView) return;
-  const wrapMode = getSelectedWrapMode();
-  setSetting('textareaEditorWrap', wrapMode);
-  reconfigureEditorWrapMode(wrapMode);
-}
-
-function handleFontSizeSelectionChange(): void {
-  const fontSize = getSelectedFontSize();
-  setSetting('textareaEditorFontSize', fontSize);
-  applyEditorFontSize(fontSize);
-}
-
-function applyEditorSettingsFromStore(settings: Settings): void {
-  syncEditorControlValuesFromSettings();
-  if (!editorView) return;
-
-  // Language is not a stored setting — it is detected, or overridden in the
-  // header — so a settings change never touches it.
-  reconfigureEditorWrapMode(settings.textareaEditorWrap);
-  applyEditorFontSize(settings.textareaEditorFontSize);
-}
-
-function ensureEditorSettingsSubscription(): void {
-  if (unsubscribeEditorSettings) return;
-
-  unsubscribeEditorSettings = subscribeSettings((settings) => {
-    if (!state.textareaEditorModalEl) return;
-    applyEditorSettingsFromStore(settings);
-  });
-}
-
-export function closeTextareaEditor(): void {
-  if (!state.textareaEditorModalEl || state.textareaEditorModalEl.style.display === 'none') return;
-  state.textareaEditorModalEl.style.display = 'none';
-  state.textareaEditorSourceEl = null;
-  destroyEditorView();
-  unlockModalInteraction();
-}
 
 function syncSourceTextarea(sourceEl: HTMLTextAreaElement, value: string): void {
   sourceEl.value = value;
@@ -558,38 +406,7 @@ function syncSourceTextarea(sourceEl: HTMLTextAreaElement, value: string): void 
   sourceEl.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
 }
 
-async function copyEditorText(): Promise<void> {
-  const text = getEditorText();
-  if (!text.trim()) {
-    showToast('Nothing to copy');
-    return;
-  }
-  const copied = await copyText(text);
-  showToast(copied ? 'Copied editor text' : 'Failed to copy');
-}
 
-function handleSave(): void {
-  const sourceEl = state.textareaEditorSourceEl;
-  const saveBtn = byId<HTMLButtonElement>(SAVE_BTN_ID);
-
-  if (!sourceEl || !saveBtn || !editorView) {
-    return;
-  }
-
-  // Read-only sources now reach this path: a published AD method opens here
-  // for reading, and Ctrl+S is muscle memory. Say why nothing was written
-  // rather than swallowing the keystroke. The editor itself stays editable on
-  // purpose — scratch-editing a published step is useful — so this is the
-  // only place the boundary is felt.
-  if (saveBtn.disabled) {
-    showToast('Read-only field — nothing was written back');
-    return;
-  }
-
-  syncSourceTextarea(sourceEl, getEditorText());
-  showToast('Textarea updated');
-  closeTextareaEditor();
-}
 
 function describeSource(textarea: HTMLTextAreaElement): string {
   const label = textarea.getAttribute('aria-label')
@@ -601,326 +418,520 @@ function describeSource(textarea: HTMLTextAreaElement): string {
   return `Editing: ${label}`;
 }
 
-function updateModalForSource(sourceEl: HTMLTextAreaElement): void {
-  const title = byId<HTMLElement>(TITLE_ID);
-  const subtitle = byId<HTMLElement>(SUBTITLE_ID);
-  const saveBtn = byId<HTMLButtonElement>(SAVE_BTN_ID);
+export class TextareaEditorModal {
+  private overlay: HTMLDivElement | null = null;
+  /** The page textarea being edited. */
+  private source: HTMLTextAreaElement | null = null;
+  private view: EditorView | null = null;
+  private language: LanguageMode = 'plain';
+  /**
+   * The user picked a language in the header, so stop re-detecting it as they
+   * type. Reset on every open.
+   */
+  private languageOverridden = false;
+  private readonly languageCompartment = new Compartment();
+  private readonly wrapCompartment = new Compartment();
+  private readonly autocompleteCompartment = new Compartment();
+  private unsubscribeSettings: (() => void) | null = null;
 
-  if (!title || !subtitle || !saveBtn) return;
+  private destroyView(): void {
+    if (!this.view) return;
+    this.view.destroy();
+    this.view = null;
+  }
 
-  const readOnly = sourceEl.readOnly || sourceEl.disabled;
+  private text(): string {
+    if (!this.view) return '';
+    return this.view.state.doc.toString();
+  }
 
-  title.textContent = 'Large Text Editor';
-  subtitle.textContent = readOnly
-    ? `${describeSource(sourceEl)} (read only)`
-    : describeSource(sourceEl);
+  private applyFontSize(fontSize: number): void {
+    if (!this.view) return;
+    const fontSizePx = `${fontSize}px`;
+    this.view.dom.style.fontSize = fontSizePx;
+    this.view.dom.style.fontFamily = EDITOR_FONT_FAMILY;
+    this.view.dom.style.letterSpacing = 'normal';
+    this.view.dom.style.wordSpacing = 'normal';
+  }
 
-  saveBtn.disabled = readOnly;
-  saveBtn.style.opacity = readOnly ? '0.45' : '1';
-  saveBtn.style.cursor = readOnly ? 'not-allowed' : 'pointer';
+  private setLanguage(mode: LanguageMode): void {
+    if (!this.view) return;
+    this.language = mode;
+    syncLanguageSelectValue(mode);
+    this.view.dispatch({
+      effects: [
+        this.languageCompartment.reconfigure(getLanguageExtensionForMode(mode)),
+        this.autocompleteCompartment.reconfigure(getAutocompleteExtensionsForMode(mode))
+      ]
+    });
+  }
 
-  syncEditorControlValuesFromSettings();
-  createEditorForSource(sourceEl);
-}
+  private setWrapMode(mode: WrapMode): void {
+    if (!this.view) return;
+    this.view.dispatch({
+      effects: this.wrapCompartment.reconfigure(getWrapExtensionForMode(mode))
+    });
+  }
 
-function attachGlobalShortcuts(): void {
-  document.addEventListener('keydown', (event) => {
-    if (!state.textareaEditorModalEl || state.textareaEditorModalEl.style.display !== 'flex') {
+  private createView(sourceEl: HTMLTextAreaElement): void {
+    const host = byId<HTMLElement>(EDITOR_HOST_ID);
+    if (!host) return;
+
+    const textValue = sourceEl.value || '';
+    const readOnly = sourceEl.readOnly || sourceEl.disabled;
+    const selectedWrapMode = getSelectedWrapMode();
+    // Every open re-detects. A manual pick from the previous open does not carry
+    // over — otherwise one override would silently mislabel every later step.
+    const initialLanguageMode = detectLanguage(textValue);
+    this.language = initialLanguageMode;
+    this.languageOverridden = false;
+    syncLanguageSelectValue(initialLanguageMode);
+
+    const extensions = [
+      lineNumbers(),
+      history(),
+      highlightActiveLine(),
+      search({ top: false }),
+      keymap.of([...completionKeymap, ...searchKeymap, indentWithTab, ...defaultKeymap]),
+      EditorState.tabSize.of(4),
+      EditorState.readOnly.of(readOnly),
+      editorTheme,
+      oneDark,
+      this.languageCompartment.of(getLanguageExtensionForMode(initialLanguageMode)),
+      this.autocompleteCompartment.of(getAutocompleteExtensionsForMode(initialLanguageMode)),
+      this.wrapCompartment.of(getWrapExtensionForMode(selectedWrapMode)),
+      EditorView.updateListener.of((update) => {
+        if (!update.docChanged || !this.view) return;
+        if (this.languageOverridden) return;
+
+        const nextMode = detectLanguage(update.state.doc.toString());
+        if (nextMode === this.language) return;
+        this.setLanguage(nextMode);
+      })
+    ];
+
+    this.destroyView();
+    this.view = new EditorView({
+      state: EditorState.create({
+        doc: textValue,
+        selection: { anchor: textValue.length },
+        extensions
+      }),
+      parent: host
+    });
+
+    this.applyFontSize(getSelectedFontSize());
+  }
+
+  private onLanguagePicked(): void {
+    if (!this.view) return;
+
+    const languageSelect = byId<HTMLSelectElement>(LANG_SELECT_ID);
+    const selectedMode = languageSelect?.value as LanguageMode | undefined;
+    if (!selectedMode) return;
+
+    // Deliberately not persisted: the mode belongs to the text, not to the user.
+    this.languageOverridden = true;
+    this.setLanguage(selectedMode);
+  }
+
+  private onWrapPicked(): void {
+    if (!this.view) return;
+    const wrapMode = getSelectedWrapMode();
+    settings.set('textareaEditorWrap', wrapMode);
+    this.setWrapMode(wrapMode);
+  }
+
+  private onFontSizePicked(): void {
+    const fontSize = getSelectedFontSize();
+    settings.set('textareaEditorFontSize', fontSize);
+    this.applyFontSize(fontSize);
+  }
+
+  private applySettings(next: Settings): void {
+    syncEditorControlValuesFromSettings();
+    if (!this.view) return;
+
+    // Language is not a stored setting — it is detected, or overridden in the
+    // header — so a settings change never touches it.
+    this.setWrapMode(next.textareaEditorWrap);
+    this.applyFontSize(next.textareaEditorFontSize);
+  }
+
+  private followSettings(): void {
+    if (this.unsubscribeSettings) return;
+
+    this.unsubscribeSettings = settings.subscribe((next) => {
+      if (!this.overlay) return;
+      this.applySettings(next);
+    });
+  }
+
+  close(): void {
+    if (!this.overlay || this.overlay.style.display === 'none') return;
+    this.overlay.style.display = 'none';
+    this.source = null;
+    this.destroyView();
+    modalLock.unlock();
+  }
+
+  private async copyAll(): Promise<void> {
+    const text = this.text();
+    if (!text.trim()) {
+      toast.show('Nothing to copy');
+      return;
+    }
+    const copied = await copyText(text);
+    toast.show(copied ? 'Copied editor text' : 'Failed to copy');
+  }
+
+  private save(): void {
+    const sourceEl = this.source;
+    const saveBtn = byId<HTMLButtonElement>(SAVE_BTN_ID);
+
+    if (!sourceEl || !saveBtn || !this.view) {
       return;
     }
 
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      closeTextareaEditor();
+    // Read-only sources now reach this path: a published AD method opens here
+    // for reading, and Ctrl+S is muscle memory. Say why nothing was written
+    // rather than swallowing the keystroke. The editor itself stays editable on
+    // purpose — scratch-editing a published step is useful — so this is the
+    // only place the boundary is felt.
+    if (saveBtn.disabled) {
+      toast.show('Read-only field — nothing was written back');
       return;
     }
 
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
-      event.preventDefault();
-      handleSave();
-      return;
+    syncSourceTextarea(sourceEl, this.text());
+    toast.show('Textarea updated');
+    this.close();
+  }
+
+  private showSource(sourceEl: HTMLTextAreaElement): void {
+    const title = byId<HTMLElement>(TITLE_ID);
+    const subtitle = byId<HTMLElement>(SUBTITLE_ID);
+    const saveBtn = byId<HTMLButtonElement>(SAVE_BTN_ID);
+
+    if (!title || !subtitle || !saveBtn) return;
+
+    const readOnly = sourceEl.readOnly || sourceEl.disabled;
+
+    title.textContent = 'Large Text Editor';
+    subtitle.textContent = readOnly
+      ? `${describeSource(sourceEl)} (read only)`
+      : describeSource(sourceEl);
+
+    saveBtn.disabled = readOnly;
+    saveBtn.style.opacity = readOnly ? '0.45' : '1';
+    saveBtn.style.cursor = readOnly ? 'not-allowed' : 'pointer';
+
+    syncEditorControlValuesFromSettings();
+    this.createView(sourceEl);
+  }
+
+  private attachShortcuts(): void {
+    document.addEventListener('keydown', (event) => {
+      if (!this.overlay || this.overlay.style.display !== 'flex') {
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        this.close();
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        this.save();
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        event.stopPropagation();
+        const view = this.view;
+        if (view) {
+          openSearchPanel(view);
+          // The view itself, not `this.view`: the editor may have been closed
+          // (and this.view cleared) by the time the frame runs.
+          requestAnimationFrame(() => {
+            view.dom.querySelector<HTMLInputElement>('.cm-search input')?.focus();
+          });
+        }
+      }
+    }, true);
+  }
+
+  private ensureOverlay(): HTMLDivElement {
+    if (this.overlay) return this.overlay;
+
+    const overlay = document.createElement('div');
+    overlay.id = OVERLAY_ID;
+    overlay.setAttribute(EXTENSION_OWNED_ATTR, 'true');
+    Object.assign(overlay.style, MODAL_OVERLAY, {
+      zIndex: '999997',
+      padding: '12px'
+    });
+
+    const dialog = document.createElement('div');
+    Object.assign(dialog.style, MODAL_DIALOG, {
+      width: 'calc(100vw - 24px)',
+      height: 'calc(100vh - 24px)',
+      maxWidth: 'none',
+      maxHeight: 'none'
+    });
+
+    const header = document.createElement('div');
+    Object.assign(header.style, MODAL_HEADER);
+
+    const titleWrap = document.createElement('div');
+    const title = document.createElement('h2');
+    title.id = TITLE_ID;
+    title.textContent = 'Large Text Editor';
+    Object.assign(title.style, {
+      margin: '0',
+      fontSize: '16px',
+      color: T.fg
+    });
+
+    const subtitle = document.createElement('div');
+    subtitle.id = SUBTITLE_ID;
+    subtitle.textContent = 'Editing';
+    Object.assign(subtitle.style, {
+      marginTop: '4px',
+      fontSize: '12px',
+      color: T.fgMuted
+    });
+
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(subtitle);
+
+    const headerActions = document.createElement('div');
+    Object.assign(headerActions.style, {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px'
+    });
+
+    const fontSizeSelect = document.createElement('select');
+    fontSizeSelect.id = FONT_SIZE_SELECT_ID;
+    Object.assign(fontSizeSelect.style, {
+      background: 'rgba(15, 23, 42, 0.75)',
+      color: T.fgMuted,
+      border: '1px solid rgba(148, 163, 184, 0.4)',
+      borderRadius: RADIUS,
+      padding: '4px 8px',
+      fontSize: '12px',
+      outline: 'none',
+      cursor: 'pointer'
+    });
+    appendOptions(fontSizeSelect, SETTINGS.textareaEditorFontSize);
+
+    const wrapSelect = document.createElement('select');
+    wrapSelect.id = WRAP_SELECT_ID;
+    Object.assign(wrapSelect.style, {
+      background: 'rgba(15, 23, 42, 0.75)',
+      color: T.fgMuted,
+      border: '1px solid rgba(148, 163, 184, 0.4)',
+      borderRadius: RADIUS,
+      padding: '4px 8px',
+      fontSize: '12px',
+      outline: 'none',
+      cursor: 'pointer'
+    });
+    appendOptions(wrapSelect, SETTINGS.textareaEditorWrap);
+
+    const languageSelect = document.createElement('select');
+    languageSelect.id = LANG_SELECT_ID;
+    Object.assign(languageSelect.style, {
+      background: 'rgba(15, 23, 42, 0.75)',
+      color: T.fgMuted,
+      border: '1px solid rgba(148, 163, 184, 0.4)',
+      borderRadius: RADIUS,
+      padding: '4px 8px',
+      fontSize: '12px',
+      outline: 'none',
+      cursor: 'pointer'
+    });
+    languageSelect.setAttribute(
+      'title',
+      'Detected syntax mode — pick another to override it for this editor session'
+    );
+    for (const option of LANGUAGE_OPTIONS) {
+      const optionEl = document.createElement('option');
+      optionEl.value = option.value;
+      optionEl.textContent = option.label;
+      if (option.value === 'plain') optionEl.selected = true;
+      languageSelect.appendChild(optionEl);
     }
 
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+    const settingsBtn = document.createElement('button');
+    settingsBtn.id = EDITOR_SETTINGS_BUTTON_ID;
+    settingsBtn.type = 'button';
+    settingsBtn.textContent = '⚙';
+    settingsBtn.setAttribute('title', 'Open extension settings');
+    settingsBtn.setAttribute('aria-label', 'Open extension settings');
+    Object.assign(settingsBtn.style, {
+      width: '30px',
+      height: '30px',
+      padding: '0',
+      borderRadius: RADIUS,
+      border: '1px solid rgba(59, 130, 246, 0.45)',
+      background: T.accent,
+      color: T.fg,
+      fontSize: '16px',
+      fontWeight: '600',
+      cursor: 'pointer',
+      boxShadow: '0 4px 10px rgba(37, 99, 235, 0.3)',
+      lineHeight: '1'
+    });
+    settingsBtn.onclick = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const view = editorView;
-      if (view) {
-        openSearchPanel(view);
-        // The view itself, not `editorView`: the editor may have been closed
-        // (and editorView cleared) by the time the frame runs.
-        requestAnimationFrame(() => {
-          view.dom.querySelector<HTMLInputElement>('.cm-search input')?.focus();
-        });
+      settingsModal.open();
+    };
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.textContent = 'Copy';
+    copyBtn.setAttribute('title', 'Copy editor text');
+    Object.assign(copyBtn.style, {
+      border: '1px solid rgba(148, 163, 184, 0.45)',
+      background: 'rgba(15, 23, 42, 0.75)',
+      color: T.fgMuted,
+      borderRadius: RADIUS,
+      padding: '4px 10px',
+      fontSize: '12px',
+      cursor: 'pointer'
+    });
+    copyBtn.onclick = () => {
+      this.copyAll();
+    };
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.textContent = '×';
+    closeBtn.setAttribute('aria-label', 'Close large text editor');
+    Object.assign(closeBtn.style, {
+      width: '30px',
+      height: '30px',
+      borderRadius: RADIUS,
+      border: '1px solid rgba(248, 113, 113, 0.45)',
+      background: 'rgba(248, 113, 113, 0.15)',
+      color: T.danger,
+      fontSize: '20px',
+      cursor: 'pointer',
+      lineHeight: '1'
+    });
+    closeBtn.onclick = () => this.close();
+
+    header.appendChild(titleWrap);
+    headerActions.appendChild(languageSelect);
+    headerActions.appendChild(wrapSelect);
+    headerActions.appendChild(fontSizeSelect);
+    headerActions.appendChild(settingsBtn);
+    headerActions.appendChild(copyBtn);
+    headerActions.appendChild(closeBtn);
+    header.appendChild(headerActions);
+
+    const body = document.createElement('div');
+    Object.assign(body.style, {
+      display: 'flex',
+      flex: '1',
+      minHeight: '0'
+    });
+
+    const editorHost = document.createElement('div');
+    editorHost.id = EDITOR_HOST_ID;
+    editorHost.setAttribute(EXTENSION_OWNED_ATTR, 'true');
+    Object.assign(editorHost.style, {
+      display: 'flex',
+      flex: '1',
+      minHeight: '0'
+    });
+
+    body.appendChild(editorHost);
+
+    const footer = document.createElement('div');
+    Object.assign(footer.style, MODAL_FOOTER);
+
+    const helper = document.createElement('div');
+    helper.textContent = 'Syntax highlighting and optional line wrapping.';
+    Object.assign(helper.style, {
+      color: T.fgFaint,
+      fontSize: '12px'
+    });
+
+    const buttonGroup = document.createElement('div');
+    Object.assign(buttonGroup.style, {
+      display: 'flex',
+      gap: '8px'
+    });
+
+    const TEXT_BTN = { width: 'auto', height: 'auto', padding: '7px 16px', fontSize: '13px' };
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    Object.assign(cancelBtn.style, ICON_BUTTON_STYLE, TEXT_BTN);
+    applyHoverEffect(cancelBtn, ICON_BUTTON_HOVER, ICON_BUTTON_UNHOVER);
+    cancelBtn.onclick = () => this.close();
+
+    const saveBtn = document.createElement('button');
+    saveBtn.id = SAVE_BTN_ID;
+    saveBtn.type = 'button';
+    saveBtn.textContent = 'Save';
+    Object.assign(saveBtn.style, PRIMARY_BUTTON_STYLE, TEXT_BTN);
+    applyHoverEffect(saveBtn, PRIMARY_BUTTON_HOVER, PRIMARY_BUTTON_UNHOVER);
+    saveBtn.onclick = () => this.save();
+
+    buttonGroup.appendChild(cancelBtn);
+    buttonGroup.appendChild(saveBtn);
+    footer.appendChild(helper);
+    footer.appendChild(buttonGroup);
+
+    dialog.appendChild(header);
+    dialog.appendChild(body);
+    dialog.appendChild(footer);
+    overlay.appendChild(dialog);
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        this.close();
       }
+    });
+
+    document.body.appendChild(overlay);
+    this.overlay = overlay;
+    this.attachShortcuts();
+    this.followSettings();
+    languageSelect.addEventListener('change', () => this.onLanguagePicked());
+    wrapSelect.addEventListener('change', () => this.onWrapPicked());
+    fontSizeSelect.addEventListener('change', () => this.onFontSizePicked());
+    syncEditorControlValuesFromSettings();
+
+    return this.overlay;
+  }
+
+  open(sourceEl: HTMLTextAreaElement): void {
+    if (!sourceEl) return;
+
+    const modal = this.ensureOverlay();
+    const wasOpen = modal.style.display === 'flex';
+    this.source = sourceEl;
+    this.showSource(sourceEl);
+    modal.style.display = 'flex';
+    if (!wasOpen) {
+      modalLock.lock();
     }
-  }, true);
-}
 
-export function createTextareaEditorModal(): HTMLDivElement {
-  if (state.textareaEditorModalEl) return state.textareaEditorModalEl;
-
-  const overlay = document.createElement('div');
-  overlay.id = OVERLAY_ID;
-  overlay.setAttribute(EXTENSION_OWNED_ATTR, 'true');
-  Object.assign(overlay.style, MODAL_OVERLAY, {
-    zIndex: '999997',
-    padding: '12px'
-  });
-
-  const dialog = document.createElement('div');
-  Object.assign(dialog.style, MODAL_DIALOG, {
-    width: 'calc(100vw - 24px)',
-    height: 'calc(100vh - 24px)',
-    maxWidth: 'none',
-    maxHeight: 'none'
-  });
-
-  const header = document.createElement('div');
-  Object.assign(header.style, MODAL_HEADER);
-
-  const titleWrap = document.createElement('div');
-  const title = document.createElement('h2');
-  title.id = TITLE_ID;
-  title.textContent = 'Large Text Editor';
-  Object.assign(title.style, {
-    margin: '0',
-    fontSize: '16px',
-    color: T.fg
-  });
-
-  const subtitle = document.createElement('div');
-  subtitle.id = SUBTITLE_ID;
-  subtitle.textContent = 'Editing';
-  Object.assign(subtitle.style, {
-    marginTop: '4px',
-    fontSize: '12px',
-    color: T.fgMuted
-  });
-
-  titleWrap.appendChild(title);
-  titleWrap.appendChild(subtitle);
-
-  const headerActions = document.createElement('div');
-  Object.assign(headerActions.style, {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
-  });
-
-  const fontSizeSelect = document.createElement('select');
-  fontSizeSelect.id = FONT_SIZE_SELECT_ID;
-  Object.assign(fontSizeSelect.style, {
-    background: 'rgba(15, 23, 42, 0.75)',
-    color: T.fgMuted,
-    border: '1px solid rgba(148, 163, 184, 0.4)',
-    borderRadius: RADIUS,
-    padding: '4px 8px',
-    fontSize: '12px',
-    outline: 'none',
-    cursor: 'pointer'
-  });
-  appendOptions(fontSizeSelect, SETTINGS.textareaEditorFontSize);
-
-  const wrapSelect = document.createElement('select');
-  wrapSelect.id = WRAP_SELECT_ID;
-  Object.assign(wrapSelect.style, {
-    background: 'rgba(15, 23, 42, 0.75)',
-    color: T.fgMuted,
-    border: '1px solid rgba(148, 163, 184, 0.4)',
-    borderRadius: RADIUS,
-    padding: '4px 8px',
-    fontSize: '12px',
-    outline: 'none',
-    cursor: 'pointer'
-  });
-  appendOptions(wrapSelect, SETTINGS.textareaEditorWrap);
-
-  const languageSelect = document.createElement('select');
-  languageSelect.id = LANG_SELECT_ID;
-  Object.assign(languageSelect.style, {
-    background: 'rgba(15, 23, 42, 0.75)',
-    color: T.fgMuted,
-    border: '1px solid rgba(148, 163, 184, 0.4)',
-    borderRadius: RADIUS,
-    padding: '4px 8px',
-    fontSize: '12px',
-    outline: 'none',
-    cursor: 'pointer'
-  });
-  languageSelect.setAttribute(
-    'title',
-    'Detected syntax mode — pick another to override it for this editor session'
-  );
-  for (const option of LANGUAGE_OPTIONS) {
-    const optionEl = document.createElement('option');
-    optionEl.value = option.value;
-    optionEl.textContent = option.label;
-    if (option.value === 'plain') optionEl.selected = true;
-    languageSelect.appendChild(optionEl);
-  }
-
-  const settingsBtn = document.createElement('button');
-  settingsBtn.id = EDITOR_SETTINGS_BUTTON_ID;
-  settingsBtn.type = 'button';
-  settingsBtn.textContent = '⚙';
-  settingsBtn.setAttribute('title', 'Open extension settings');
-  settingsBtn.setAttribute('aria-label', 'Open extension settings');
-  Object.assign(settingsBtn.style, {
-    width: '30px',
-    height: '30px',
-    padding: '0',
-    borderRadius: RADIUS,
-    border: '1px solid rgba(59, 130, 246, 0.45)',
-    background: T.accent,
-    color: T.fg,
-    fontSize: '16px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    boxShadow: '0 4px 10px rgba(37, 99, 235, 0.3)',
-    lineHeight: '1'
-  });
-  settingsBtn.onclick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openMainSettingsFromEditor();
-  };
-
-  const copyBtn = document.createElement('button');
-  copyBtn.type = 'button';
-  copyBtn.textContent = 'Copy';
-  copyBtn.setAttribute('title', 'Copy editor text');
-  Object.assign(copyBtn.style, {
-    border: '1px solid rgba(148, 163, 184, 0.45)',
-    background: 'rgba(15, 23, 42, 0.75)',
-    color: T.fgMuted,
-    borderRadius: RADIUS,
-    padding: '4px 10px',
-    fontSize: '12px',
-    cursor: 'pointer'
-  });
-  copyBtn.onclick = () => {
-    copyEditorText();
-  };
-
-  const closeBtn = document.createElement('button');
-  closeBtn.type = 'button';
-  closeBtn.textContent = '×';
-  closeBtn.setAttribute('aria-label', 'Close large text editor');
-  Object.assign(closeBtn.style, {
-    width: '30px',
-    height: '30px',
-    borderRadius: RADIUS,
-    border: '1px solid rgba(248, 113, 113, 0.45)',
-    background: 'rgba(248, 113, 113, 0.15)',
-    color: T.danger,
-    fontSize: '20px',
-    cursor: 'pointer',
-    lineHeight: '1'
-  });
-  closeBtn.onclick = closeTextareaEditor;
-
-  header.appendChild(titleWrap);
-  headerActions.appendChild(languageSelect);
-  headerActions.appendChild(wrapSelect);
-  headerActions.appendChild(fontSizeSelect);
-  headerActions.appendChild(settingsBtn);
-  headerActions.appendChild(copyBtn);
-  headerActions.appendChild(closeBtn);
-  header.appendChild(headerActions);
-
-  const body = document.createElement('div');
-  Object.assign(body.style, {
-    display: 'flex',
-    flex: '1',
-    minHeight: '0'
-  });
-
-  const editorHost = document.createElement('div');
-  editorHost.id = EDITOR_HOST_ID;
-  editorHost.setAttribute(EXTENSION_OWNED_ATTR, 'true');
-  Object.assign(editorHost.style, {
-    display: 'flex',
-    flex: '1',
-    minHeight: '0'
-  });
-
-  body.appendChild(editorHost);
-
-  const footer = document.createElement('div');
-  Object.assign(footer.style, MODAL_FOOTER);
-
-  const helper = document.createElement('div');
-  helper.textContent = 'Syntax highlighting and optional line wrapping.';
-  Object.assign(helper.style, {
-    color: T.fgFaint,
-    fontSize: '12px'
-  });
-
-  const buttonGroup = document.createElement('div');
-  Object.assign(buttonGroup.style, {
-    display: 'flex',
-    gap: '8px'
-  });
-
-  const TEXT_BTN = { width: 'auto', height: 'auto', padding: '7px 16px', fontSize: '13px' };
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.textContent = 'Cancel';
-  Object.assign(cancelBtn.style, ICON_BUTTON_STYLE, TEXT_BTN);
-  applyHoverEffect(cancelBtn, ICON_BUTTON_HOVER, ICON_BUTTON_UNHOVER);
-  cancelBtn.onclick = closeTextareaEditor;
-
-  const saveBtn = document.createElement('button');
-  saveBtn.id = SAVE_BTN_ID;
-  saveBtn.type = 'button';
-  saveBtn.textContent = 'Save';
-  Object.assign(saveBtn.style, PRIMARY_BUTTON_STYLE, TEXT_BTN);
-  applyHoverEffect(saveBtn, PRIMARY_BUTTON_HOVER, PRIMARY_BUTTON_UNHOVER);
-  saveBtn.onclick = handleSave;
-
-  buttonGroup.appendChild(cancelBtn);
-  buttonGroup.appendChild(saveBtn);
-  footer.appendChild(helper);
-  footer.appendChild(buttonGroup);
-
-  dialog.appendChild(header);
-  dialog.appendChild(body);
-  dialog.appendChild(footer);
-  overlay.appendChild(dialog);
-
-  overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) {
-      closeTextareaEditor();
+    if (this.view) {
+      this.view.focus();
     }
-  });
-
-  document.body.appendChild(overlay);
-  state.textareaEditorModalEl = overlay;
-  attachGlobalShortcuts();
-  ensureEditorSettingsSubscription();
-  languageSelect.addEventListener('change', handleLanguageSelectionChange);
-  wrapSelect.addEventListener('change', handleWrapSelectionChange);
-  fontSizeSelect.addEventListener('change', handleFontSizeSelectionChange);
-  syncEditorControlValuesFromSettings();
-
-  return state.textareaEditorModalEl;
-}
-
-export function openTextareaEditor(sourceEl: HTMLTextAreaElement): void {
-  if (!sourceEl) return;
-
-  const modal = createTextareaEditorModal();
-  const wasOpen = modal.style.display === 'flex';
-  state.textareaEditorSourceEl = sourceEl;
-  updateModalForSource(sourceEl);
-  modal.style.display = 'flex';
-  if (!wasOpen) {
-    lockModalInteraction();
-  }
-
-  if (editorView) {
-    editorView.focus();
   }
 }
+
+/** The page's large text editor. */
+export const textareaEditorModal = new TextareaEditorModal();

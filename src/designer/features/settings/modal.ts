@@ -1,7 +1,10 @@
 /*! belz-singleton: designer/features/settings/modal */
 // Holds module-level state, so it must be bundled exactly once;
 // the build fails otherwise. See scripts/check-singletons.mjs.
-import { loadSettings } from '../../core/settings';
+//
+// The settings modal: one row per setting of config/settings.ts, written
+// straight to the settings store as they change.
+import { settings } from '../../core/settings';
 import {
   settingsIn,
   type SelectSpec,
@@ -9,9 +12,8 @@ import {
   type SettingSection,
   type ToggleSpec
 } from '../../../config/settings';
-import type { SettingsAccess } from './index';
 import { EXTENSION_OWNED_ATTR, ns } from '../../../config/namespace';
-import { lockModalInteraction, unlockModalInteraction } from '../../ui/modal-lock';
+import { modalLock } from '../../ui/modal-lock';
 import { T, RADIUS } from '../../ui/theme';
 
 const SETTINGS_MODAL_ID = ns('SettingsModal');
@@ -21,13 +23,10 @@ const SELECT_ATTR = 'data-sd-setting-select-key';
 const SWITCH_TRACK_ATTR = 'data-sd-setting-switch-track';
 const SWITCH_THUMB_ATTR = 'data-sd-setting-switch-thumb';
 
-let settingsModalEl: HTMLDivElement | null = null;
-let settingsGetFn: SettingsAccess['getSettings'] = loadSettings;
-let settingsSetFn: SettingsAccess['setSetting'] | null = null;
-
-function syncSwitchVisual(settingKey: string, isEnabled: boolean): void {
-  const track = settingsModalEl?.querySelector<HTMLElement>(`[${SWITCH_TRACK_ATTR}="${settingKey}"]`);
-  const thumb = settingsModalEl?.querySelector<HTMLElement>(`[${SWITCH_THUMB_ATTR}="${settingKey}"]`);
+/** Paint the switch of setting `settingKey`, found under `root`. */
+function syncSwitchVisual(root: ParentNode, settingKey: string, isEnabled: boolean): void {
+  const track = root.querySelector<HTMLElement>(`[${SWITCH_TRACK_ATTR}="${settingKey}"]`);
+  const thumb = root.querySelector<HTMLElement>(`[${SWITCH_THUMB_ATTR}="${settingKey}"]`);
   if (!track || !thumb) return;
 
   track.style.background = isEnabled
@@ -114,10 +113,8 @@ function createSettingRow(key: SettingKey, definition: ToggleSpec): HTMLLabelEle
   switchTrack.appendChild(switchThumb);
 
   checkbox.onchange = () => {
-    syncSwitchVisual(key, checkbox.checked);
-    if (typeof settingsSetFn === 'function') {
-      settingsSetFn(key, checkbox.checked);
-    }
+    syncSwitchVisual(row, key, checkbox.checked);
+    settings.set(key, checkbox.checked);
   };
 
   row.appendChild(textWrap);
@@ -183,27 +180,11 @@ function createSelectRow(key: SettingKey, definition: SelectSpec): HTMLDivElemen
   }
 
   // The store turns the option's text back into the setting's value type.
-  select.onchange = () => settingsSetFn?.(key, select.value);
+  select.onchange = () => settings.set(key, select.value);
 
   row.appendChild(textWrap);
   row.appendChild(select);
   return row;
-}
-
-function refreshSettingRows(): void {
-  if (!settingsModalEl) return;
-  const settings = settingsGetFn();
-
-  for (const checkbox of settingsModalEl.querySelectorAll<HTMLInputElement>(`input[${CHECKBOX_ATTR}]`)) {
-    const key = checkbox.getAttribute(CHECKBOX_ATTR) as SettingKey;
-    checkbox.checked = Boolean(settings[key]);
-    syncSwitchVisual(key, checkbox.checked);
-  }
-
-  for (const select of settingsModalEl.querySelectorAll<HTMLSelectElement>(`select[${SELECT_ATTR}]`)) {
-    const key = select.getAttribute(SELECT_ATTR) as SettingKey;
-    select.value = String(settings[key]);
-  }
 }
 
 function sectionTitle(text: string): HTMLDivElement {
@@ -228,170 +209,184 @@ function appendSection(content: HTMLElement, section: SettingSection, title: str
   }
 }
 
-function closeSettingsModal(): void {
-  if (!settingsModalEl || settingsModalEl.style.display === 'none') return;
-  settingsModalEl.style.display = 'none';
-  unlockModalInteraction();
-}
+export class SettingsModal {
+  private overlay: HTMLDivElement | null = null;
 
-function handleSettingsEscape(event: KeyboardEvent): void {
-  if (!settingsModalEl || settingsModalEl.style.display !== 'flex') return;
-  if (event.key !== 'Escape') return;
-  event.preventDefault();
-  closeSettingsModal();
-}
+  private refresh(): void {
+    if (!this.overlay) return;
+    const current = settings.get();
 
-function createSettingsModal(): HTMLDivElement {
-  if (settingsModalEl) return settingsModalEl;
-
-  const overlay = document.createElement('div');
-  overlay.id = SETTINGS_MODAL_ID;
-  overlay.setAttribute(EXTENSION_OWNED_ATTR, 'true');
-  Object.assign(overlay.style, {
-    position: 'fixed',
-    inset: '0',
-    zIndex: '1000002',
-    display: 'none',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'rgba(2, 6, 23, 0.72)',
-    backdropFilter: 'blur(4px)',
-    padding: '20px'
-  });
-
-  const dialog = document.createElement('div');
-  Object.assign(dialog.style, {
-    width: '560px',
-    maxWidth: 'calc(100vw - 30px)',
-    maxHeight: 'calc(100vh - 40px)',
-    overflow: 'hidden',
-    borderRadius: RADIUS,
-    border: '1px solid rgba(148, 163, 184, 0.3)',
-    background: T.surface,
-    boxShadow: '0 30px 70px rgba(0,0,0,0.45)',
-    display: 'flex',
-    flexDirection: 'column'
-  });
-
-  const header = document.createElement('div');
-  Object.assign(header.style, {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '14px 16px',
-    borderBottom: '1px solid rgba(148, 163, 184, 0.22)'
-  });
-
-  const title = document.createElement('h2');
-  title.textContent = 'Extension Settings';
-  Object.assign(title.style, {
-    margin: '0',
-    color: T.fg,
-    fontSize: '16px'
-  });
-
-  const closeBtn = document.createElement('button');
-  closeBtn.type = 'button';
-  closeBtn.textContent = '×';
-  closeBtn.setAttribute('aria-label', 'Close settings');
-  Object.assign(closeBtn.style, {
-    width: '30px',
-    height: '30px',
-    borderRadius: RADIUS,
-    border: '1px solid rgba(248, 113, 113, 0.45)',
-    background: 'rgba(248, 113, 113, 0.14)',
-    color: T.danger,
-    fontSize: '20px',
-    cursor: 'pointer',
-    lineHeight: '1'
-  });
-  closeBtn.onclick = closeSettingsModal;
-
-  header.appendChild(title);
-  header.appendChild(closeBtn);
-
-  const content = document.createElement('div');
-  content.id = CONTENT_ID;
-  Object.assign(content.style, {
-    padding: '14px 16px',
-    overflowY: 'auto',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px'
-  });
-
-  appendSection(content, 'features', null);
-  appendSection(content, 'editor', 'Textarea Editor Defaults');
-  appendSection(content, 'advanced', 'Advanced');
-
-  const footer = document.createElement('div');
-  Object.assign(footer.style, {
-    borderTop: '1px solid rgba(148, 163, 184, 0.22)',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '12px 16px'
-  });
-
-  const hint = document.createElement('div');
-  hint.textContent = 'Settings apply immediately and are persisted in this browser.';
-  Object.assign(hint.style, {
-    fontSize: '12px',
-    color: T.fgMuted
-  });
-
-  const doneBtn = document.createElement('button');
-  doneBtn.type = 'button';
-  doneBtn.textContent = 'Done';
-  Object.assign(doneBtn.style, {
-    border: '1px solid rgba(96, 165, 250, 0.45)',
-    background: T.accent,
-    color: T.fg,
-    borderRadius: RADIUS,
-    padding: '8px 14px',
-    cursor: 'pointer'
-  });
-  doneBtn.onclick = closeSettingsModal;
-
-  footer.appendChild(hint);
-  footer.appendChild(doneBtn);
-
-  dialog.appendChild(header);
-  dialog.appendChild(content);
-  dialog.appendChild(footer);
-  overlay.appendChild(dialog);
-
-  overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) {
-      closeSettingsModal();
+    for (const checkbox of this.overlay.querySelectorAll<HTMLInputElement>(`input[${CHECKBOX_ATTR}]`)) {
+      const key = checkbox.getAttribute(CHECKBOX_ATTR) as SettingKey;
+      checkbox.checked = Boolean(current[key]);
+      syncSwitchVisual(this.overlay, key, checkbox.checked);
     }
-  });
 
-  document.addEventListener('keydown', handleSettingsEscape, true);
-  document.body.appendChild(overlay);
+    for (const select of this.overlay.querySelectorAll<HTMLSelectElement>(`select[${SELECT_ATTR}]`)) {
+      const key = select.getAttribute(SELECT_ATTR) as SettingKey;
+      select.value = String(current[key]);
+    }
+  }
 
-  settingsModalEl = overlay;
-  return settingsModalEl;
-}
+  get isOpen(): boolean {
+    return this.overlay?.style.display === 'flex';
+  }
 
-export function openSettingsModal({
-  getSettings = loadSettings,
-  setSetting
-}: Partial<SettingsAccess> = {}): void {
-  settingsGetFn = getSettings;
-  settingsSetFn = setSetting ?? null;
+  close(): void {
+    if (!this.overlay || this.overlay.style.display === 'none') return;
+    this.overlay.style.display = 'none';
+    modalLock.unlock();
+  }
 
-  const modal = createSettingsModal();
-  refreshSettingRows();
+  private readonly onEscape = (event: KeyboardEvent): void => {
+    if (!this.isOpen || event.key !== 'Escape') return;
+    event.preventDefault();
+    this.close();
+  };
 
-  const wasOpen = modal.style.display === 'flex';
-  modal.style.display = 'flex';
-  if (!wasOpen) {
-    lockModalInteraction();
+  private ensureOverlay(): HTMLDivElement {
+    if (this.overlay) return this.overlay;
+
+    const overlay = document.createElement('div');
+    overlay.id = SETTINGS_MODAL_ID;
+    overlay.setAttribute(EXTENSION_OWNED_ATTR, 'true');
+    Object.assign(overlay.style, {
+      position: 'fixed',
+      inset: '0',
+      zIndex: '1000002',
+      display: 'none',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'rgba(2, 6, 23, 0.72)',
+      backdropFilter: 'blur(4px)',
+      padding: '20px'
+    });
+
+    const dialog = document.createElement('div');
+    Object.assign(dialog.style, {
+      width: '560px',
+      maxWidth: 'calc(100vw - 30px)',
+      maxHeight: 'calc(100vh - 40px)',
+      overflow: 'hidden',
+      borderRadius: RADIUS,
+      border: '1px solid rgba(148, 163, 184, 0.3)',
+      background: T.surface,
+      boxShadow: '0 30px 70px rgba(0,0,0,0.45)',
+      display: 'flex',
+      flexDirection: 'column'
+    });
+
+    const header = document.createElement('div');
+    Object.assign(header.style, {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '14px 16px',
+      borderBottom: '1px solid rgba(148, 163, 184, 0.22)'
+    });
+
+    const title = document.createElement('h2');
+    title.textContent = 'Extension Settings';
+    Object.assign(title.style, {
+      margin: '0',
+      color: T.fg,
+      fontSize: '16px'
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.textContent = '×';
+    closeBtn.setAttribute('aria-label', 'Close settings');
+    Object.assign(closeBtn.style, {
+      width: '30px',
+      height: '30px',
+      borderRadius: RADIUS,
+      border: '1px solid rgba(248, 113, 113, 0.45)',
+      background: 'rgba(248, 113, 113, 0.14)',
+      color: T.danger,
+      fontSize: '20px',
+      cursor: 'pointer',
+      lineHeight: '1'
+    });
+    closeBtn.onclick = () => this.close();
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    const content = document.createElement('div');
+    content.id = CONTENT_ID;
+    Object.assign(content.style, {
+      padding: '14px 16px',
+      overflowY: 'auto',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '10px'
+    });
+
+    appendSection(content, 'features', null);
+    appendSection(content, 'editor', 'Textarea Editor Defaults');
+    appendSection(content, 'advanced', 'Advanced');
+
+    const footer = document.createElement('div');
+    Object.assign(footer.style, {
+      borderTop: '1px solid rgba(148, 163, 184, 0.22)',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '10px',
+      padding: '12px 16px'
+    });
+
+    const hint = document.createElement('div');
+    hint.textContent = 'Settings apply immediately and are persisted in this browser.';
+    Object.assign(hint.style, {
+      fontSize: '12px',
+      color: T.fgMuted
+    });
+
+    const doneBtn = document.createElement('button');
+    doneBtn.type = 'button';
+    doneBtn.textContent = 'Done';
+    Object.assign(doneBtn.style, {
+      border: '1px solid rgba(96, 165, 250, 0.45)',
+      background: T.accent,
+      color: T.fg,
+      borderRadius: RADIUS,
+      padding: '8px 14px',
+      cursor: 'pointer'
+    });
+    doneBtn.onclick = () => this.close();
+
+    footer.appendChild(hint);
+    footer.appendChild(doneBtn);
+
+    dialog.appendChild(header);
+    dialog.appendChild(content);
+    dialog.appendChild(footer);
+    overlay.appendChild(dialog);
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        this.close();
+      }
+    });
+
+    document.addEventListener('keydown', this.onEscape, true);
+    document.body.appendChild(overlay);
+
+    this.overlay = overlay;
+    return overlay;
+  }
+
+  /** Open the modal showing the current settings. */
+  open(): void {
+    const wasOpen = this.isOpen;
+    const overlay = this.ensureOverlay();
+    this.refresh();
+    overlay.style.display = 'flex';
+    if (!wasOpen) modalLock.lock();
   }
 }
 
-export function hideSettingsModal(): void {
-  closeSettingsModal();
-}
+/** The page's settings modal. */
+export const settingsModal = new SettingsModal();

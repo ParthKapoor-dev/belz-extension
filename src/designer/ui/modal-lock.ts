@@ -1,75 +1,70 @@
 /*! belz-singleton: designer/ui/modal-lock */
 // Holds module-level state, so it must be bundled exactly once;
 // the build fails otherwise. See scripts/check-singletons.mjs.
-let lockCount = 0;
-let lockedScrollY = 0;
-interface SavedBodyStyles {
-  overflow: string;
-  position: string;
-  top: string;
-  left: string;
-  right: string;
-  width: string;
-}
+//
+// While any extension modal is open, the page behind it must not scroll, and
+// page shortcuts (Run Test, say) must not fire. Every modal takes the lock
+// when it opens and releases it when it closes; the lock counts, so nested
+// modals (the settings modal over the editor) work.
 
-let previousBodyStyles: SavedBodyStyles | null = null;
-let previousHtmlOverflow = '';
+type SavedStyles = {
+  body: Pick<CSSStyleDeclaration, 'overflow' | 'position' | 'top' | 'left' | 'right' | 'width'>;
+  htmlOverflow: string;
+  scrollY: number;
+};
 
-function applyLock(): void {
-  const bodyStyle = document.body.style;
-  previousBodyStyles = {
-    overflow: bodyStyle.overflow,
-    position: bodyStyle.position,
-    top: bodyStyle.top,
-    left: bodyStyle.left,
-    right: bodyStyle.right,
-    width: bodyStyle.width
-  };
-  previousHtmlOverflow = document.documentElement.style.overflow;
+export class ModalLock {
+  private count = 0;
+  private saved: SavedStyles | null = null;
 
-  lockedScrollY = window.scrollY || window.pageYOffset || 0;
-
-  document.documentElement.style.overflow = 'hidden';
-  bodyStyle.overflow = 'hidden';
-  bodyStyle.position = 'fixed';
-  bodyStyle.top = `-${lockedScrollY}px`;
-  bodyStyle.left = '0';
-  bodyStyle.right = '0';
-  bodyStyle.width = '100%';
-}
-
-function releaseLock(): void {
-  const bodyStyle = document.body.style;
-  if (previousBodyStyles) {
-    bodyStyle.overflow = previousBodyStyles.overflow;
-    bodyStyle.position = previousBodyStyles.position;
-    bodyStyle.top = previousBodyStyles.top;
-    bodyStyle.left = previousBodyStyles.left;
-    bodyStyle.right = previousBodyStyles.right;
-    bodyStyle.width = previousBodyStyles.width;
+  get isLocked(): boolean {
+    return this.count > 0;
   }
 
-  document.documentElement.style.overflow = previousHtmlOverflow;
-  window.scrollTo(0, lockedScrollY);
-}
-
-export function lockModalInteraction(): void {
-  lockCount += 1;
-  if (lockCount === 1) {
-    applyLock();
+  lock(): void {
+    this.count += 1;
+    if (this.count === 1) this.freezePage();
   }
-}
 
-export function unlockModalInteraction(): void {
-  if (lockCount === 0) return;
-  lockCount -= 1;
+  unlock(): void {
+    if (this.count === 0) return;
+    this.count -= 1;
+    if (this.count === 0) this.releasePage();
+  }
 
-  if (lockCount === 0) {
-    releaseLock();
+  private freezePage(): void {
+    const body = document.body.style;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    this.saved = {
+      body: {
+        overflow: body.overflow,
+        position: body.position,
+        top: body.top,
+        left: body.left,
+        right: body.right,
+        width: body.width
+      },
+      htmlOverflow: document.documentElement.style.overflow,
+      scrollY
+    };
+
+    document.documentElement.style.overflow = 'hidden';
+    body.overflow = 'hidden';
+    body.position = 'fixed';
+    body.top = `-${scrollY}px`;
+    body.left = '0';
+    body.right = '0';
+    body.width = '100%';
+  }
+
+  private releasePage(): void {
+    if (!this.saved) return;
+    Object.assign(document.body.style, this.saved.body);
+    document.documentElement.style.overflow = this.saved.htmlOverflow;
+    window.scrollTo(0, this.saved.scrollY);
+    this.saved = null;
   }
 }
 
-export function isModalInteractionLocked(): boolean {
-  return lockCount > 0;
-}
-
+/** The one lock shared by every modal on the page. */
+export const modalLock = new ModalLock();

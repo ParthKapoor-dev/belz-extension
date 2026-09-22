@@ -12,15 +12,13 @@
 
 import { AD } from '../../../config/selectors';
 import { EXTENSION_OWNED_ATTR } from '../../../config/namespace';
-import { showToast } from '../../ui/toast';
+import { toast } from '../../ui/toast';
 import { copyText } from '../../utils/clipboard';
-import { createHoverOverlay } from '../../ui/hover-overlay';
+import { HoverOverlay } from '../../ui/hover-overlay';
 import {
   ICON_BUTTON_STYLE, ICON_BUTTON_HOVER, ICON_BUTTON_UNHOVER
 } from '../../ui/styles';
-import { createLogger } from '../../../shared/logger';
-
-const log = createLogger('output-copy');
+import type { Feature } from '../../core/feature';
 
 const CONTROLS_ID = 'sdExtensionOutputCopyControls';
 
@@ -51,36 +49,36 @@ function resolveOutputContainer(node: Element, event: Event): HTMLElement | null
   return node.closest<HTMLElement>(AD.outputContainer);
 }
 
-const overlay = createHoverOverlay({
-  id: CONTROLS_ID,
-  label: 'output copy overlay',
-  inset: 8,
-  resolveTarget: resolveOutputContainer,
-  buttons: [
-    {
-      glyph: '⧉',
-      title: 'Copy output JSON',
-      style: ICON_BUTTON_STYLE,
-      hover: [ICON_BUTTON_HOVER, ICON_BUTTON_UNHOVER],
-      onClick: async (container: HTMLElement) => {
-        const textToCopy = extractOutputText(container);
-        if (!textToCopy) {
-          showToast('Nothing to copy');
-          return;
+export class OutputCopy implements Feature {
+  private readonly overlay = new HoverOverlay({
+    id: CONTROLS_ID,
+    label: 'output copy overlay',
+    inset: 8,
+    resolveTarget: resolveOutputContainer,
+    buttons: [
+      {
+        glyph: '⧉',
+        title: 'Copy output JSON',
+        style: ICON_BUTTON_STYLE,
+        hover: [ICON_BUTTON_HOVER, ICON_BUTTON_UNHOVER],
+        onClick: async (container: HTMLElement) => {
+          const textToCopy = extractOutputText(container);
+          if (!textToCopy) {
+            toast.show('Nothing to copy');
+            return;
+          }
+          const copied = await copyText(textToCopy);
+          toast.show(copied ? 'Output copied' : 'Failed to copy output');
         }
-        const copied = await copyText(textToCopy);
-        showToast(copied ? 'Output copied' : 'Failed to copy output');
       }
-    }
-  ]
-});
+    ]
+  });
 
-export function startOutputCopyFeature(): () => void {
-  log.debug('Initializing output copy feature...');
-  overlay.start();
-  return stopOutputCopyFeature;
-}
+  start(): void {
+    this.overlay.start();
+  }
 
-export function stopOutputCopyFeature(): void {
-  overlay.stop();
+  stop(): void {
+    this.overlay.stop();
+  }
 }

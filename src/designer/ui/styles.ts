@@ -1,5 +1,5 @@
 // Shared button styles for extension UI elements.
-// Token-driven (see ./theme.js) — sharp corners, hairline borders, flat accent.
+// Token-driven (see ./theme.ts) — sharp corners, hairline borders, flat accent.
 
 import { T, FONT_MONO, RADIUS } from './theme';
 

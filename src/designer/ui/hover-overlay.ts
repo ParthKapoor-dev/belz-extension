@@ -63,12 +63,6 @@ export interface HoverOverlayConfig<T extends HTMLElement> {
   inset?: number;
 }
 
-export interface HoverOverlay<T extends HTMLElement> {
-  start(): void;
-  stop(): void;
-  getActive(): T | null;
-}
-
 /** Keep the overlay up briefly so the pointer can travel onto the buttons. */
 const HIDE_GRACE_MS = 120;
 /** Re-arm points, in ms after start — spanning a slow SPA bootstrap. */
@@ -89,35 +83,77 @@ function realTarget(event: Event): EventTarget | null {
   return event.target;
 }
 
-export function createHoverOverlay<T extends HTMLElement>(
-  config: HoverOverlayConfig<T>
-): HoverOverlay<T> {
-  const inset = config.inset == null ? 6 : config.inset;
-  const sizeFor = config.sizeFor || ((): OverlaySize => ({
-    buttonSize: DEFAULT_BUTTON_SIZE,
-    glyphSize: Math.round(DEFAULT_BUTTON_SIZE * 0.5),
-    compact: false
-  }));
+export class HoverOverlay<T extends HTMLElement> {
+  private readonly inset: number;
+  private readonly sizeFor: (rect: DOMRect) => OverlaySize;
 
-  let controlsEl: HTMLDivElement | null = null;
-  let buttonEls: Array<{ el: HTMLButtonElement; spec: OverlayButton<T> }> = [];
+  private controlsEl: HTMLDivElement | null = null;
+  private buttonEls: Array<{ el: HTMLButtonElement; spec: OverlayButton<T> }> = [];
 
-  let activeTarget: T | null = null;
-  let hideTimer: ReturnType<typeof setTimeout> | null = null;
-  let repositionScheduled = false;
-  let repositionTimer: ReturnType<typeof setTimeout> | null = null;
-  let listenersAttached = false;
+  private activeTarget: T | null = null;
+  private hideTimer: ReturnType<typeof setTimeout> | null = null;
+  private repositionScheduled = false;
+  private repositionTimer: ReturnType<typeof setTimeout> | null = null;
+  private listenersAttached = false;
   /** The document the delegation is currently registered on. */
-  let attachedDocument: Document | null = null;
-  const rearmTimers: Array<ReturnType<typeof setTimeout>> = [];
-  let started = false;
-  let loggedAttach = false;
+  private attachedDocument: Document | null = null;
+  private readonly rearmTimers: Array<ReturnType<typeof setTimeout>> = [];
+  private started = false;
+  private loggedAttach = false;
+
+  constructor(private readonly config: HoverOverlayConfig<T>) {
+    this.inset = config.inset ?? 6;
+    this.sizeFor = config.sizeFor ?? ((): OverlaySize => ({
+      buttonSize: DEFAULT_BUTTON_SIZE,
+      glyphSize: Math.round(DEFAULT_BUTTON_SIZE * 0.5),
+      compact: false
+    }));
+  }
+
+  /** The element the overlay is attached to right now, if any. */
+  get active(): T | null {
+    return this.activeTarget;
+  }
+
+  // ---- lifecycle ----------------------------------------------------------
+
+  start(): void {
+    // Listeners FIRST, and never behind a guard that can be left half-set.
+    //
+    // These are the whole overlay: the controls node is created lazily on the
+    // first hover. Building it here instead meant that if the host app had not
+    // settled its <body> yet — this runs at document_idle, while an SPA is
+    // still bootstrapping — the append could throw and take attachListeners()
+    // with it, leaving the feature permanently dead until something called
+    // stop()/start() again. Toggling the setting off and on was the only way
+    // back.
+    this.started = true;
+    this.attachListeners();
+    this.scheduleRearms();
+  }
+
+  stop(): void {
+    this.started = false;
+    this.cancelRearms();
+    this.detachListeners();
+
+    if (this.hideTimer) clearTimeout(this.hideTimer);
+    this.hideTimer = null;
+    if (this.repositionTimer) clearTimeout(this.repositionTimer);
+    this.repositionTimer = null;
+    this.repositionScheduled = false;
+
+    this.activeTarget = null;
+    this.controlsEl?.remove();
+    this.controlsEl = null;
+    this.buttonEls = [];
+  }
 
   // ---- the shared overlay -------------------------------------------------
 
-  function buildControls(): HTMLDivElement {
+  private buildControls(): HTMLDivElement {
     const controls = document.createElement('div');
-    controls.id = config.id;
+    controls.id = this.config.id;
     controls.setAttribute(EXTENSION_OWNED_ATTR, 'true');
     Object.assign(controls.style, {
       position: 'fixed',
@@ -129,7 +165,7 @@ export function createHoverOverlay<T extends HTMLElement>(
       zIndex: '2147483000'
     });
 
-    buttonEls = config.buttons.map((spec) => {
+    this.buttonEls = this.config.buttons.map((spec) => {
       const button = document.createElement('button');
       button.type = 'button';
       if (spec.className) button.className = spec.className;
@@ -149,7 +185,7 @@ export function createHoverOverlay<T extends HTMLElement>(
       button.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (activeTarget) spec.onClick(activeTarget);
+        if (this.activeTarget) spec.onClick(this.activeTarget);
       });
 
       controls.appendChild(button);
@@ -159,29 +195,31 @@ export function createHoverOverlay<T extends HTMLElement>(
     return controls;
   }
 
-  function ensureControls(): HTMLDivElement | null {
-    if (controlsEl && controlsEl.isConnected) return controlsEl;
+  private ensureControls(): HTMLDivElement | null {
+    if (this.controlsEl && this.controlsEl.isConnected) return this.controlsEl;
     // The host app wipes and re-renders the body on route changes, which takes
     // our overlay with it — rebuild rather than assume it survived.
     const host = document.body || document.documentElement;
     if (!host) return null;
-    controlsEl = buildControls();
-    host.appendChild(controlsEl);
-    return controlsEl;
+    this.controlsEl = this.buildControls();
+    host.appendChild(this.controlsEl);
+    return this.controlsEl;
   }
 
   // ---- positioning --------------------------------------------------------
 
-  function position(): void {
-    if (!activeTarget || !controlsEl) return;
+  private position(): void {
+    const target = this.activeTarget;
+    const controls = this.controlsEl;
+    if (!target || !controls) return;
 
-    if (!activeTarget.isConnected) {
-      hide();
+    if (!target.isConnected) {
+      this.hide();
       return;
     }
 
     // One read of the target's box drives both sizing and placement.
-    const rect = activeTarget.getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
 
     // Scrolled out of view (or collapsed) — nothing to hover.
     const offscreen =
@@ -192,13 +230,13 @@ export function createHoverOverlay<T extends HTMLElement>(
       rect.width === 0 ||
       rect.height === 0;
     if (offscreen) {
-      controlsEl.style.display = 'none';
+      controls.style.display = 'none';
       return;
     }
 
-    const size = sizeFor(rect);
+    const size = this.sizeFor(rect);
 
-    for (const { el, spec } of buttonEls) {
+    for (const { el, spec } of this.buttonEls) {
       Object.assign(el.style, {
         width: `${size.buttonSize}px`,
         height: `${size.buttonSize}px`,
@@ -207,22 +245,20 @@ export function createHoverOverlay<T extends HTMLElement>(
       if (spec.adjust) spec.adjust(el, size);
     }
 
-    Object.assign(controlsEl.style, {
+    Object.assign(controls.style, {
       display: 'flex',
-      top: `${Math.max(rect.top + inset, inset)}px`,
-      left: `${rect.right - inset - size.buttonSize}px`
+      top: `${Math.max(rect.top + this.inset, this.inset)}px`,
+      left: `${rect.right - this.inset - size.buttonSize}px`
     });
   }
 
-  function runReposition(): void {
-    if (!repositionScheduled) return; // the other scheduler already handled it
-    repositionScheduled = false;
-    if (repositionTimer) {
-      clearTimeout(repositionTimer);
-      repositionTimer = null;
-    }
-    position();
-  }
+  private readonly runReposition = (): void => {
+    if (!this.repositionScheduled) return; // the other scheduler already handled it
+    this.repositionScheduled = false;
+    if (this.repositionTimer) clearTimeout(this.repositionTimer);
+    this.repositionTimer = null;
+    this.position();
+  };
 
   // Coalesce a burst of scroll/resize/input events into one reposition.
   //
@@ -231,44 +267,43 @@ export function createHoverOverlay<T extends HTMLElement>(
   // (backgrounded tabs, headless rendering). A short timeout backstop means a
   // missing frame can never leave the overlay floating over the wrong element.
   // Whichever fires first wins; the flag stops the other from repeating it.
-  function scheduleReposition(): void {
-    if (repositionScheduled || !activeTarget) return;
-    repositionScheduled = true;
-    requestAnimationFrame(runReposition);
-    repositionTimer = setTimeout(runReposition, 32);
+  private scheduleReposition(): void {
+    if (this.repositionScheduled || !this.activeTarget) return;
+    this.repositionScheduled = true;
+    requestAnimationFrame(this.runReposition);
+    this.repositionTimer = setTimeout(this.runReposition, 32);
   }
 
-  function show(target: T): void {
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-    activeTarget = target;
-    if (!ensureControls()) return;
-    position();
+  private show(target: T): void {
+    if (this.hideTimer) clearTimeout(this.hideTimer);
+    this.hideTimer = null;
+    this.activeTarget = target;
+    if (!this.ensureControls()) return;
+    this.position();
   }
 
-  function hide(): void {
-    activeTarget = null;
-    if (controlsEl) controlsEl.style.display = 'none';
+  private hide(): void {
+    this.activeTarget = null;
+    if (this.controlsEl) this.controlsEl.style.display = 'none';
   }
 
-  function scheduleHide(): void {
-    if (hideTimer) clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => {
-      hideTimer = null;
-      hide();
+  private scheduleHide(): void {
+    if (this.hideTimer) clearTimeout(this.hideTimer);
+    this.hideTimer = setTimeout(() => {
+      this.hideTimer = null;
+      this.hide();
     }, HIDE_GRACE_MS);
   }
 
   // ---- delegated events ---------------------------------------------------
   // All of these are document-level and capture-phase, so an element that
-  // appears later needs no registration of any kind.
+  // appears later needs no registration of any kind. They are arrow
+  // properties so add/removeEventListener always see the same function.
 
   // `event` is forwarded so a resolver can hit-test the pointer position.
   // That is the only way to reach a `disabled` control, which receives no
   // pointer events of its own — see resolveTextarea in the textarea editor.
-  function resolve(node: EventTarget | null, event: Event): T | null {
+  private resolve(node: EventTarget | null, event: Event): T | null {
     // A nodeType check, not `instanceof Element`: an element from another
     // frame, or seen through Firefox's content-script wrappers, can fail
     // instanceof against this world's Element and still be an element.
@@ -276,76 +311,70 @@ export function createHoverOverlay<T extends HTMLElement>(
     const element = node as Element;
     // Never decorate anything inside our own UI (the modals, another overlay).
     if (element.closest(`[${EXTENSION_OWNED_ATTR}]`)) return null;
-    return config.resolveTarget(element, event);
+    return this.config.resolveTarget(element, event);
   }
 
-  function onPointerOver(event: Event): void {
+  private readonly onPointerOver = (event: Event): void => {
     const target = realTarget(event);
-    if (controlsEl && target && controlsEl.contains(target as Node)) {
+    if (this.controlsEl && target && this.controlsEl.contains(target as Node)) {
       // Moving onto the buttons themselves keeps the current target active.
-      if (hideTimer) {
-        clearTimeout(hideTimer);
-        hideTimer = null;
-      }
+      if (this.hideTimer) clearTimeout(this.hideTimer);
+      this.hideTimer = null;
       return;
     }
-    const resolved = resolve(target, event);
+    const resolved = this.resolve(target, event);
     if (resolved) {
-      show(resolved);
+      this.show(resolved);
       return;
     }
-    if (activeTarget) scheduleHide();
-  }
+    if (this.activeTarget) this.scheduleHide();
+  };
 
-  function onFocusIn(event: Event): void {
-    const resolved = resolve(realTarget(event), event);
-    if (resolved) show(resolved);
-  }
+  private readonly onFocusIn = (event: Event): void => {
+    const resolved = this.resolve(realTarget(event), event);
+    if (resolved) this.show(resolved);
+  };
 
-  function onFocusOut(event: Event): void {
-    if (realTarget(event) === activeTarget) scheduleHide();
-  }
+  private readonly onFocusOut = (event: Event): void => {
+    if (realTarget(event) === this.activeTarget) this.scheduleHide();
+  };
 
-  function onScroll(): void {
-    // Capture phase, so this also fires for scrollable containers, not just the
-    // window. Cheap because only one element is ever repositioned.
-    scheduleReposition();
-  }
+  // Capture phase, so this also fires for scrollable containers, not just the
+  // window. Cheap because only one element is ever repositioned.
+  private readonly onScrollOrResize = (): void => {
+    this.scheduleReposition();
+  };
 
-  function onResize(): void {
-    scheduleReposition();
-  }
-
-  function onInput(event: Event): void {
+  private readonly onInput = (event: Event): void => {
     // Auto-growing textareas change height as the user types.
-    if (realTarget(event) === activeTarget) scheduleReposition();
-  }
+    if (realTarget(event) === this.activeTarget) this.scheduleReposition();
+  };
 
-  function attachListeners(): void {
-    if (listenersAttached) return;
-    listenersAttached = true;
-    attachedDocument = document;
-    if (!loggedAttach) {
-      loggedAttach = true;
-      log.debug(`${config.label}: listeners attached`);
+  private attachListeners(): void {
+    if (this.listenersAttached) return;
+    this.listenersAttached = true;
+    this.attachedDocument = document;
+    if (!this.loggedAttach) {
+      this.loggedAttach = true;
+      log.debug(`${this.config.label}: listeners attached`);
     }
-    document.addEventListener('mouseover', onPointerOver, true);
-    document.addEventListener('focusin', onFocusIn, true);
-    document.addEventListener('focusout', onFocusOut, true);
-    document.addEventListener('input', onInput, true);
-    document.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', onResize);
+    document.addEventListener('mouseover', this.onPointerOver, true);
+    document.addEventListener('focusin', this.onFocusIn, true);
+    document.addEventListener('focusout', this.onFocusOut, true);
+    document.addEventListener('input', this.onInput, true);
+    document.addEventListener('scroll', this.onScrollOrResize, true);
+    window.addEventListener('resize', this.onScrollOrResize);
   }
 
-  function detachListeners(): void {
-    if (!listenersAttached) return;
-    listenersAttached = false;
-    document.removeEventListener('mouseover', onPointerOver, true);
-    document.removeEventListener('focusin', onFocusIn, true);
-    document.removeEventListener('focusout', onFocusOut, true);
-    document.removeEventListener('input', onInput, true);
-    document.removeEventListener('scroll', onScroll, true);
-    window.removeEventListener('resize', onResize);
+  private detachListeners(): void {
+    if (!this.listenersAttached) return;
+    this.listenersAttached = false;
+    document.removeEventListener('mouseover', this.onPointerOver, true);
+    document.removeEventListener('focusin', this.onFocusIn, true);
+    document.removeEventListener('focusout', this.onFocusOut, true);
+    document.removeEventListener('input', this.onInput, true);
+    document.removeEventListener('scroll', this.onScrollOrResize, true);
+    window.removeEventListener('resize', this.onScrollOrResize);
   }
 
   // Re-register the delegation from scratch. The host SPA bootstraps after our
@@ -354,69 +383,27 @@ export function createHoverOverlay<T extends HTMLElement>(
   // registered afterwards work — which is exactly what toggling the feature off
   // and on was doing by hand. Re-arming a few times over the first seconds, and
   // on the document lifecycle events, covers it without depending on why.
-  function rearmListeners(): void {
-    if (!started) return;
-    if (attachedDocument !== document) {
-      log.debug(`${config.label}: document was replaced — re-arming`);
+  private readonly rearmListeners = (): void => {
+    if (!this.started) return;
+    if (this.attachedDocument !== document) {
+      log.debug(`${this.config.label}: document was replaced — re-arming`);
     }
-    detachListeners();
-    attachListeners();
-  }
+    this.detachListeners();
+    this.attachListeners();
+  };
 
-  function scheduleRearms(): void {
+  private scheduleRearms(): void {
     for (const delay of REARM_DELAYS_MS) {
-      rearmTimers.push(setTimeout(rearmListeners, delay));
+      this.rearmTimers.push(setTimeout(this.rearmListeners, delay));
     }
-    window.addEventListener('load', rearmListeners);
-    window.addEventListener('pageshow', rearmListeners);
+    window.addEventListener('load', this.rearmListeners);
+    window.addEventListener('pageshow', this.rearmListeners);
   }
 
-  function cancelRearms(): void {
-    for (const timer of rearmTimers) clearTimeout(timer);
-    rearmTimers.length = 0;
-    window.removeEventListener('load', rearmListeners);
-    window.removeEventListener('pageshow', rearmListeners);
+  private cancelRearms(): void {
+    for (const timer of this.rearmTimers) clearTimeout(timer);
+    this.rearmTimers.length = 0;
+    window.removeEventListener('load', this.rearmListeners);
+    window.removeEventListener('pageshow', this.rearmListeners);
   }
-
-  // ---- lifecycle ----------------------------------------------------------
-
-  function start(): void {
-    // Listeners FIRST, and never behind a guard that can be left half-set.
-    //
-    // These are the whole overlay: the controls node is created lazily on the
-    // first hover. Building it here instead meant that if the host app had not
-    // settled its <body> yet — this runs at document_idle, while an SPA is
-    // still bootstrapping — the append could throw and take attachListeners()
-    // with it, leaving the feature permanently dead until something called
-    // stop()/start() again. Toggling the setting off and on was the only way
-    // back.
-    started = true;
-    attachListeners();
-    scheduleRearms();
-  }
-
-  function stop(): void {
-    started = false;
-    cancelRearms();
-    detachListeners();
-
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-    if (repositionTimer) {
-      clearTimeout(repositionTimer);
-      repositionTimer = null;
-    }
-    repositionScheduled = false;
-
-    activeTarget = null;
-    if (controlsEl) {
-      controlsEl.remove();
-      controlsEl = null;
-      buttonEls = [];
-    }
-  }
-
-  return { start, stop, getActive: () => activeTarget };
 }

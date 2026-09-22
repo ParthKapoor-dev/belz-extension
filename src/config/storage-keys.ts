@@ -2,7 +2,7 @@
 // of state lives under one of these — new keys added here so name collisions
 // are easy to spot.
 
-/** Feature toggles + textarea editor defaults. Written by src/designer/core/settings.js. */
+/** Feature toggles + textarea editor defaults. Written by src/designer/core/settings.ts. */
 export const SETTINGS_STORAGE_KEY = 'sdExtensionSettingsV1';
 
 /** User-added sites the extension is allowed to inject into. Options page + background. */
@@ -10,7 +10,7 @@ export const HOSTS_STORAGE_KEY = 'sdExtensionHostsV1';
 
 /**
  * SWR cache of AD method metadata (uuid → name / category / state), keyed by
- * `<origin>|<uuid>`. Written by src/devtools/ad-network/cache.js. This is what keeps
+ * `<origin>|<uuid>`. Written by src/devtools/ad-network/cache.ts. This is what keeps
  * the AD Network panel from re-resolving the same methods on every open.
  */
 export const AD_CACHE_STORAGE_KEY = 'sdExtensionAdCacheV1';

@@ -15,9 +15,6 @@ export const TIMINGS = {
   /** First try at adding the JSON button. */
   jsonButtonFirstTry: 1000,
 
-  /** Inputs read from the page are reused for this long. */
-  inputScanCache: 2000,
-
   /** After the Run Test shortcut commits the focused field, before clicking Run Test. */
   runTestCommitSettle: 150,
 

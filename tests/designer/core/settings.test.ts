@@ -2,36 +2,66 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { fakeChrome } from '../../fakes/chrome';
 import { SETTINGS_STORAGE_KEY } from '../../../src/config/storage-keys';
 import {
-  loadSettings,
-  setSetting,
-  subscribeSettings
+  SettingsStore,
+  chromeSettingsStorage,
+  type SettingsStorage
 } from '../../../src/designer/core/settings';
-import { DEFAULT_SETTINGS } from '../../../src/config/settings';
+import { DEFAULT_SETTINGS, type Settings } from '../../../src/config/settings';
 
-/** Simulate a change arriving from another tab or the options page. */
-function storeFromElsewhere(value: unknown) {
-  fakeChrome.storage.local.set({ [SETTINGS_STORAGE_KEY]: value });
+/** An in-memory SettingsStorage whose "other tab" changes the test drives. */
+function memoryStorage(initial?: unknown) {
+  let stored = initial;
+  let onChange: ((value: unknown) => void) | null = null;
+  const writes: Settings[] = [];
+  const storage: SettingsStorage = {
+    read: async () => stored,
+    write: (value) => {
+      stored = value;
+      writes.push(value);
+    },
+    watch: (fn) => {
+      onChange = fn;
+    }
+  };
+  return {
+    storage,
+    writes,
+    /** Simulate a change arriving from another tab or the options page. */
+    changeElsewhere(value: unknown) {
+      stored = value;
+      onChange?.(value);
+    }
+  };
 }
 
-beforeEach(() => {
-  fakeChrome.reset();
-  storeFromElsewhere({ ...DEFAULT_SETTINGS });
-});
+const flush = () => new Promise((r) => setTimeout(r, 0));
 
-describe('settings', () => {
+describe('SettingsStore', () => {
+  test('starts with the defaults, then loads what is stored', async () => {
+    const mem = memoryStorage({ jsonEditor: false });
+    const store = new SettingsStore(mem.storage);
+    expect(store.get().jsonEditor).toBe(true);
+    await flush();
+    expect(store.get().jsonEditor).toBe(false);
+  });
+
   test('a stored change from elsewhere is picked up', () => {
-    storeFromElsewhere({ ...DEFAULT_SETTINGS, jsonEditor: false });
-    expect(loadSettings().jsonEditor).toBe(false);
+    const mem = memoryStorage();
+    const store = new SettingsStore(mem.storage);
+    mem.changeElsewhere({ ...DEFAULT_SETTINGS, jsonEditor: false });
+    expect(store.get().jsonEditor).toBe(false);
   });
 
   test('stored values are sanitised', () => {
-    storeFromElsewhere({
+    const mem = memoryStorage();
+    const store = new SettingsStore(mem.storage);
+    mem.changeElsewhere({
       titleUpdater: 0,
       textareaEditorWrap: 'sideways',
       textareaEditorFontSize: '16',
       unknownKey: 'x'
     });
-    const s = loadSettings();
+    const s = store.get();
     expect(s.titleUpdater).toBe(false);
     expect(s.textareaEditorWrap).toBe(DEFAULT_SETTINGS.textareaEditorWrap);
     expect(s.textareaEditorFontSize).toBe(16);
@@ -40,52 +70,71 @@ describe('settings', () => {
     expect(s.outputCopy).toBe(DEFAULT_SETTINGS.outputCopy);
   });
 
-  test('an unsupported font size falls back to the default', () => {
-    storeFromElsewhere({ textareaEditorFontSize: 99 });
-    expect(loadSettings().textareaEditorFontSize).toBe(DEFAULT_SETTINGS.textareaEditorFontSize);
+  test('a non-object from elsewhere is ignored', () => {
+    const mem = memoryStorage();
+    const store = new SettingsStore(mem.storage);
+    mem.changeElsewhere({ ...DEFAULT_SETTINGS, outputCopy: false });
+    mem.changeElsewhere('garbage');
+    expect(store.get().outputCopy).toBe(false);
   });
 
-  test('a non-object in storage is ignored', () => {
-    storeFromElsewhere({ ...DEFAULT_SETTINGS, outputCopy: false });
-    storeFromElsewhere('garbage');
-    expect(loadSettings().outputCopy).toBe(false);
-  });
-
-  test('setSetting persists and notifies subscribers', () => {
+  test('set() persists and notifies subscribers', () => {
+    const mem = memoryStorage();
+    const store = new SettingsStore(mem.storage);
     const seen: boolean[] = [];
-    const unsubscribe = subscribeSettings((s: any) => seen.push(s.runTestShortcut));
-    setSetting('runTestShortcut', false);
+    const unsubscribe = store.subscribe((s) => seen.push(s.runTestShortcut));
+    store.set('runTestShortcut', false);
     unsubscribe();
 
     expect(seen[0]).toBe(true); // called immediately with the current value
     expect(seen.at(-1)).toBe(false);
-    expect((fakeChrome.storage.local.data.get(SETTINGS_STORAGE_KEY) as any).runTestShortcut).toBe(false);
+    expect(mem.writes.at(-1)?.runTestShortcut).toBe(false);
   });
 
-  test('setSetting ignores unknown keys and no-op changes', () => {
+  test('set() ignores unknown keys and no-op changes', () => {
+    const mem = memoryStorage();
+    const store = new SettingsStore(mem.storage);
     let calls = 0;
-    const unsubscribe = subscribeSettings(() => calls++);
+    const unsubscribe = store.subscribe(() => calls++);
     calls = 0;
-    setSetting('notASetting', true);
-    setSetting('titleUpdater', true); // already true
+    store.set('notASetting', true);
+    store.set('titleUpdater', true); // already true
     unsubscribe();
     expect(calls).toBe(0);
+    expect(mem.writes).toHaveLength(0);
   });
 
-  test('loadSettings returns a copy', () => {
-    const s = loadSettings();
+  test('get() returns a copy', () => {
+    const store = new SettingsStore(null);
+    const s = store.get();
     s.titleUpdater = false;
-    expect(loadSettings().titleUpdater).toBe(true);
+    expect(store.get().titleUpdater).toBe(true);
   });
 
   test('a subscriber that throws does not stop the others', () => {
+    const store = new SettingsStore(null);
     let reached = false;
-    const a = subscribeSettings(() => { throw new Error('boom'); });
-    const b = subscribeSettings(() => { reached = true; });
+    const a = store.subscribe(() => { throw new Error('boom'); });
+    const b = store.subscribe(() => { reached = true; });
     reached = false;
-    setSetting('outputCopy', false);
+    store.set('outputCopy', false);
     a();
     b();
     expect(reached).toBe(true);
+  });
+});
+
+describe('chromeSettingsStorage', () => {
+  beforeEach(() => fakeChrome.reset());
+
+  test('reads, writes and watches chrome.storage.local', async () => {
+    const storage = chromeSettingsStorage()!;
+    const seen: unknown[] = [];
+    storage.watch((value) => seen.push(value));
+
+    storage.write({ ...DEFAULT_SETTINGS, jsonEditor: false });
+    expect((fakeChrome.storage.local.data.get(SETTINGS_STORAGE_KEY) as Settings).jsonEditor).toBe(false);
+    expect((await storage.read() as Settings).jsonEditor).toBe(false);
+    expect((seen.at(-1) as Settings).jsonEditor).toBe(false);
   });
 });

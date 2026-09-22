@@ -1,6 +1,9 @@
 /*! belz-singleton: designer/core/observer */
 // Holds module-level state, so it must be bundled exactly once;
 // the build fails otherwise. See scripts/check-singletons.mjs.
+//
+// One MutationObserver for the whole page, shared by every feature that needs
+// to react to DOM changes. It runs only while someone is subscribed.
 import { createLogger } from '../../shared/logger';
 
 const log = createLogger('observer');
@@ -16,21 +19,6 @@ const POLL_FALLBACK_MS = 2000;
 
 type Subscriber = () => void;
 
-let observer: MutationObserver | null = null;
-let pollTimer: ReturnType<typeof setInterval> | null = null;
-let lastFingerprint = -1;
-const subscribers = new Set<Subscriber>();
-
-function fireAll(): void {
-  for (const callback of subscribers) {
-    try {
-      callback();
-    } catch (error) {
-      log.error('Observer subscriber failed:', error);
-    }
-  }
-}
-
 // Reading the length of the live "all elements" collection is far cheaper than
 // querySelectorAll('*'), which materialises an array of every node. It misses
 // same-size swaps, which is acceptable for a fallback: the MutationObserver
@@ -44,53 +32,72 @@ function domFingerprint(): number {
   }
 }
 
-function pollTick(): void {
-  const fingerprint = domFingerprint();
-  if (fingerprint === lastFingerprint) return;
-  lastFingerprint = fingerprint;
-  fireAll();
-}
+export class PageObserver {
+  private readonly subscribers = new Set<Subscriber>();
+  private observer: MutationObserver | null = null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private lastFingerprint = -1;
 
-// Keep the fingerprint current so the poll does not redo work the observer has
-// already triggered.
-function onMutations(): void {
-  lastFingerprint = domFingerprint();
-  fireAll();
-}
-
-export function subscribeObserver(callback: Subscriber): () => void {
-  subscribers.add(callback);
-
-  if (!observer) {
-    observer = new MutationObserver(onMutations);
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
-
-  if (!pollTimer) {
-    lastFingerprint = domFingerprint();
-    pollTimer = setInterval(pollTick, POLL_FALLBACK_MS);
-  }
-
-  try {
-    callback();
-  } catch (error) {
-    log.error('Observer subscriber failed on initial call:', error);
-  }
-
-  return () => unsubscribeObserver(callback);
-}
-
-export function unsubscribeObserver(callback: Subscriber): void {
-  subscribers.delete(callback);
-
-  if (subscribers.size === 0) {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
+  /**
+   * Calls `callback` now, then after every DOM change. Returns the function
+   * that unsubscribes it.
+   */
+  subscribe(callback: Subscriber): () => void {
+    this.subscribers.add(callback);
+    this.start();
+    try {
+      callback();
+    } catch (error) {
+      log.error('Observer subscriber failed on initial call:', error);
     }
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
+    return () => this.unsubscribe(callback);
+  }
+
+  unsubscribe(callback: Subscriber): void {
+    this.subscribers.delete(callback);
+    if (this.subscribers.size === 0) this.stop();
+  }
+
+  private start(): void {
+    if (!this.observer) {
+      // Keep the fingerprint current so the poll does not redo work the
+      // observer has already triggered.
+      this.observer = new MutationObserver(() => {
+        this.lastFingerprint = domFingerprint();
+        this.fireAll();
+      });
+      this.observer.observe(document.body, { childList: true, subtree: true });
+    }
+    if (!this.pollTimer) {
+      this.lastFingerprint = domFingerprint();
+      this.pollTimer = setInterval(() => this.pollTick(), POLL_FALLBACK_MS);
     }
   }
+
+  private stop(): void {
+    this.observer?.disconnect();
+    this.observer = null;
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = null;
+  }
+
+  private pollTick(): void {
+    const fingerprint = domFingerprint();
+    if (fingerprint === this.lastFingerprint) return;
+    this.lastFingerprint = fingerprint;
+    this.fireAll();
+  }
+
+  private fireAll(): void {
+    for (const callback of this.subscribers) {
+      try {
+        callback();
+      } catch (error) {
+        log.error('Observer subscriber failed:', error);
+      }
+    }
+  }
 }
+
+/** The observer of this page's DOM. */
+export const pageObserver = new PageObserver();

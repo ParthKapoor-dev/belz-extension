@@ -19,7 +19,7 @@ function summary(input: any) {
       : null
   };
 }
-const extract = (force = true) => extractAllInputs(force).map(summary);
+const extract = () => extractAllInputs().map(summary);
 const byKey = (inputs: ReturnType<typeof summary>[]) =>
   Object.fromEntries(inputs.map((i) => [i.key, i]));
 
@@ -54,12 +54,11 @@ describe('extractAllInputs', () => {
     expect(extract()).toEqual([]);
   });
 
-  test('results are cached briefly unless a refresh is forced', () => {
+  test('every call reads the page as it is now', () => {
     renderInputs([{ key: 'a', type: 'Text' }]);
-    expect(extract(true)).toHaveLength(1);
+    expect(extract()).toHaveLength(1);
     renderInputs([{ key: 'a', type: 'Text' }, { key: 'b', type: 'Text' }]);
-    expect(extract(false)).toHaveLength(1);
-    expect(extract(true)).toHaveLength(2);
+    expect(extract()).toHaveLength(2);
   });
 });
 

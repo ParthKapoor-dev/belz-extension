@@ -1,6 +1,6 @@
 import { syncJSONToInputs } from '../json-editor/sync';
 import { extractAllInputs } from '../json-editor/extractor';
-import { showToast } from '../../ui/toast';
+import { toast } from '../../ui/toast';
 import { AUTOFILL_PARAM } from '../../../config/endpoints';
 import { AD_ROUTE_PREFIX } from '../../../config/routes';
 import { AD_INPUTS } from '../../../config/selectors';
@@ -66,7 +66,7 @@ async function waitForPageTitleThenSync(jsonString: string): Promise<void> {
     attempt++;
 
     const rawCount = document.querySelectorAll(AD_INPUTS.keyElements).length;
-    const inputs = extractAllInputs(true);
+    const inputs = extractAllInputs();
     log.debug(`attempt ${attempt}: ${inputs.length} inputs extracted (${rawCount} INPUT_LIST_* ids)`);
     if (inputs.length === 0) return;
 
@@ -90,9 +90,9 @@ async function waitForPageTitleThenSync(jsonString: string): Promise<void> {
     }
 
     if (result.success) {
-      showToast(`Autofill: filled ${result.filledCount} input${result.filledCount === 1 ? '' : 's'}`);
+      toast.show(`Autofill: filled ${result.filledCount} input${result.filledCount === 1 ? '' : 's'}`);
     } else {
-      showToast(`Autofill: filled ${result.filledCount}, check console for details`);
+      toast.show(`Autofill: filled ${result.filledCount}, check console for details`);
     }
   }, TIMINGS.autofillInputPoll);
 }

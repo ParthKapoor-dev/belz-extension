@@ -1,20 +1,16 @@
-/*! belz-singleton: designer/features/keyboard/shortcuts */
-// Holds module-level state, so it must be bundled exactly once;
-// the build fails otherwise. See scripts/check-singletons.mjs.
+// Keyboard shortcuts on designer pages: Run Test, Esc Esc, copy link, JSON editor.
 import { triggerRunTest } from '../run-test/index';
-import { isModalInteractionLocked } from '../../ui/modal-lock';
+import { modalLock } from '../../ui/modal-lock';
 import { extractMethodName, extractServiceCategory } from '../../utils/dom';
-import { showToast } from '../../ui/toast';
-import { subscribeObserver } from '../../core/observer';
-import { showModal as showJsonInputModal } from '../json-editor/modal';
+import { toast } from '../../ui/toast';
+import { pageObserver } from '../../core/observer';
+import { jsonEditorModal } from '../json-editor/modal';
 import { AD_ROUTE_PREFIX } from '../../../config/routes';
 import { TIMINGS } from '../../../config/timings';
+import type { Feature } from '../../core/feature';
 
 // Window within which a second Escape press counts as an "Esc Esc".
 const DOUBLE_ESCAPE_WINDOW_MS = 500;
-
-let observerUnsubscribe: (() => void) | null = null;
-let lastEscapeTime = 0;
 
 // Fields whose edits the AD app only commits once focus leaves them.
 function isEditableElement(element: Element | null): element is HTMLElement {
@@ -41,62 +37,6 @@ function commitActiveElement(): boolean {
   return true;
 }
 
-// Keyboard shortcut handler
-export function handleKeydown(event: KeyboardEvent): void {
-  if (isModalInteractionLocked()) return;
-
-  // Run Test — Ctrl+Shift+Enter. Commit any focused field first so the test
-  // runs against the edited value rather than a stale one.
-  if (event.ctrlKey && event.shiftKey && event.key === 'Enter') {
-    event.preventDefault();
-    event.stopPropagation();
-    if (commitActiveElement()) {
-      // Give the AD app a moment to register the blur before running.
-      setTimeout(triggerRunTest, TIMINGS.runTestCommitSettle);
-    } else {
-      triggerRunTest();
-    }
-    return;
-  }
-
-  // Esc Esc — return focus to the page so a pending textbox edit registers.
-  if (event.key === 'Escape') {
-    const now = Date.now();
-    const isDoubleEscape = now - lastEscapeTime <= DOUBLE_ESCAPE_WINDOW_MS;
-    if (isDoubleEscape && isEditableElement(document.activeElement)) {
-      lastEscapeTime = 0;
-      event.preventDefault();
-      event.stopPropagation();
-      commitActiveElement();
-      showToast('Focus returned to page');
-    } else {
-      lastEscapeTime = now;
-    }
-    return;
-  }
-
-  // Copy AD rich link — Shift+L (ignored while typing in a field).
-  if (event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === 'L') {
-    if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
-    if (isEditableElement(document.activeElement)) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    copyAdRichLink();
-    return;
-  }
-
-  // Open the JSON input editor — Shift+J (ignored while typing in a field).
-  if (event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === 'J') {
-    if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
-    if (isEditableElement(document.activeElement)) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    showJsonInputModal();
-  }
-}
-
 async function copyAdRichLink(): Promise<void> {
   const category = extractServiceCategory();
   const name = extractMethodName();
@@ -114,45 +54,98 @@ async function copyAdRichLink(): Promise<void> {
         'text/plain': new Blob([plain], { type: 'text/plain' })
       })
     ]);
-    showToast(`Copied: ${label}`);
+    toast.show(`Copied: ${label}`);
   } catch {
     // fallback: plain URL
     try {
       await navigator.clipboard.writeText(plain);
-      showToast('Copied link (plain)');
+      toast.show('Copied link (plain)');
     } catch {
-      showToast('Failed to copy link');
+      toast.show('Failed to copy link');
     }
   }
 }
 
-// Idempotently (re)attach the keydown listener. Bound to `window` so it
-// survives the AD app replacing parts of the document, and the leading
-// removeEventListener guarantees the listener is never stacked twice.
-function ensureShortcutListener(): void {
-  window.removeEventListener('keydown', handleKeydown, true);
-  window.addEventListener('keydown', handleKeydown, true);
-}
+export class KeyboardShortcuts implements Feature {
+  private lastEscapeTime = 0;
+  private unsubscribe: (() => void) | null = null;
 
-export function startRunTestShortcutFeature(): () => void {
-  ensureShortcutListener();
-
-  // Re-assert the listener on DOM churn (and via the observer's poll). The
-  // previous flag-guarded attach could go stale: once the listener was
-  // dropped, the shortcuts stayed dead until a settings toggle re-attached
-  // them. Self-healing here keeps them working without that toggle.
-  if (!observerUnsubscribe) {
-    observerUnsubscribe = subscribeObserver(ensureShortcutListener);
+  start(): void {
+    this.attach();
+    // Re-assert the listener on DOM churn (and via the observer's poll). The
+    // previous flag-guarded attach could go stale: once the listener was
+    // dropped, the shortcuts stayed dead until a settings toggle re-attached
+    // them. Self-healing here keeps them working without that toggle.
+    this.unsubscribe ??= pageObserver.subscribe(() => this.attach());
   }
 
-  return stopRunTestShortcutFeature;
-}
-
-export function stopRunTestShortcutFeature(): void {
-  window.removeEventListener('keydown', handleKeydown, true);
-
-  if (observerUnsubscribe) {
-    observerUnsubscribe();
-    observerUnsubscribe = null;
+  stop(): void {
+    window.removeEventListener('keydown', this.onKeydown, true);
+    this.unsubscribe?.();
+    this.unsubscribe = null;
   }
+
+  // Idempotently (re)attach the keydown listener. Bound to `window` so it
+  // survives the AD app replacing parts of the document, and the leading
+  // removeEventListener guarantees the listener is never stacked twice.
+  private attach(): void {
+    window.removeEventListener('keydown', this.onKeydown, true);
+    window.addEventListener('keydown', this.onKeydown, true);
+  }
+
+  // An arrow property, so add/removeEventListener always see the same function.
+  private readonly onKeydown = (event: KeyboardEvent): void => {
+    if (modalLock.isLocked) return;
+
+    // Run Test — Ctrl+Shift+Enter. Commit any focused field first so the test
+    // runs against the edited value rather than a stale one.
+    if (event.ctrlKey && event.shiftKey && event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (commitActiveElement()) {
+        // Give the AD app a moment to register the blur before running.
+        setTimeout(triggerRunTest, TIMINGS.runTestCommitSettle);
+      } else {
+        triggerRunTest();
+      }
+      return;
+    }
+
+    // Esc Esc — return focus to the page so a pending textbox edit registers.
+    if (event.key === 'Escape') {
+      const now = Date.now();
+      const isDoubleEscape = now - this.lastEscapeTime <= DOUBLE_ESCAPE_WINDOW_MS;
+      if (isDoubleEscape && isEditableElement(document.activeElement)) {
+        this.lastEscapeTime = 0;
+        event.preventDefault();
+        event.stopPropagation();
+        commitActiveElement();
+        toast.show('Focus returned to page');
+      } else {
+        this.lastEscapeTime = now;
+      }
+      return;
+    }
+
+    // Copy AD rich link — Shift+L (ignored while typing in a field).
+    if (event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === 'L') {
+      if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
+      if (isEditableElement(document.activeElement)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      copyAdRichLink();
+      return;
+    }
+
+    // Open the JSON input editor — Shift+J (ignored while typing in a field).
+    if (event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === 'J') {
+      if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
+      if (isEditableElement(document.activeElement)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      jsonEditorModal.open();
+    }
+  };
 }

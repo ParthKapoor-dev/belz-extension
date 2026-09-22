@@ -1,5 +1,5 @@
 import { findRunTestButton } from './button-finder';
-import { showToast } from '../../ui/toast';
+import { toast } from '../../ui/toast';
 
 // Run test trigger
 export function triggerRunTest(): void {
@@ -7,5 +7,5 @@ export function triggerRunTest(): void {
   if (!button) return;
 
   button.click();
-  showToast('Run Test triggered');
+  toast.show('Run Test triggered');
 }

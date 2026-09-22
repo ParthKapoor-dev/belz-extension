@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createHoverOverlay } from '../../../src/designer/ui/hover-overlay';
+import { HoverOverlay } from '../../../src/designer/ui/hover-overlay';
 
 // Overlay targets are DOM elements: compare identities with `===` inside
 // expect(), never the elements themselves (see tests/memory-guard-worker.ts).
@@ -15,11 +15,11 @@ function hover(el: Element) {
   el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 150, clientY: 150 }));
 }
 
-let overlay: ReturnType<typeof createHoverOverlay> | null = null;
+let overlay: HoverOverlay<HTMLElement> | null = null;
 afterEach(() => overlay?.stop());
 
 function make(onClick: (t: Element) => void = () => {}) {
-  overlay = createHoverOverlay({
+  overlay = new HoverOverlay<HTMLElement>({
     id: 'testOverlay',
     label: 'test overlay',
     resolveTarget: (node: Element) => (node.tagName === 'TEXTAREA' ? (node as HTMLElement) : null),
@@ -39,7 +39,7 @@ describe('hover overlay', () => {
     const controls = document.getElementById('testOverlay')!;
     expect(controls !== null).toBe(true);
     expect(controls.style.display).toBe('flex');
-    expect(overlay!.getActive() === t).toBe(true);
+    expect(overlay!.active === t).toBe(true);
 
     hover(document.getElementById('p')!);
     await sleep(200); // past the hide grace period
@@ -73,7 +73,7 @@ describe('hover overlay', () => {
     visibleBox(t);
     make().start();
     hover(t);
-    expect(overlay!.getActive()).toBeNull();
+    expect(overlay!.active === null).toBe(true);
   });
 
   test('stop removes the controls and listeners', () => {

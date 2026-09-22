@@ -1,31 +1,19 @@
-/*! belz-singleton: designer/features/settings/index */
-// Holds module-level state, so it must be bundled exactly once;
-// the build fails otherwise. See scripts/check-singletons.mjs.
+// Settings entry points on designer pages: a ⚙ button in the header,
+// Ctrl+, / Alt+, and the browser-level command relayed by the background.
+// Always on: bootstrap starts it regardless of settings.
 import { EXTENSION_OWNED_ATTR, ns } from '../../../config/namespace';
 import { HEADER } from '../../../config/selectors';
 import { TIMINGS } from '../../../config/timings';
-import { hideSettingsModal, openSettingsModal } from './modal';
-import { subscribeObserver } from '../../core/observer';
+import { settingsModal } from './modal';
+import { pageObserver } from '../../core/observer';
 import { PRIMARY_BUTTON_STYLE } from '../../ui/styles';
 import { isOpenSettings } from '../../../shared/messages';
-import type { Settings } from '../../../config/settings';
 import { createLogger } from '../../../shared/logger';
+import type { Feature } from '../../core/feature';
 
 const log = createLogger('settings');
 
 const SETTINGS_BUTTON_ID = ns('SettingsButton');
-
-/** How the settings UI reads and writes settings. */
-export interface SettingsAccess {
-  getSettings: () => Settings;
-  setSetting: (key: string, value: unknown) => void;
-}
-
-let unsubscribe: (() => void) | null = null;
-let settingsInjectionTimer: ReturnType<typeof setTimeout> | null = null;
-let settingsInitialTimer: ReturnType<typeof setTimeout> | null = null;
-let settingsShortcutHandler: ((event: KeyboardEvent) => void) | null = null;
-let settingsCommandListener: ((message: unknown) => void) | null = null;
 
 function createSettingsButton(onClick: () => void): HTMLButtonElement {
   const button = document.createElement('button');
@@ -65,7 +53,6 @@ function injectSettingsButton(onOpen: () => void): boolean {
     return false;
   }
 
-  const button = createSettingsButton(onOpen);
   const pageTitle = headerBanner.querySelector<HTMLElement>(HEADER.title);
   if (!pageTitle) {
     log.debug('Settings injection skipped: no title in the header banner', HEADER.title);
@@ -79,93 +66,67 @@ function injectSettingsButton(onOpen: () => void): boolean {
     });
   }
 
-  pageTitle.appendChild(button);
+  pageTitle.appendChild(createSettingsButton(onOpen));
   return true;
 }
 
-function debouncedInjectSettingsButton(onOpen: () => void): void {
-  if (settingsInjectionTimer) {
-    clearTimeout(settingsInjectionTimer);
-  }
+export class SettingsLauncher implements Feature {
+  private unsubscribe: (() => void) | null = null;
+  private firstTry: ReturnType<typeof setTimeout> | null = null;
+  private debounce: ReturnType<typeof setTimeout> | null = null;
+  private listening = false;
 
-  settingsInjectionTimer = setTimeout(() => {
-    injectSettingsButton(onOpen);
-  }, TIMINGS.settingsButtonDebounce);
-}
-
-export function startSettingsFeature({ getSettings, setSetting }: SettingsAccess): () => void {
-  const openSettings = () => openSettingsModal({ getSettings, setSetting });
-
-  settingsInitialTimer = setTimeout(() => {
-    injectSettingsButton(openSettings);
-  }, TIMINGS.settingsButtonFirstTry);
-
-  if (!unsubscribe) {
-    unsubscribe = subscribeObserver(() => {
-      debouncedInjectSettingsButton(openSettings);
+  start(): void {
+    this.firstTry ??= setTimeout(() => injectSettingsButton(this.open), TIMINGS.settingsButtonFirstTry);
+    // The AD app re-renders its header; put the button back when it goes.
+    this.unsubscribe ??= pageObserver.subscribe(() => {
+      if (this.debounce) clearTimeout(this.debounce);
+      this.debounce = setTimeout(() => injectSettingsButton(this.open), TIMINGS.settingsButtonDebounce);
     });
+
+    if (this.listening) return;
+    this.listening = true;
+    document.addEventListener('keydown', this.onKeydown, true);
+    chrome.runtime?.onMessage?.addListener(this.onMessage);
   }
+
+  stop(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    if (this.firstTry) clearTimeout(this.firstTry);
+    this.firstTry = null;
+    if (this.debounce) clearTimeout(this.debounce);
+    this.debounce = null;
+
+    if (this.listening) {
+      this.listening = false;
+      document.removeEventListener('keydown', this.onKeydown, true);
+      chrome.runtime?.onMessage?.removeListener(this.onMessage);
+    }
+
+    settingsModal.close();
+    document.getElementById(SETTINGS_BUTTON_ID)?.remove();
+  }
+
+  private readonly open = (): void => settingsModal.open();
 
   // Ctrl+, is the conventional chord, but Firefox and Zen bind it to their own
   // preferences and consume it before the page sees a keydown — so Alt+, is
   // accepted as an equivalent that no browser claims. The browser-level
   // command (Alt+Shift+S by default, and remappable) covers it either way;
-  // see the open-settings handler in src/background/index.js.
-  settingsShortcutHandler = (event) => {
+  // see the open-settings handler in src/background/index.ts.
+  private readonly onKeydown = (event: KeyboardEvent): void => {
     if (event.shiftKey || event.metaKey) return;
     if (event.key !== ',' && event.code !== 'Comma') return;
     // Exactly one of Ctrl / Alt — not both, not neither.
     if (event.ctrlKey === event.altKey) return;
     event.preventDefault();
     event.stopPropagation();
-    openSettings();
+    this.open();
   };
-
-  document.addEventListener('keydown', settingsShortcutHandler, true);
 
   // Relay from the browser command, for when the chord never reaches the page.
-  settingsCommandListener = (message: unknown) => {
-    if (isOpenSettings(message)) openSettings();
+  private readonly onMessage = (message: unknown): void => {
+    if (isOpenSettings(message)) this.open();
   };
-  if (chrome.runtime && chrome.runtime.onMessage) {
-    chrome.runtime.onMessage.addListener(settingsCommandListener);
-  }
-
-  return stopSettingsFeature;
-}
-
-export function stopSettingsFeature(): void {
-  if (unsubscribe) {
-    unsubscribe();
-    unsubscribe = null;
-  }
-
-  if (settingsInjectionTimer) {
-    clearTimeout(settingsInjectionTimer);
-    settingsInjectionTimer = null;
-  }
-
-  if (settingsInitialTimer) {
-    clearTimeout(settingsInitialTimer);
-    settingsInitialTimer = null;
-  }
-
-  if (settingsShortcutHandler) {
-    document.removeEventListener('keydown', settingsShortcutHandler, true);
-    settingsShortcutHandler = null;
-  }
-
-  if (settingsCommandListener) {
-    if (chrome.runtime && chrome.runtime.onMessage) {
-      chrome.runtime.onMessage.removeListener(settingsCommandListener);
-    }
-    settingsCommandListener = null;
-  }
-
-  hideSettingsModal();
-
-  const settingsButton = document.getElementById(SETTINGS_BUTTON_ID);
-  if (settingsButton) {
-    settingsButton.remove();
-  }
 }

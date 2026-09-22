@@ -1,53 +1,31 @@
-/*! belz-singleton: designer/features/json-editor/index */
-// Holds module-level state, so it must be bundled exactly once;
-// the build fails otherwise. See scripts/check-singletons.mjs.
-import { subscribeObserver } from '../../core/observer';
-import { injectJSONButton, JSON_BUTTON_ID } from './injector';
-import { closeModal } from './modal';
-import { state } from '../../core/state';
+// JSON editor: a JSON button next to the Inputs heading of an AD method,
+// opening an editor for all of the method's test inputs at once.
+import { pageObserver } from '../../core/observer';
+import { createJSONButton, injectJSONButton } from './injector';
+import { jsonEditorModal } from './modal';
 import { TIMINGS } from '../../../config/timings';
-import { createLogger } from '../../../shared/logger';
+import type { Feature } from '../../core/feature';
 
-const log = createLogger('json-editor');
+export class JsonEditor implements Feature {
+  private button: HTMLButtonElement | null = null;
+  private unsubscribe: (() => void) | null = null;
+  private firstTry: ReturnType<typeof setTimeout> | null = null;
 
-let unsubscribe: (() => void) | null = null;
-let initialInjectionTimer: ReturnType<typeof setTimeout> | null = null;
-
-// Main JSON feature coordinator
-export function startJSONFeature(): () => void {
-  log.debug('Initializing JSON feature...');
-
-  initialInjectionTimer = setTimeout(() => {
-    injectJSONButton();
-  }, TIMINGS.jsonButtonFirstTry);
-
-  if (!unsubscribe) {
-    unsubscribe = subscribeObserver(() => {
-      injectJSONButton();
-    });
+  start(): void {
+    this.button ??= createJSONButton(() => jsonEditorModal.open());
+    const button = this.button;
+    // The Inputs heading renders late, and the AD app re-renders it; the
+    // observer puts the button back whenever it goes missing.
+    this.firstTry ??= setTimeout(() => injectJSONButton(button), TIMINGS.jsonButtonFirstTry);
+    this.unsubscribe ??= pageObserver.subscribe(() => injectJSONButton(button));
   }
 
-  log.debug('JSON feature initialized');
-  return stopJSONFeature;
-}
-
-export function stopJSONFeature(): void {
-  if (unsubscribe) {
-    unsubscribe();
-    unsubscribe = null;
+  stop(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    if (this.firstTry) clearTimeout(this.firstTry);
+    this.firstTry = null;
+    jsonEditorModal.close();
+    this.button?.remove();
   }
-
-  if (initialInjectionTimer) {
-    clearTimeout(initialInjectionTimer);
-    initialInjectionTimer = null;
-  }
-
-  closeModal();
-
-  const jsonButton = document.getElementById(JSON_BUTTON_ID);
-  if (jsonButton) {
-    jsonButton.remove();
-  }
-
-  state.jsonButtonEl = null;
 }

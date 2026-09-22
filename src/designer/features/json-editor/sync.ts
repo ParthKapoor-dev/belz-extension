@@ -390,7 +390,7 @@ export async function syncJSONToInputs(jsonString: string): Promise<SyncResult> 
     };
   }
 
-  const inputs = extractAllInputs(true);
+  const inputs = extractAllInputs();
   if (inputs.length === 0) {
     return {
       success: false,

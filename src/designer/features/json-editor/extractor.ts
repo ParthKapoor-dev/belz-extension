@@ -1,7 +1,5 @@
-import { state } from '../../core/state';
 import { normalizeDataType, type DataType, type ExtractedInput } from './types';
 import { AD_INPUTS, AD_WIDGETS } from '../../../config/selectors';
-import { TIMINGS } from '../../../config/timings';
 import { firstMatch } from '../../utils/dom';
 import { createLogger } from '../../../shared/logger';
 
@@ -189,7 +187,7 @@ function testValueSelectors(type: DataType): readonly string[] {
 export function extractInputName(container: Element, key: string): string {
   try {
     const cells = container.querySelectorAll(AD_INPUTS.cell);
-    
+
     if (cells.length < 1) {
       log.debug('No grid cells found for name extraction');
       return key;
@@ -225,7 +223,7 @@ export function isMandatory(container: Element): boolean {
   try {
     // Look for mandatory indicators
     const text = container.textContent || '';
-    
+
     // Check for asterisk or "Yes" in mandatory cell
     if (/\*|mandatory|required/i.test(text)) {
       const mandatoryCells = container.querySelectorAll(AD_INPUTS.mandatoryCell);
@@ -243,16 +241,10 @@ export function isMandatory(container: Element): boolean {
   }
 }
 
-// ===== Main Input Extraction with Caching =====
-export function extractAllInputs(forceRefresh = false): ExtractedInput[] {
+// ===== Main Input Extraction =====
+/** Every input of the method's Inputs step, read from the page now. */
+export function extractAllInputs(): ExtractedInput[] {
   try {
-    // Reuse a recent scan.
-    const now = Date.now();
-    if (!forceRefresh && state.cachedInputs && (now - state.lastInputScanTime) < TIMINGS.inputScanCache) {
-      log.debug('Using cached inputs');
-      return state.cachedInputs;
-    }
-
     log.debug('Starting input extraction...');
     const inputs: ExtractedInput[] = [];
 
@@ -261,8 +253,6 @@ export function extractAllInputs(forceRefresh = false): ExtractedInput[] {
 
     if (keyElements.length === 0) {
       log.debug('No input keys found');
-      state.cachedInputs = [];
-      state.lastInputScanTime = now;
       return [];
     }
 
@@ -334,11 +324,6 @@ export function extractAllInputs(forceRefresh = false): ExtractedInput[] {
     }
 
     log.debug(`Successfully extracted ${inputs.length} inputs`);
-    
-    // Update cache
-    state.cachedInputs = inputs;
-    state.lastInputScanTime = now;
-
     return inputs;
   } catch (error) {
     log.error('Error in extractAllInputs:', error);

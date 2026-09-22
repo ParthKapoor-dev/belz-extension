@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  startRunTestShortcutFeature,
-  stopRunTestShortcutFeature
-} from '../../../src/designer/features/keyboard/shortcuts';
-import { lockModalInteraction, unlockModalInteraction } from '../../../src/designer/ui/modal-lock';
+import { KeyboardShortcuts } from '../../../src/designer/features/keyboard/shortcuts';
+import { modalLock } from '../../../src/designer/ui/modal-lock';
+
+const shortcuts = new KeyboardShortcuts();
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let runTestClicks = 0;
@@ -20,9 +19,9 @@ beforeEach(() => {
     '<exp-button id="runTest"><button id="inner" type="button">Run Test</button></exp-button><input id="field">';
   runTestClicks = 0;
   document.getElementById('inner')!.addEventListener('click', () => runTestClicks++);
-  startRunTestShortcutFeature();
+  shortcuts.start();
 });
-afterEach(() => stopRunTestShortcutFeature());
+afterEach(() => shortcuts.stop());
 
 describe('Run Test shortcut', () => {
   test('Ctrl+Shift+Enter clicks Run Test', () => {
@@ -32,9 +31,9 @@ describe('Run Test shortcut', () => {
   });
 
   test('does nothing while a modal holds the lock', () => {
-    lockModalInteraction();
+    modalLock.lock();
     runTestChord();
-    unlockModalInteraction();
+    modalLock.unlock();
     expect(runTestClicks).toBe(0);
   });
 
@@ -57,7 +56,7 @@ describe('Run Test shortcut', () => {
   });
 
   test('stop removes the shortcut', () => {
-    stopRunTestShortcutFeature();
+    shortcuts.stop();
     runTestChord();
     expect(runTestClicks).toBe(0);
   });
