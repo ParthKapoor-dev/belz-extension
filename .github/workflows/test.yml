@@ -1,0 +1,32 @@
+# Runs the unit tests and the build on every push and pull request.
+#
+# The build is part of the check on purpose: it runs the singleton check
+# (scripts/check-singletons.mjs) and tests/build/bundle.test.ts verifies the
+# editor stays out of the page-load bundle.
+#
+# The browser end-to-end suite (`bun run test:e2e`) is run locally for now.
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Unit tests
+        run: bun test
+
+      - name: Build both browser packages
+        run: bun run build

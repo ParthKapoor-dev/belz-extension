@@ -15,7 +15,7 @@
 // window, not per-host. We check on init and again on navigation so panels
 // appear the moment the user reaches an allowed site.
 
-import { HOSTS_STORAGE_KEY } from '../config/storage-keys.js';
+import { isHostsChange, readEnabledHosts } from '../shared/hosts.js';
 
 const PANELS = [
   { title: 'AD Network', page: 'panel.html' },
@@ -39,14 +39,7 @@ function currentHost() {
 
 async function allowedHosts() {
   try {
-    const result = await chrome.storage.local.get(HOSTS_STORAGE_KEY);
-    const raw = result && result[HOSTS_STORAGE_KEY];
-    if (!raw || !Array.isArray(raw.hosts)) return new Set();
-    return new Set(
-      raw.hosts
-        .filter((h) => h && typeof h.host === 'string' && h.enabled !== false)
-        .map((h) => h.host.toLowerCase())
-    );
+    return new Set((await readEnabledHosts()).map((h) => h.host.toLowerCase()));
   } catch {
     return new Set();
   }
@@ -81,6 +74,6 @@ if (chrome.devtools.network && chrome.devtools.network.onNavigated) {
 // while DevTools is already open.
 if (chrome.storage && chrome.storage.onChanged) {
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && changes[HOSTS_STORAGE_KEY]) tryCreatePanels();
+    if (isHostsChange(changes, areaName)) tryCreatePanels();
   });
 }

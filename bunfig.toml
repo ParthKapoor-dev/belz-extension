@@ -1,6 +1,4 @@
-[build]
-entrypoints = ["src/content-script.js"]
-outdir = "dist"
-minify = true
-sourcemap = "external"
-target = "browser"
+[test]
+# A DOM and a fake `chrome` API, installed before any test imports source.
+preload = ["./tests/setup.ts"]
+root = "./tests"

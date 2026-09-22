@@ -123,15 +123,17 @@ function chromeStorage() {
     : null;
 }
 
+function callListener(listener, snapshot) {
+  try {
+    listener(snapshot);
+  } catch (error) {
+    console.error('Settings listener failed:', error);
+  }
+}
+
 function notifySettingsChange() {
   const snapshot = { ...cachedSettings };
-  for (const listener of settingListeners) {
-    try {
-      listener(snapshot);
-    } catch (error) {
-      console.error('Settings listener failed:', error);
-    }
-  }
+  for (const listener of settingListeners) callListener(listener, snapshot);
 }
 
 function applyStoredValue(stored) {
@@ -203,7 +205,9 @@ export function setSetting(key, value) {
 
 export function subscribeSettings(listener) {
   settingListeners.add(listener);
-  listener(loadSettings());
+  // Guarded like every later notification: a subscriber that throws on its
+  // first call must not throw out of subscribeSettings() into the caller.
+  callListener(listener, loadSettings());
 
   return () => {
     settingListeners.delete(listener);

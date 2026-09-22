@@ -5,7 +5,13 @@
 // (b) a set of registered content scripts the background worker reconciles
 // against this same list. See src/background/index.js for the reconcile loop.
 
-import { HOSTS_STORAGE_KEY } from '../config/storage-keys.js';
+import {
+  isHostsChange,
+  normalizeHost,
+  originPattern,
+  readHosts,
+  writeHosts
+} from '../shared/hosts.js';
 
 const listEl = document.getElementById('host-list');
 const emptyEl = document.getElementById('empty');
@@ -14,38 +20,8 @@ const formEl = document.getElementById('add-form');
 const inputEl = document.getElementById('add-input');
 const addBtn = document.getElementById('add-btn');
 
-// A bare-host input: letters/digits/dashes/dots, optionally scheme-prefixed.
-// We strip scheme, path, port, whitespace before validating.
-function normalizeHost(input) {
-  const raw = (input || '').trim();
-  if (!raw) return null;
-  const withoutScheme = raw.replace(/^https?:\/\//i, '');
-  const noPath = withoutScheme.replace(/[/?#].*$/, '');
-  const noPort = noPath.replace(/:.*$/, '');
-  const host = noPort.toLowerCase();
-  if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/.test(host)) {
-    return null;
-  }
-  return host;
-}
-
-async function readHosts() {
-  const result = await chrome.storage.local.get(HOSTS_STORAGE_KEY);
-  const raw = result && result[HOSTS_STORAGE_KEY];
-  if (!raw || !Array.isArray(raw.hosts)) return [];
-  return raw.hosts.filter((h) => h && typeof h.host === 'string');
-}
-
-async function writeHosts(hosts) {
-  await chrome.storage.local.set({ [HOSTS_STORAGE_KEY]: { hosts } });
-}
-
 function setError(msg) {
   errorEl.textContent = msg || '';
-}
-
-function originFor(host) {
-  return `https://${host}/*`;
 }
 
 /**
@@ -60,7 +36,7 @@ async function withGrantState(hosts) {
       let granted = false;
       try {
         granted = await chrome.permissions.contains({
-          origins: [originFor(entry.host)]
+          origins: [originPattern(entry.host)]
         });
       } catch {
         granted = false;
@@ -143,7 +119,7 @@ async function onGrant(host, button) {
   button.disabled = true;
   try {
     const granted = await chrome.permissions.request({
-      origins: [originFor(host)]
+      origins: [originPattern(host)]
     });
     if (!granted) {
       setError(`Permission for ${host} was denied.`);
@@ -218,8 +194,7 @@ async function onAdd(host) {
     // chrome.permissions.request must run inside a user-gesture handler —
     // the submit event chain is one, provided we don't await anything else
     // first. This branch runs synchronously off the click.
-    const origin = `https://${host}/*`;
-    const granted = await chrome.permissions.request({ origins: [origin] });
+    const granted = await chrome.permissions.request({ origins: [originPattern(host)] });
     if (!granted) {
       setError(`Permission for ${host} was denied.`);
       return;
@@ -252,7 +227,7 @@ async function onRevoke(host, button) {
     // Remove the permission first — if the user cancels this we don't want
     // to leak the host from storage while the browser still trusts it.
     const removed = await chrome.permissions.remove({
-      origins: [`https://${host}/*`]
+      origins: [originPattern(host)]
     });
     if (!removed) {
       setError(`Could not revoke ${host}.`);
@@ -279,8 +254,7 @@ formEl.addEventListener('submit', (e) => {
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== 'local' || !changes[HOSTS_STORAGE_KEY]) return;
-  refresh();
+  if (isHostsChange(changes, areaName)) refresh();
 });
 
 // Permissions also change outside this page — the browser's own add-on settings

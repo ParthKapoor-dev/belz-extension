@@ -14,7 +14,7 @@
 //                    per site in the options page (`designerHost`) and we
 //                    read it from there. Nothing is hardcoded.
 
-import { HOSTS_STORAGE_KEY } from '../../config/storage-keys.js';
+import { isHostsChange, readHosts } from '../../shared/hosts.js';
 
 let apiOrigin = '';
 let apiHost = '';
@@ -67,12 +67,9 @@ export function detectOrigin() {
 /** Mirror the user's site list so designer-host overrides are available. */
 export async function loadSiteConfig() {
   try {
-    const result = await chrome.storage.local.get(HOSTS_STORAGE_KEY);
-    const raw = result && result[HOSTS_STORAGE_KEY];
-    if (!raw || !Array.isArray(raw.hosts)) return;
+    const hosts = await readHosts();
     designerHostByHost.clear();
-    for (const entry of raw.hosts) {
-      if (!entry || typeof entry.host !== 'string') continue;
+    for (const entry of hosts) {
       const designer =
         typeof entry.designerHost === 'string' && entry.designerHost.trim()
           ? entry.designerHost.trim().toLowerCase()
@@ -88,6 +85,6 @@ export async function loadSiteConfig() {
 export function watchSiteConfig() {
   if (!chrome.storage || !chrome.storage.onChanged) return;
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && changes[HOSTS_STORAGE_KEY]) loadSiteConfig();
+    if (isHostsChange(changes, areaName)) loadSiteConfig();
   });
 }

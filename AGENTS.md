@@ -22,6 +22,8 @@ Each top-level folder of `src/` runs in its own JavaScript world: its own bundle
 ```
 src/
   config/                    constants shared by every world (no state)
+  shared/                    stateless helpers shared by every world
+    hosts.js                 the allowed-sites list: validation + storage
     constants.js             DOM selectors, observer config, feature flags
     routes.js                /automation-designer/, /ui-designer/, /pages/
     endpoints.js             CHAIN_PATH_RE, chain/designer path builders
@@ -59,7 +61,9 @@ src/
     pd-inspector/            "PD Inspector" panel
       panel.html, panel.js   entry + UI; talks to src/pd-inspector via background
 
-  background/index.js        script registrar, focus-command listener, PD relay
+  background/
+    index.js                 entry: wires listeners, PD relay, focus commands
+    content-scripts.js       registers content scripts per allowed host; seeding
   options/                   options page (user-editable host list)
     options.html, index.js
 ```
@@ -78,10 +82,19 @@ Designer features (`src/designer/features/`): `title-updater` (tab title), `keyb
 | `bun run build` | bundle to `dist/`, then pack `build/chrome/` + `build/firefox/` |
 | `bun run build:dist` | `dist/` only (skips packing) |
 | `bun run dev` | rebuild both packaged trees on every save (`scripts/dev.mjs`) |
+| `bun test` | unit tests (happy-dom + a fake `chrome`), ~1 s |
+| `bun run test:e2e` | the packaged extension in headless Chromium and Firefox |
 
 Load the per-browser tree from `build/`, never the repo root — the root `manifest.json` is a template carrying both background styles, split per browser by `scripts/pack.mjs`.
 
 A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see README.md for the full flow + required secrets.
+
+## Testing
+
+- **Unit tests: `bun test`.** They live in `tests/`, mirroring `src/`. `tests/setup.ts` (preloaded via `bunfig.toml`) installs a happy-dom DOM and the in-memory `chrome` API from `tests/fakes/chrome.ts` before any source module loads. `tests/fixtures/ad-inputs.ts` renders a minimal Automation Designer Inputs step for the JSON editor tests. `tests/build/bundle.test.ts` runs the real build and fails if the editor becomes part of the page-load bundle, or if that bundle passes 100 KB. CI (`.github/workflows/test.yml`) runs the unit tests and the build on every push.
+- **Never `expect()` a value that holds DOM nodes.** When such an assertion fails, bun's failure printer walks the whole happy-dom object graph and allocates without limit: one did reach ~10 GB and got the terminal killed by the out-of-memory killer. Compare plain fields, or identities with `expect(a === b).toBe(true)`. As a backstop, `tests/memory-guard-worker.ts` kills the test run at 1 GB (`BELZ_TEST_MEMORY_LIMIT_MB` to change it).
+- **End-to-end: `bun run test:e2e`** (`tests/e2e/run.mjs`). It builds, copies both packaged trees, and changes only their manifests: a static content script on a local page, plus access to 127.0.0.1. Then it loads the shipped files in headless Chromium (DevTools protocol) and Firefox (WebDriver BiDi), on `tests/e2e/page.html`. The page drives itself: the content script runs, the editor is not loaded until clicked, the overlay appears (including on a disabled, "published" textarea), the editor opens with the text and detects SQL, and the lazily loaded editor and the eager shortcut share one modal lock. A browser that is not installed is skipped. Match patterns in the patched manifest carry no port: Firefox rejects a pattern with one.
+- **Modules that act on import** (the panels, the options page, `background/index.js`) are thin wiring. Their logic lives in importable modules (`shared/hosts.js`, `background/content-scripts.js`, `json-editor/values.js`, `textarea-editor/language.js`, …) so it can be tested.
 
 ## Feature flow (AD/PD)
 

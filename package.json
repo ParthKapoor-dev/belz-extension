@@ -18,6 +18,11 @@
   "scripts": {
     "build": "node scripts/pack.mjs",
     "build:dist": "node scripts/build.mjs",
-    "dev": "node scripts/dev.mjs"
+    "dev": "node scripts/dev.mjs",
+    "test": "bun test",
+    "test:e2e": "node tests/e2e/run.mjs"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.14.5"
   }
 }

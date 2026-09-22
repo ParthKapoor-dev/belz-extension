@@ -7,26 +7,35 @@ import { AD_ROUTE_PREFIX } from '../../../config/routes.js';
 const POLL_INTERVAL_MS = 400;
 const LOG = (...args) => console.log('[belz autofill]', ...args);
 
-export function startCurlAutofillFeature() {
-  if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
-
-  const params = new URLSearchParams(window.location.search);
-  const encoded = params.get(AUTOFILL_PARAM);
-  if (!encoded) return;
-
-  LOG('param detected, removing from URL');
-  history.replaceState(null, '', window.location.pathname);
-
-  let jsonString;
+/**
+ * The JSON request body carried by the autofill URL parameter, or null when
+ * the parameter is absent or does not decode to valid JSON.
+ */
+export function decodeAutofillParam(search) {
+  const encoded = new URLSearchParams(search).get(AUTOFILL_PARAM);
+  if (!encoded) return null;
   try {
-    jsonString = atob(encoded);
-    const parsed = JSON.parse(jsonString);
-    LOG('decoded JSON successfully, keys:', Object.keys(parsed));
+    const jsonString = atob(encoded);
+    JSON.parse(jsonString);
+    return jsonString;
   } catch (err) {
     LOG('failed to decode/parse param:', err);
-    return;
+    return null;
   }
+}
 
+export function startCurlAutofillFeature() {
+  if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
+  if (!new URLSearchParams(window.location.search).has(AUTOFILL_PARAM)) return;
+
+  // The parameter is consumed once: strip it before anything else, so a
+  // reload does not autofill a second time.
+  LOG('param detected, removing from URL');
+  const jsonString = decodeAutofillParam(window.location.search);
+  history.replaceState(null, '', window.location.pathname);
+  if (!jsonString) return;
+
+  LOG('decoded JSON successfully, keys:', Object.keys(JSON.parse(jsonString)));
   waitForPageTitleThenSync(jsonString);
 }
 

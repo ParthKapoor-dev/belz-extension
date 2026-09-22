@@ -1,0 +1,90 @@
+<!doctype html>
+<!--
+  The end-to-end scenario page, served at /automation-designer/e2e.html. The
+  real, packaged extension runs on it. The page drives itself and writes a JSON
+  report to <html data-e2e="…">, which tests/e2e/run.mjs reads back.
+-->
+<meta charset="utf-8">
+<title>belz e2e</title>
+<style>
+  body { margin: 0; font: 14px sans-serif; }
+  #ta { position: absolute; top: 100px; left: 100px; width: 400px; height: 120px; }
+  #published { position: absolute; top: 300px; left: 100px; width: 400px; height: 120px; }
+</style>
+<textarea id="ta">select id from guardian where account_id = '#{userId}'</textarea>
+<!-- A PUBLISHED method renders its steps as disabled fields. -->
+<textarea id="published" disabled>select 1 from dual</textarea>
+<exp-button id="runTest"><button id="runTestInner" type="button">Run Test</button></exp-button>
+<script>
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const $ = (s) => document.querySelector(s);
+let runTestClicks = 0;
+$('#runTestInner').addEventListener('click', () => { runTestClicks++; });
+
+async function waitFor(fn, ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(50); }
+  return null;
+}
+function chord() {
+  document.body.dispatchEvent(new KeyboardEvent('keydown',
+    { key: 'Enter', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+}
+function hover(el, target) {
+  const box = el.getBoundingClientRect();
+  (target || el).dispatchEvent(new MouseEvent('mouseover', { bubbles: true,
+    clientX: box.left + 20, clientY: box.top + 20 }));
+}
+const overlayShown = () => {
+  const c = $('#sdExtensionTextareaControls');
+  return c && c.style.display !== 'none' ? c : null;
+};
+
+(async () => {
+  const r = {};
+  try {
+    await sleep(1800); // past the overlay's first re-arm
+
+    // The content script is running: the Run Test shortcut works.
+    chord(); await sleep(400);
+    r.contentScriptRan = runTestClicks === 1;
+
+    // The editor is not loaded until someone asks for it.
+    r.editorBeforeClick = !!$('.cm-editor');
+
+    // Hover a textarea: the shared overlay appears.
+    const ta = $('#ta');
+    hover(ta);
+    const launcher = await waitFor(() => overlayShown() && $('.sdExtensionTextareaLauncher'), 2000);
+    r.overlayShown = !!launcher;
+
+    // First click loads the editor chunk and opens it with the text.
+    if (launcher) launcher.click();
+    const editor = await waitFor(() => $('.cm-editor'), 5000);
+    r.editorOpened = !!editor;
+    r.contentMatches = editor ? $('.cm-content').textContent === ta.value : false;
+    r.detected = ($('#sdTextareaEditorLanguage') || {}).value || null;
+
+    // The lazily loaded editor and the eagerly loaded shortcut must share ONE
+    // modal lock: with the editor open, Run Test must not fire.
+    const clicksBefore = runTestClicks;
+    chord(); await sleep(400);
+    r.runTestWhileEditorOpen = runTestClicks - clicksBefore;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await sleep(200);
+    r.editorClosed = $('#sdTextareaEditorOverlay').style.display === 'none';
+    chord(); await sleep(400);
+    r.runTestAfterClose = runTestClicks - clicksBefore;
+
+    // A disabled (published) textarea gets no pointer events of its own; the
+    // browser retargets the hover to its parent. The overlay must still appear.
+    $('#sdExtensionTextareaControls').style.display = 'none';
+    hover($('#published'), document.body);
+    r.publishedOverlay = !!(await waitFor(overlayShown, 2000));
+  } catch (e) {
+    r.error = String(e && e.stack || e);
+  }
+  document.documentElement.setAttribute('data-e2e', JSON.stringify(r));
+})();
+</script>
