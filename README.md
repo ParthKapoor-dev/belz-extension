@@ -150,6 +150,7 @@ Click the **⚙** button next to the page title in AD or PD, or press `Alt+Shift
 | `bun run build` | Bundle everything and assemble `build/chrome` + `build/firefox`. The only command you normally need. |
 | `bun run build:dist` | Bundle to `dist/` only, without the per-browser folders |
 | `bun run dev` | Rebuild `build/chrome` + `build/firefox` every time you save a file |
+| `bun run typecheck` | Check the TypeScript types of the source and the tests |
 | `bun test` | Run the unit tests (about a second) |
 | `bun run test:e2e` | Run the built extension in headless Chromium and Firefox, if installed |
 

@@ -9,7 +9,7 @@ const node = (name: string, className?: string, children: any[] = []) =>
 
 describe('buildConfigIndex', () => {
   test('flattens page, components and the outlet with their owner chain', () => {
-    const graph = new Map([['card', { layout: node('div', 'card', [node('span', 'card-title')]) }]]);
+    const graph = new Map([['card', { name: 'card', referencePageId: '', layout: node('div', 'card', [node('span', 'card-title')]) }]]);
     const shell = { path: 'shell', layout: node('div', 'frame', [{ name: 'card', isSymbol: true }, node('router-outlet')]) };
     const page = { path: 'page', layout: node('main', 'content') };
     const index = buildConfigIndex(shell, graph, page);

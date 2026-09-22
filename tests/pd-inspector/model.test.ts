@@ -76,7 +76,7 @@ describe('buildComponentTree', () => {
     ['loop', { name: 'loop', referencePageId: '', layout: layout(symbol('loop')) }],
     ['bad', { name: 'bad', referencePageId: '', layout: null, error: 'HTTP 500' }]
   ]);
-  const page = { path: 'app/home', referencePageId: 'pg', layout: layout(symbol('nav'), symbol('bad'), symbol('ghost')) };
+  const page = { path: 'app/home', referencePageId: 'pg', pageVersionId: 0, layout: layout(symbol('nav'), symbol('bad'), symbol('ghost')) };
 
   const shape = (n: any): any => [n.kind, n.name, n.error ?? undefined, n.children.map(shape)].filter((x) => x !== undefined);
 
@@ -91,7 +91,7 @@ describe('buildComponentTree', () => {
   });
 
   test('a shell wraps the page at its outlet', () => {
-    const shell = { path: 'app', referencePageId: 'sh', layout: layout(symbol('nav'), { name: 'router-outlet' }) };
+    const shell = { path: 'app', referencePageId: 'sh', pageVersionId: 0, layout: layout(symbol('nav'), { name: 'router-outlet' }) };
     const tree = buildComponentTree(page, graph, shell);
     expect(tree.kind).toBe('shell');
     expect(tree.children.map((c: any) => [c.kind, c.name])).toEqual([
@@ -101,7 +101,7 @@ describe('buildComponentTree', () => {
   });
 
   test('a component that embeds itself does not recurse forever', () => {
-    const selfPage = { path: 'p', referencePageId: '', layout: layout(symbol('loop')) };
+    const selfPage = { path: 'p', referencePageId: '', pageVersionId: 0, layout: layout(symbol('loop')) };
     const tree = buildComponentTree(selfPage, graph, null);
     const loop = tree.children[0];
     expect(loop.children).toHaveLength(1);

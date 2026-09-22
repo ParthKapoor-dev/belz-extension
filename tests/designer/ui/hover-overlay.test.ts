@@ -22,7 +22,7 @@ function make(onClick: (t: Element) => void = () => {}) {
   overlay = createHoverOverlay({
     id: 'testOverlay',
     label: 'test overlay',
-    resolveTarget: (node: Element) => (node.tagName === 'TEXTAREA' ? node : null),
+    resolveTarget: (node: Element) => (node.tagName === 'TEXTAREA' ? (node as HTMLElement) : null),
     buttons: [{ className: 'go', glyph: '>', title: 'Go', style: {}, onClick }]
   });
   return overlay;

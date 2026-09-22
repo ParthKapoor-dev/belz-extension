@@ -1,4 +1,4 @@
-# Runs the unit tests and the build on every push and pull request.
+# Type-checks, runs the unit tests and builds on every push and pull request.
 #
 # The build is part of the check on purpose: it runs the singleton check
 # (scripts/check-singletons.mjs) and tests/build/bundle.test.ts verifies the
@@ -24,6 +24,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Type-check
+        run: bun run typecheck
 
       - name: Unit tests
         run: bun test

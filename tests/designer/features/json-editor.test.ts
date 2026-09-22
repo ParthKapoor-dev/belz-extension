@@ -97,14 +97,14 @@ describe('syncJSONToInputs', () => {
     const result = await syncJSONToInputs('{"name":"x","ghost":1}');
     expect(result.success).toBe(true);
     expect(result.skippedMissingKeys).toEqual(['ghost']);
-    expect(result.warnings.join(' ')).toContain('ghost');
+    expect((result.warnings ?? []).join(' ')).toContain('ghost');
   });
 
   test('skips file inputs with a warning', async () => {
     renderInputs([{ key: 'name', type: 'Text' }, { key: 'upload', type: 'File' }]);
     const result = await syncJSONToInputs('{"name":"x","upload":"a.pdf"}');
     expect(result.filledCount).toBe(1);
-    expect(result.warnings.join(' ')).toContain('File input(s) skipped');
+    expect((result.warnings ?? []).join(' ')).toContain('File input(s) skipped');
   });
 
   test('reports an invalid value without touching the input', async () => {
@@ -123,13 +123,13 @@ describe('syncJSONToInputs', () => {
     renderInputs([{ key: 'a', type: 'Text' }]);
     const result = await syncJSONToInputs(json);
     expect(result.success).toBe(false);
-    expect(result.errors.join(' ')).toContain(message);
+    expect((result.errors ?? []).join(' ')).toContain(message);
   });
 
   test('explains when the page has no inputs at all', async () => {
     document.body.innerHTML = '';
     const result = await syncJSONToInputs('{"a":1}');
     expect(result.success).toBe(false);
-    expect(result.errors[0]).toContain('No inputs found');
+    expect(result.errors?.[0]).toContain('No inputs found');
   });
 });

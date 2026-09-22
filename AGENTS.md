@@ -8,11 +8,11 @@ A browser extension that augments Automation Designer (AD), Page Designer (PD), 
 
 ## Tech & runtime
 
-- Plain JavaScript (ES modules) — no TypeScript, no React.
+- TypeScript in strict mode, no framework. Bun bundles `.ts` directly; `tsc` only checks types (`noEmit`) and never produces the shipped code. Imports are extensionless (`moduleResolution: bundler`).
 - Manifest V3 (`manifest.json`).
 - Build: `scripts/build.mjs`, then `scripts/escape-non-ascii.mjs` over every output for extension-loader compatibility. The AD and PD content scripts are built together as **one code-split ES-module graph** into `dist/modules/`; every other entry is a standalone bundle. See "Content-script module graph" below.
 - Per-browser packaging: `scripts/pack.mjs` assembles `build/chrome/` and `build/firefox/` trees, the second adding `browser_specific_settings.gecko` for AMO signing.
-- Targets: **runtime-editable** — the manifest declares no static `host_permissions` at all; the user's granted hosts live in `chrome.storage.local` under `sdExtensionHostsV1` and are managed via the options page. `src/background/index.js` reconciles `chrome.scripting.registerContentScripts` against that list.
+- Targets: **runtime-editable** — the manifest declares no static `host_permissions` at all; the user's granted hosts live in `chrome.storage.local` under `sdExtensionHostsV1` and are managed via the options page. `src/background/index.ts` reconciles `chrome.scripting.registerContentScripts` against that list.
 - **No external dependencies at runtime.** The extension talks only to the site the user is inspecting, reusing that page's own session. There is no companion server, CLI, or localhost service.
 
 ## Layout: one folder per JavaScript world
@@ -22,50 +22,56 @@ Each top-level folder of `src/` runs in its own JavaScript world: its own bundle
 ```
 src/
   config/                    constants shared by every world (no state)
+    constants.ts             DOM selectors, observer config, feature flags
+    routes.ts                /automation-designer/, /ui-designer/, /pages/
+    endpoints.ts             CHAIN_PATH_RE, chain/designer path builders
+    storage-keys.ts          SETTINGS/HOSTS/FOCUS/AD_CACHE storage keys
+    namespace.ts             EXT_PREFIX + ns() helper for DOM identifiers
   shared/                    stateless helpers shared by every world
-    hosts.js                 the allowed-sites list: validation + storage
-    constants.js             DOM selectors, observer config, feature flags
-    routes.js                /automation-designer/, /ui-designer/, /pages/
-    endpoints.js             CHAIN_PATH_RE, chain/designer path builders
-    storage-keys.js          SETTINGS/HOSTS/FOCUS/AD_CACHE storage keys
-    namespace.js             EXT_PREFIX + ns() helper for DOM identifiers
+    hosts.ts                 the allowed-sites list: validation + storage
+    messages.ts              runtime message shapes + type guards
+    dom.ts                   required(): an element the page's own HTML must have
 
   designer/                  content scripts on AD and PD designer pages
-    ad-content.js            entry, /automation-designer/*
-    pd-content.js            entry, /ui-designer/*
+    ad-content.ts            entry, /automation-designer/*
+    pd-content.ts            entry, /ui-designer/*
     core/                    bootstrap, settings, state, logger, observer
     features/                one folder per feature (see below)
     ui/                      modal frame, modal lock, toast, styles, theme, hover overlay
     utils/                   dom + clipboard helpers
 
   pd-inspector/              content script on published /pages/*
-    index.js                 entry
-    engine.js                answers the PD Inspector panel; inspect mode
-    config.js                fetches page/shell/component compiled configs
-    component-tree.js        the component-nesting tree (config only, exact)
-    tree.js                  normalised config-node tree + visibility
-    resolve.js               DOM element -> owning config node (className anchors)
-    highlight.js             on-page highlight overlay (shadow DOM)
+    index.ts                 entry
+    engine.ts                answers the PD Inspector panel; inspect mode
+    config.ts                fetches page/shell/component compiled configs
+    component-tree.ts        the component-nesting tree (config only, exact)
+    tree.ts                  normalised config-node tree + visibility
+    resolve.ts               DOM element -> owning config node (className anchors)
+    highlight.ts             on-page highlight overlay (shadow DOM)
+    types.ts                 config, tree and engine data shapes
 
   devtools/
     devtools.html            DevTools page shell
-    devtools-page.js         entry: registers the two panels on allowed sites
+    devtools-page.ts         entry: registers the two panels on allowed sites
+    inspected.ts             evalInPage(): run an expression in the inspected page
+    focus-flag.ts            watchFocusFlag(): the "focus this panel" command
     ad-network/              "AD Network" panel
-      panel.html, panel.js   entry + UI
-      extract.js             classifyChainUrl + body parser (pure)
-      origin.js              inspected origin + designer-host override
-      api.js                 platform chain-API client (auth reuse, v2 -> v1)
-      cache.js               SWR cache of uuid -> name/category
-      pending-capture.js     fetch/XHR wrapper for in-flight requests
-      json-tree.js           collapsible JSON view
+      panel.html, panel.ts   entry + UI
+      extract.ts             classifyChainUrl + body parser (pure)
+      origin.ts              inspected origin + designer-host override
+      api.ts                 platform chain-API client (auth reuse, v2 -> v1)
+      cache.ts               SWR cache of uuid -> name/category
+      pending-capture.ts     fetch/XHR wrapper for in-flight requests
+      json-tree.ts           collapsible JSON view
+      types.ts               HarEntry, MethodSummary, …
     pd-inspector/            "PD Inspector" panel
-      panel.html, panel.js   entry + UI; talks to src/pd-inspector via background
+      panel.html, panel.ts   entry + UI; talks to src/pd-inspector via background
 
   background/
-    index.js                 entry: wires listeners, PD relay, focus commands
-    content-scripts.js       registers content scripts per allowed host; seeding
+    index.ts                 entry: wires listeners, PD relay, focus commands
+    content-scripts.ts       registers content scripts per allowed host; seeding
   options/                   options page (user-editable host list)
-    options.html, index.js
+    options.html, index.ts
 ```
 
 Designer features (`src/designer/features/`): `title-updater` (tab title), `keyboard` (shortcuts), `run-test` (Run Test lookup + click), `json-editor` (JSON modal: extractor, sync engine, type adapters), `output-copy` (hover copy icon), `textarea-editor` (shared hover overlay + lazy CodeMirror modal), `curl-autofill` (autofill from the AD Network panel), `settings` (settings modal).
@@ -82,6 +88,7 @@ Designer features (`src/designer/features/`): `title-updater` (tab title), `keyb
 | `bun run build` | bundle to `dist/`, then pack `build/chrome/` + `build/firefox/` |
 | `bun run build:dist` | `dist/` only (skips packing) |
 | `bun run dev` | rebuild both packaged trees on every save (`scripts/dev.mjs`) |
+| `bun run typecheck` | `tsc` over `src/` (`tsconfig.json`) and `tests/` (`tests/tsconfig.json`) |
 | `bun test` | unit tests (happy-dom + a fake `chrome`), ~1 s |
 | `bun run test:e2e` | the packaged extension in headless Chromium and Firefox |
 
@@ -91,10 +98,10 @@ A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see
 
 ## Testing
 
-- **Unit tests: `bun test`.** They live in `tests/`, mirroring `src/`. `tests/setup.ts` (preloaded via `bunfig.toml`) installs a happy-dom DOM and the in-memory `chrome` API from `tests/fakes/chrome.ts` before any source module loads. `tests/fixtures/ad-inputs.ts` renders a minimal Automation Designer Inputs step for the JSON editor tests. `tests/build/bundle.test.ts` runs the real build and fails if the editor becomes part of the page-load bundle, or if that bundle passes 100 KB. CI (`.github/workflows/test.yml`) runs the unit tests and the build on every push.
+- **Unit tests: `bun test`.** They live in `tests/`, mirroring `src/`. `tests/setup.ts` (preloaded via `bunfig.toml`) installs a happy-dom DOM and the in-memory `chrome` API from `tests/fakes/chrome.ts` before any source module loads. `tests/fixtures/ad-inputs.ts` renders a minimal Automation Designer Inputs step for the JSON editor tests. `tests/build/bundle.test.ts` runs the real build and fails if the editor becomes part of the page-load bundle, or if that bundle passes 100 KB. CI (`.github/workflows/test.yml`) runs the type-check, the unit tests and the build on every push.
 - **Never `expect()` a value that holds DOM nodes.** When such an assertion fails, bun's failure printer walks the whole happy-dom object graph and allocates without limit: one did reach ~10 GB and got the terminal killed by the out-of-memory killer. Compare plain fields, or identities with `expect(a === b).toBe(true)`. As a backstop, `tests/memory-guard-worker.ts` kills the test run at 1 GB (`BELZ_TEST_MEMORY_LIMIT_MB` to change it).
 - **End-to-end: `bun run test:e2e`** (`tests/e2e/run.mjs`). It builds, copies both packaged trees, and changes only their manifests: a static content script on a local page, plus access to 127.0.0.1. Then it loads the shipped files in headless Chromium (DevTools protocol) and Firefox (WebDriver BiDi), on `tests/e2e/page.html`. The page drives itself: the content script runs, the editor is not loaded until clicked, the overlay appears (including on a disabled, "published" textarea), the editor opens with the text and detects SQL, and the lazily loaded editor and the eager shortcut share one modal lock. A browser that is not installed is skipped. Match patterns in the patched manifest carry no port: Firefox rejects a pattern with one.
-- **Modules that act on import** (the panels, the options page, `background/index.js`) are thin wiring. Their logic lives in importable modules (`shared/hosts.js`, `background/content-scripts.js`, `json-editor/values.js`, `textarea-editor/language.js`, …) so it can be tested.
+- **Modules that act on import** (the panels, the options page, `background/index.ts`) are thin wiring. Their logic lives in importable modules (`shared/hosts.ts`, `background/content-scripts.ts`, `json-editor/values.ts`, `textarea-editor/language.ts`, …) so it can be tested.
 
 ## Feature flow (AD/PD)
 
@@ -106,16 +113,16 @@ A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see
 
 1. The manifest has no `host_permissions` at all, only `optional_host_permissions: ["*://*/*"]`.
 2. `options.html` is the user-facing surface — add a host, we call `chrome.permissions.request({ origins: [\`https://${host}/*\`] })` from the submit gesture and, on grant, write the host into `chrome.storage.local[sdExtensionHostsV1]`.
-3. `src/background/index.js` listens for `chrome.storage.onChanged` on that key and reconciles `chrome.scripting.registerContentScripts` — three registrations per host (AD, PD, PD-Inspector) with stable IDs (`ad-<host>`, `pd-<host>`, `pdi-<host>`).
+3. `src/background/index.ts` listens for `chrome.storage.onChanged` on that key and reconciles `chrome.scripting.registerContentScripts` — three registrations per host (AD, PD, PD-Inspector) with stable IDs (`ad-<host>`, `pd-<host>`, `pdi-<host>`).
 4. `chrome.runtime.onStartup` / `onInstalled` also trigger reconcile so the registrations are restored on browser start / extension update.
 5. Revoke reverses everything: `chrome.scripting.unregisterContentScripts` → `chrome.permissions.remove` → storage delete.
 6. **Seeding.** Uninstalling an extension clears its storage, and a Firefox temporary add-on is uninstalled on every reload — so the host list would be lost on each rebuild. If a `sites.default.json` is present in the extension root (gitignored; see `sites.default.json.example`, copied into both trees by `pack.mjs`), `chrome.runtime.onInstalled` restores the list from it when storage has no host key at all. An explicitly emptied list stores `{hosts: []}` and is therefore never re-seeded.
-7. **Grant state is read from the browser, not storage.** Seeded entries are written `enabled:false, seeded:true` — a permission cannot be restored without a user gesture. `options.js` calls `chrome.permissions.contains` for every host on each render and reconciles the stored `enabled` flag against it, so a host revoked outside the page (or a list carried into a different profile) shows a **Grant** button rather than a stale Revoke. It also subscribes to `chrome.permissions.onAdded` / `onRemoved` to repaint on out-of-band changes.
+7. **Grant state is read from the browser, not storage.** Seeded entries are written `enabled:false, seeded:true` — a permission cannot be restored without a user gesture. `options.ts` calls `chrome.permissions.contains` for every host on each render and reconciles the stored `enabled` flag against it, so a host revoked outside the page (or a list carried into a different profile) shows a **Grant** button rather than a stale Revoke. It also subscribes to `chrome.permissions.onAdded` / `onRemoved` to repaint on out-of-band changes.
 
 ## JSON sync engine (the most fragile piece)
 
-- `designer/features/json-editor/extractor.js` walks the AD Inputs DOM via `config/constants.js` selectors to produce a `{ key, value, type, control }` set.
-- `designer/features/json-editor/sync.js` normalizes incoming JSON values against each input's declared type:
+- `designer/features/json-editor/extractor.ts` walks the AD Inputs DOM via `config/constants.ts` selectors to produce a `{ key, value, type, control }` set.
+- `designer/features/json-editor/sync.ts` normalizes incoming JSON values against each input's declared type:
   - Text / Number / Integer / Boolean / Date / DateTime / Json / Array / Map / StructuredData
 - Special controls handled inline:
   - boolean `exp-select`
@@ -127,11 +134,11 @@ A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see
 
 Two capture pipelines feed the panel:
 
-1. **`chrome.devtools.network`** (in `panel.js` — the completed-request feed).
+1. **`chrome.devtools.network`** (in `panel.ts` — the completed-request feed).
    - `onRequestFinished` streams live completions.
    - `getHAR()` is called once on init to backfill anything captured before the user first opened our panel tab. Entries are keyed by `url + startedDateTime` for dedup.
-   - `src/devtools/ad-network/extract.js` classifies chain URLs and extracts the method name from definition-fetch bodies.
-2. **`src/devtools/ad-network/pending-capture.js`** (the in-flight feed).
+   - `src/devtools/ad-network/extract.ts` classifies chain URLs and extracts the method name from definition-fetch bodies.
+2. **`src/devtools/ad-network/pending-capture.ts`** (the in-flight feed).
    - Injects a fetch + XMLHttpRequest wrapper into the inspected page via `chrome.devtools.inspectedWindow.eval`.
    - The wrapper tracks live AD chain requests in `window.__belzADPending`; the panel polls that map ~2× per second and renders each entry as a pending row that disappears on completion.
    - Reinstalled on `chrome.devtools.network.onNavigated`; idempotent per page context.
@@ -140,14 +147,14 @@ Two capture pipelines feed the panel:
 
 The extension is **self-contained** — it depends on no local service, CLI, or third-party API. Everything it needs about a method it reads from the inspected instance itself:
 
-1. `src/devtools/ad-network/origin.js` resolves two origins. `apiOrigin` is the inspected window's own origin. `designerOrigin` is the same unless the user recorded a `designerHost` override for that site on the options page (split public/staff-portal deployments). No host mapping is hardcoded.
-2. `src/devtools/ad-network/api.js` calls `GET /rest/api/automation/chain/v2/<uuid>?basicInfo=false` on `apiOrigin`, falling back to the V1 path on non-auth errors, and normalises both shapes to `{ name, category, state, referenceId }`. The designer URL is then `designerOrigin + /automation-designer/<category>/<draftUuid>`, where a `PUBLISHED` method routes through its `referenceId` (the linked draft).
+1. `src/devtools/ad-network/origin.ts` resolves two origins. `apiOrigin` is the inspected window's own origin. `designerOrigin` is the same unless the user recorded a `designerHost` override for that site on the options page (split public/staff-portal deployments). No host mapping is hardcoded.
+2. `src/devtools/ad-network/api.ts` calls `GET /rest/api/automation/chain/v2/<uuid>?basicInfo=false` on `apiOrigin`, falling back to the V1 path on non-auth errors, and normalises both shapes to `{ name, category, state, referenceId }`. The designer URL is then `designerOrigin + /automation-designer/<category>/<draftUuid>`, where a `PUBLISHED` method routes through its `referenceId` (the linked draft).
 3. Auth reuses whatever the page already has, in order: the `Authorization` / `Expertly-Auth-Token` header lifted off an observed chain request in the HAR; a JWT found by a generic scan of page `localStorage`/`sessionStorage`; cookies alone via `credentials: 'include'`. All three rely on the host grant the panel already requires.
-4. `src/devtools/ad-network/cache.js` memoises results in `chrome.storage.local` under `sdExtensionAdCacheV1`, keyed `<origin>|<uuid>`. Fresh for 6h, stale-but-served (with background revalidation) to 14d, capped at 800 entries with oldest-first eviction.
+4. `src/devtools/ad-network/cache.ts` memoises results in `chrome.storage.local` under `sdExtensionAdCacheV1`, keyed `<origin>|<uuid>`. Fresh for 6h, stale-but-served (with background revalidation) to 14d, capped at 800 entries with oldest-first eviction.
 
-`panel.js` batches resolves behind a 250 ms debounce with a concurrency of 4, and retries transport/auth failures every 4 s — the user may still be signing in when the panel opens.
+`panel.ts` batches resolves behind a 250 ms debounce with a concurrency of 4, and retries transport/auth failures every 4 s — the user may still be signing in when the panel opens.
 
-Cross-browser caveat: Firefox can't access `chrome.tabs` from a DevTools script directly, so `background.js` relays messages between the PD panel and the target tab.
+Cross-browser caveat: Firefox can't access `chrome.tabs` from a DevTools script directly, so `background/index.ts` relays messages between the PD panel and the target tab.
 
 Focus-hint shortcut: `Ctrl+Shift+A` / `Ctrl+Shift+P` fire background `chrome.commands` — neither Chrome nor Firefox exposes an API for extensions to open or switch DevTools panels, so the background writes a session flag and each panel reacts (scroll+pulse+focus for AD, refetch+pulse for PD) when the flag targets it.
 
@@ -155,13 +162,13 @@ Focus-hint shortcut: `Ctrl+Shift+A` / `Ctrl+Shift+P` fire background `chrome.com
 
 Answers one question on a published page: *which Page Designer components are on it, and which one owns this piece of the UI?* Two halves, with very different certainty.
 
-- **Component tree — exact.** `config.js` fetches the page's compiled config from the deployable endpoint, then every PD component it embeds, recursively. A component reference is a childless `isSymbol` node. `component-tree.js` assembles the nesting from configs alone, never the DOM, so it is always right. A page can render inside an **app shell**: a separate PAGE, looked up by the first path segment, whose layout contains a `router-outlet` node. The shell is where navbar and sidebar come from. When one exists, the content page is spliced in at the outlet. Only the config's outlet counts: the rendered page also contains Angular's own `<router-outlet>` elements.
-- **Inspect mode — anchored, not guessed.** The runtime does not mark component boundaries in the DOM, but a config node's static `props.className` survives onto its rendered element. `resolve.js` pins elements to config nodes by className: one node and one element is exact; several of each are paired in document order only when the counts agree, and refused otherwise, because a wrong anchor shadows the right one further up. Hovering an element climbs to the nearest anchored ancestor. The panel shows how many nodes were anchored.
-- **Wiring.** The panel (`devtools/pd-inspector/panel.js`) calls the engine through the background relay, because Firefox gives DevTools panels no `chrome.tabs`. The engine pushes inspect-mode picks back with `chrome.runtime.sendMessage`. All messages carry `ns: 'pd'`. Published pages are SPAs, so the engine rebuilds when the path changes.
+- **Component tree — exact.** `config.ts` fetches the page's compiled config from the deployable endpoint, then every PD component it embeds, recursively. A component reference is a childless `isSymbol` node. `component-tree.ts` assembles the nesting from configs alone, never the DOM, so it is always right. A page can render inside an **app shell**: a separate PAGE, looked up by the first path segment, whose layout contains a `router-outlet` node. The shell is where navbar and sidebar come from. When one exists, the content page is spliced in at the outlet. Only the config's outlet counts: the rendered page also contains Angular's own `<router-outlet>` elements.
+- **Inspect mode — anchored, not guessed.** The runtime does not mark component boundaries in the DOM, but a config node's static `props.className` survives onto its rendered element. `resolve.ts` pins elements to config nodes by className: one node and one element is exact; several of each are paired in document order only when the counts agree, and refused otherwise, because a wrong anchor shadows the right one further up. Hovering an element climbs to the nearest anchored ancestor. The panel shows how many nodes were anchored.
+- **Wiring.** The panel (`devtools/pd-inspector/panel.ts`) calls the engine through the background relay, because Firefox gives DevTools panels no `chrome.tabs`. The engine pushes inspect-mode picks back with `chrome.runtime.sendMessage`. All messages carry `ns: 'pd'`. Published pages are SPAs, so the engine rebuilds when the path changes.
 
 ## Textarea overlay (performance-critical)
 
-`designer/features/textarea-editor/index.js` injects **one** controls element for the whole page, positioned over whichever textarea has pointer or keyboard focus. Do not reintroduce per-textarea DOM.
+`designer/features/textarea-editor/index.ts` injects **one** controls element for the whole page, positioned over whichever textarea has pointer or keyboard focus. Do not reintroduce per-textarea DOM.
 
 - Hover/focus is handled by capture-phase delegation on `document`, using `event.composedPath()[0]` so open shadow roots resolve to the real inner target. A textarea added later therefore needs no registration and no rescan — this feature deliberately does **not** subscribe to the MutationObserver.
 - Read-only and **disabled** textareas qualify, so a PUBLISHED AD method gets the overlay too — only drafts did before. The modal already refuses to write back to a read-only source (`updateModalForSource` disables Save).
@@ -173,7 +180,7 @@ Measured node visits per single DOM mutation on a synthetic 40-step method (7,97
 
 ## Content-script module graph (lazy editor)
 
-The editor modal (`designer/features/textarea-editor/modal.js`) carries CodeMirror and every language mode, ~590 KB. It used to be ~94% of each content script, parsed on every AD and PD page load. It is now reached only through `import('./modal.js')` in `textarea-editor/index.js`, and fetched on the first **Open** click.
+The editor modal (`designer/features/textarea-editor/modal.ts`) carries CodeMirror and every language mode, ~590 KB. It used to be ~94% of each content script, parsed on every AD and PD page load. It is now reached only through `import('./modal')` in `textarea-editor/index.ts`, and fetched on the first **Open** click.
 
 | | Before | After |
 |---|---|---|
@@ -183,11 +190,11 @@ The editor modal (`designer/features/textarea-editor/modal.js`) carries CodeMirr
 
 How it fits together:
 
-- `dist/ad-content.js` and `dist/pd-content.js` are **generated loaders**, written by `build.mjs`. Content scripts cannot be ES modules, so each loader just `import()`s the real entry from `dist/modules/`. They keep the paths `background.js` registers, so registrations did not change.
-- `dist/modules/` is one `bun build --splitting` over both entries (`src/designer/ad-content.js`, `src/designer/pd-content.js`): the entries, shared chunks, and the lazy editor chunk (`chunk-<hash>.js`). `build.mjs` wipes `dist/` first so a stale hashed chunk can never ship.
+- `dist/ad-content.js` and `dist/pd-content.js` are **generated loaders**, written by `build.mjs`. Content scripts cannot be ES modules, so each loader just `import()`s the real entry from `dist/modules/`. They keep the paths `background/content-scripts.ts` registers, so registrations did not change.
+- `dist/modules/` is one `bun build --splitting` over both entries (`src/designer/ad-content.ts`, `src/designer/pd-content.ts`): the entries, shared chunks, and the lazy editor chunk (`chunk-<hash>.js`). `build.mjs` wipes `dist/` first so a stale hashed chunk can never ship.
 - `manifest.json` lists `dist/modules/*` in `web_accessible_resources`. **This is required**: without it both Chromium and Firefox refuse the import (verified).
 
-**The rule that must not be broken: one `--splitting` call, never a separate build for the editor.** `modal.js` imports `core/state`, `core/settings` and `ui/modal-lock` — module-level singletons. Built separately, the chunk gets its own copies. That was tested deliberately in both browsers: the editor still opens and looks perfect, but `Ctrl+Shift+Enter` fires Run Test *behind the open editor*, because the shortcut checks a different copy of the modal lock. One graph makes the shared modules shared chunks, loaded once per page.
+**The rule that must not be broken: one `--splitting` call, never a separate build for the editor.** `modal.ts` imports `core/state`, `core/settings` and `ui/modal-lock` — module-level singletons. Built separately, the chunk gets its own copies. That was tested deliberately in both browsers: the editor still opens and looks perfect, but `Ctrl+Shift+Enter` fires Run Test *behind the open editor*, because the shortcut checks a different copy of the modal lock. One graph makes the shared modules shared chunks, loaded once per page.
 
 **This rule is enforced.** `scripts/check-singletons.mjs` runs at the end of every build and fails it if any stateful module is bundled more than once into the designer content scripts. Each stateful module starts with a marker, `/*! belz-singleton: designer/core/state */`. It is a "legal" comment, so the minifier keeps it and it travels with the module into whichever output file holds it. Each marker must then appear in exactly one designer output file. The check also scans `src/designer/` and `src/config/` for top-level state (`let`/`var`, a module-level `Set`/`Map`, the `state` object) and fails on any such module that has no marker, so a new stateful module can't slip past unprotected. When it fails, the message names the module and files, or the exact marker line to add. It was verified against five ways of breaking the rule: the editor added as a standalone entry, a separate bundle dropped into `dist/modules`, a marker stripped from the output, a marker deleted from the source, and a new unmarked module. All five fail the build, including through `pack.mjs`. Output files that run in a different JavaScript world (background, options, DevTools pages, `pd-inspector.js`) are excluded by an explicit, reasoned list in the script. Do not add a file there to make the check pass.
 
@@ -195,16 +202,16 @@ To lazy-load something else, just use `import()` inside a module in this graph; 
 
 ## Known risks
 
-- **DOM coupling is high.** Selectors in `src/config/constants.js` depend on the AD/PD UI's current class names. When the UI changes upstream, these break first.
+- **DOM coupling is high.** Selectors in `src/config/constants.ts` depend on the AD/PD UI's current class names. When the UI changes upstream, these break first.
 - **Inline styles in modals.** Heavy use of inline style strings — refactors here are noisy; keep them confined.
-- **Date picker / select internals.** AD's custom controls dispatch synthetic events on internal state changes; sync.js has hand-tuned event sequences.
-- **Console noise.** Bootstrap and JSON flows still log via `core/logger.js`. Levels gate output but the calls remain — review before shipping anything verbose.
+- **Date picker / select internals.** AD's custom controls dispatch synthetic events on internal state changes; sync.ts has hand-tuned event sequences.
+- **Console noise.** Bootstrap and JSON flows still log via `core/logger.ts`. Levels gate output but the calls remain — review before shipping anything verbose.
 - **`dist/modules/*` is web-accessible on every `https://` page.** That is what lets a content script import it, but it also lets any https page request those files by URL. In Chromium the extension ID is stable, so a page that knows it could detect the extension is installed. (Firefox uses a random per-install UUID, so it cannot.) The files contain no secrets. `use_dynamic_url` would close this in Chromium but has not been tested.
 
 ## Safe-change checklist
 
 1. After selector edits, smoke test on a real AD page and a real PD page.
-2. After `sync.js` changes, exercise boolean / date / structured-data paths manually.
+2. After `sync.ts` changes, exercise boolean / date / structured-data paths manually.
 3. After manifest changes, validate both Chromium (`build/chrome/manifest.json`) and Firefox (`build/firefox/manifest.json`) outputs from `scripts/pack.mjs`.
 4. After adding a new entry point, update `manifest.json`, `scripts/build.mjs`, `scripts/pack.mjs` SHARED list (if you're adding an HTML surface), and the table at the top of this file. A new **content script** that shares code with AD/PD belongs in the split graph (`splitEntries` in `build.mjs`), not as a standalone bundle.
 5. Rebuild `dist/` before shipping any change that touches `src/`.

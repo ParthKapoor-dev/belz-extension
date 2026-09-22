@@ -7,8 +7,6 @@
 // reaching 10 GB and getting the whole terminal killed by the kernel's
 // out-of-memory killer. While that happens the main thread never returns to
 // its event loop, so a timer there would never fire. This thread's does.
-declare const self: Worker;
-
 const LIMIT_MB = Number(process.env.BELZ_TEST_MEMORY_LIMIT_MB || 1024);
 const CHECK_MS = 200;
 

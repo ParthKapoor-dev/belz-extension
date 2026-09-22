@@ -46,7 +46,7 @@ const MODULES_DIR = 'dist/modules';
 const splitEntries = ['ad-content', 'pd-content'];
 
 run(
-  `bun build ${splitEntries.map((n) => `src/designer/${n}.js`).join(' ')} ` +
+  `bun build ${splitEntries.map((n) => `src/designer/${n}.ts`).join(' ')} ` +
     `--splitting --minify --outdir ${MODULES_DIR} ` +
     `--entry-naming '[name].[ext]' --chunk-naming 'chunk-[hash].[ext]'`
 );
@@ -66,12 +66,12 @@ for (const name of splitEntries) {
 
 // ---- 2. everything else: standalone bundles --------------------------------
 const standalone = [
-  { src: 'src/pd-inspector/index.js', out: 'pd-inspector.js' },
-  { src: 'src/background/index.js', out: 'background.js' },
-  { src: 'src/options/index.js', out: 'options.js' },
-  { src: 'src/devtools/devtools-page.js', out: 'devtools-page.js' },
-  { src: 'src/devtools/ad-network/panel.js', out: 'panel.js' },
-  { src: 'src/devtools/pd-inspector/panel.js', out: 'panel-pd.js' }
+  { src: 'src/pd-inspector/index.ts', out: 'pd-inspector.js' },
+  { src: 'src/background/index.ts', out: 'background.js' },
+  { src: 'src/options/index.ts', out: 'options.js' },
+  { src: 'src/devtools/devtools-page.ts', out: 'devtools-page.js' },
+  { src: 'src/devtools/ad-network/panel.ts', out: 'panel.js' },
+  { src: 'src/devtools/pd-inspector/panel.ts', out: 'panel-pd.js' }
 ];
 
 for (const { src, out } of standalone) {

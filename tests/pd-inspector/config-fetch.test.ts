@@ -90,7 +90,7 @@ describe('fetchComponentGraph', () => {
     const graph = await fetchComponentGraph(ctx, page);
 
     expect([...graph.keys()].sort()).toEqual(['a', 'b', 'missing']);
-    expect(graph.get('missing').error).toContain('component not found');
+    expect(graph.get('missing')?.error).toContain('component not found');
     expect(requested.filter((r) => r === 'COMPONENT:b')).toHaveLength(1);
   });
 });

@@ -63,7 +63,7 @@ const rel = (p) => path.relative(root, p).split(path.sep).join('/');
 
 // What SHOULD be protected: every marker declared in the source.
 const expected = new Map(); // name -> source file
-for (const file of walk(path.join(root, 'src')).filter((f) => f.endsWith('.js'))) {
+for (const file of walk(path.join(root, 'src')).filter((f) => f.endsWith('.ts'))) {
   for (const m of readFileSync(file, 'utf8').matchAll(MARKER_RE)) {
     expected.set(m[1], rel(file));
   }
@@ -96,13 +96,13 @@ const DESIGNER_SRC = ['src/designer/', 'src/config/', 'src/shared/'];
 // (DATE_TYPES, say), not state, so it does not count.
 const STATEFUL_RE = /^(?:export\s+)?(?:let|var)\s|^(?:export\s+)?const\s+(?![A-Z0-9_]+\b)\w+\s*=\s*new\s+(?:Set|Map|WeakMap|WeakSet)\b|^export\s+const\s+state\s*=/m;
 
-for (const file of walk(path.join(root, 'src')).filter((f) => f.endsWith('.js'))) {
+for (const file of walk(path.join(root, 'src')).filter((f) => f.endsWith('.ts'))) {
   const r = rel(file);
   if (!DESIGNER_SRC.some((p) => r.startsWith(p))) continue;
   const src = readFileSync(file, 'utf8');
   MARKER_RE.lastIndex = 0;
   if (STATEFUL_RE.test(src) && !MARKER_RE.test(src)) {
-    const name = r.replace(/^src\//, '').replace(/\.js$/, '');
+    const name = r.replace(/^src\//, '').replace(/\.ts$/, '');
     problems.push(
       `${r} holds module-level state but has no singleton marker.\n` +
       `    Add this as its first line:  /*! belz-singleton: ${name} */`);

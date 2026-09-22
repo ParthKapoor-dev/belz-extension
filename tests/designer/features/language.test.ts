@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { detectLanguage, LANGUAGE_OPTIONS } from '../../../src/designer/features/textarea-editor/language';
+import {
+  detectLanguage,
+  LANGUAGE_OPTIONS,
+  type LanguageMode
+} from '../../../src/designer/features/textarea-editor/language';
 
 describe('detectLanguage', () => {
-  const cases: Array<[string, string, string]> = [
+  const cases: Array<[string, string, LanguageMode]> = [
     ['empty', '   ', 'plain'],
     ['prose', 'Just a note about the step', 'plain'],
 

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
   normalizeValueForType,
-  parseDateValue
+  parseDateValue,
+  type NormalizedValue
 } from '../../../src/designer/features/json-editor/values';
 import { generateInputJSON, normalizeDataType } from '../../../src/designer/features/json-editor/types';
 
@@ -15,9 +16,15 @@ describe('normalizeDataType', () => {
     ['something new', 'Text'],
     ['', 'Text']
   ])('%p -> %p', (raw, expected) => {
-    expect(normalizeDataType(raw)).toBe(expected);
+    expect(normalizeDataType(raw) as string).toBe(expected);
   });
 });
+
+/** The valid branch of a result, or a thrown error naming why it was invalid. */
+function ok(result: NormalizedValue) {
+  if (!result.valid) throw new Error(result.error);
+  return result;
+}
 
 describe('normalizeValueForType', () => {
   test('booleans accept the usual spellings', () => {
@@ -45,14 +52,13 @@ describe('normalizeValueForType', () => {
   });
 
   test('text: objects become JSON, null becomes empty', () => {
-    expect(normalizeValueForType({ a: 1 }, 'Text').stringValue).toBe('{\n  "a": 1\n}');
+    expect(ok(normalizeValueForType({ a: 1 }, 'Text')).stringValue).toBe('{\n  "a": 1\n}');
     expect(normalizeValueForType(null, 'Text')).toEqual({ valid: true, stringValue: '' });
     expect(normalizeValueForType(7, 'Text')).toEqual({ valid: true, stringValue: '7' });
   });
 
   test('dates carry the parsed date info', () => {
-    const r = normalizeValueForType('2026-03-04T09:05', 'DateTime');
-    expect(r.valid).toBe(true);
+    const r = ok(normalizeValueForType('2026-03-04T09:05', 'DateTime'));
     expect(r.stringValue).toBe('2026-03-04');
     expect(r.dateInfo).toMatchObject({ hasTime: true, hour: 9, minute: 5 });
   });

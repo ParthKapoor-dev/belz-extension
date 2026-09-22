@@ -1,0 +1,10 @@
+{
+  // The tests: the source config plus Bun's globals and test API.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["chrome", "bun"],
+    // Test doubles and fixtures lean on `any` for fakes of browser objects.
+    "noUnusedParameters": false
+  },
+  "include": ["."]
+}

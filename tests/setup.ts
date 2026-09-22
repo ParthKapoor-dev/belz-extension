@@ -12,7 +12,9 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { fakeChrome } from './fakes/chrome';
 
 const guard = new Worker(new URL('./memory-guard-worker.ts', import.meta.url).href);
-guard.unref();
+// Bun's Worker has unref() (lets the run exit while the guard is alive); the DOM
+// Worker type the tests are checked against does not.
+(guard as unknown as { unref(): void }).unref();
 
 GlobalRegistrator.register({ url: 'https://designer.test/automation-designer/Cat/abc' });
 (globalThis as any).chrome = fakeChrome;

@@ -1,0 +1,30 @@
+{
+  // Type-checks the extension source. Bun strips the types when it bundles, so
+  // none of this reaches the shipped code; it only fails the build when the
+  // types disagree. Run it with `bun run typecheck` (the build runs it too).
+  //
+  // Browser + extension APIs only: no Node or Bun globals, which do not exist
+  // in any world the extension runs in. The tests have their own config
+  // (tests/tsconfig.json) that adds Bun's.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["chrome"],
+
+    "strict": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "useUnknownInCatchVariables": true,
+
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}
