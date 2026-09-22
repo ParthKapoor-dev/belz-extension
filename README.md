@@ -1,134 +1,204 @@
 # belz-extension
 
-A browser extension that augments Service Designer's web UI — Automation Designer (AD), Page Designer (PD), and the DevTools layer — with productivity helpers for engineers who live in these tools.
+A browser extension for engineers working in Service Designer. It adds productivity tools to **Automation Designer (AD)** and **Page Designer (PD)**, plus two **DevTools panels**: one for tracing AD method calls, and one for finding which PD component rendered a given part of a page.
 
-## What it does
+It runs on Chrome, Edge, Brave, Firefox and Zen. It only talks to the sites you add yourself, and it collects nothing.
 
-### Automation Designer
+## Contents
 
-- **Title updater** — appends the current method name to the page title (`Service Designer — vin.lookup`) so the tab is identifiable at a glance.
-- **Run Test shortcut** — `Ctrl + Shift + Enter` triggers the Run Test button from anywhere on the page, including inside inputs and textareas.
-- **JSON input editor** — `📋 JSON` button on each method opens a CodeMirror modal that edits every input as one JSON document, syncs back into the per-input controls with type-aware handling (Text, Number, Boolean, Date, JSON, Array, Map, StructuredData).
-- **Output copy** — hover-revealed copy icon on each output container.
-- **Textarea editor** — hover-revealed Open + Copy icons on native textareas, drawn by a single shared overlay that follows the pointer rather than injecting controls into every textarea (so a method with dozens of steps stays responsive). Open launches a CodeMirror modal with line numbers, auto-syntax (SQL / SpEL / JS / JSON / plain), wrap/no-wrap, and font controls.
-- **Settings** — `Ctrl + ,` (or the gear icon near the page title) opens the settings modal to toggle features and persist textarea editor defaults.
+- [Install](#install)
+- [First-time setup](#first-time-setup)
+- [Using it](#using-it)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Privacy and permissions](#privacy-and-permissions)
 
-### Page Designer
-
-- **Page title updater** mirrors the AD behavior for ui-designer pages.
-- **PD inspector** — hover-revealed control to dump the deployable page config and walk component nesting.
-
-### DevTools panel
-
-- **AD Network** panel — lists every `/rest/api/automation/chain/...` call observed on the page, in the same chronological order as the OG Network tab. Shows completed requests via `chrome.devtools.network` (with a HAR backfill on init so nothing captured before the tab was opened is missed), and in-flight requests via a `fetch`/`XHR` wrapper injected into the inspected page. Cancelled requests render as red `canceled` pills. Row click opens details; the Actions column's Open button opens the method in draft mode. Method names, categories and designer links are read from the inspected site's own API using the session you are already signed in with — no companion service required — and cached so repeat visits resolve instantly.
-- **PD Inspector** panel — walks the deployable page config, highlights components in the page, and re-fetches on refresh.
-- **Focus-hint shortcuts** — `Ctrl+Shift+A` scrolls the AD Network panel to the newest entry, `Ctrl+Shift+P` refreshes PD Inspector. Both require DevTools + the relevant panel to be open (no browser exposes an API to open DevTools panels from an extension shortcut).
-
-## Settings & sites
-
-The extension's options page (`chrome://extensions` → *belz-extension* → **Details** → **Extension options**, or `about:addons` on Firefox) is the single place to manage:
-
-- **Sites** — the list of hostnames the extension is allowed to inject its content scripts on. Add a hostname to get a browser permission prompt; grant to enable; Revoke reverses both. Registration is dynamic via `chrome.scripting.registerContentScripts` and reconciled by the background service worker.
-- **Designer host** — an optional per-site override for deployments that serve the Automation Designer UI on a different host than the one you browse (split public / staff portal). Leave blank when both live on the same host.
-- **Feature toggles** — live in the in-page settings modal (`Ctrl + ,`) on any AD/PD page. Persisted extension-wide in `chrome.storage.local`.
-
-The extension makes no requests to any host other than the site you are inspecting. It ships with no static host permissions — every origin it can touch is one you granted here.
+---
 
 ## Install
 
-### Force-installed builds (recommended)
+There are no published builds yet, so you build it from source. It takes about a minute.
 
-Signed CRX (Chrome / Edge / Brave / Zen-Chromium) and signed XPI (Firefox / Zen-Firefox) builds are published from each `v*` tag to this repo's GitHub Releases. The update manifests live at:
-
-- Chrome: `https://parthkapoor-dev.github.io/belz-extension/updates.xml`
-- Firefox: `https://parthkapoor-dev.github.io/belz-extension/updates.json`
-
-Add an `ExtensionInstallForcelist` policy entry on Chromium, or an `ExtensionSettings` entry on Firefox, pointing at the URLs above. The extension auto-updates on the next browser-internal poll whenever a new `v*` tag ships.
-
-### Load unpacked (development)
+**You need:** [Git](https://git-scm.com/), [Bun](https://bun.sh/), and [Node.js](https://nodejs.org/) 18 or newer.
 
 ```bash
 git clone https://github.com/ParthKapoor-dev/belz-extension.git
 cd belz-extension
 bun install
-bun run build      # -> dist/, build/chrome/, build/firefox/
+bun run build
 ```
 
-One command builds every target. Then load the tree for your browser — **always from `build/`, never the repo root**:
+That creates a ready-to-load extension for each browser family under `build/`. Load the one for your browser:
 
-| Browser | Load this |
+**Chrome, Edge, Brave**
+
+1. Open `chrome://extensions` (or `edge://extensions`, `brave://extensions`).
+2. Turn on **Developer mode** (top right).
+3. Click **Load unpacked** and choose the **`build/chrome`** folder.
+
+**Firefox, Zen**
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click **Load Temporary Add-on…**
+3. Choose **`build/firefox/manifest.json`**.
+
+> Firefox removes temporary add-ons when it closes, so you'll repeat these three steps after each restart. That's a Firefox rule for unsigned extensions, not a bug.
+
+> **Load from `build/`, never from the repo root.** The root `manifest.json` is a template that the build splits per browser. It will not load in Firefox.
+
+---
+
+## First-time setup
+
+**The extension does nothing until you tell it which sites to work on.** It ships without access to any website, so there's one step before anything appears.
+
+1. **Open the extension's settings page.**
+   - Chrome/Edge/Brave: `chrome://extensions` → **belz DevTools** → **Details** → **Extension options**
+   - Firefox/Zen: `about:addons` → **belz DevTools** → **Preferences**
+2. Under **Allowed sites**, type the hostname of your Service Designer instance (only the hostname, like `your-instance.example.com`) and click **Add**.
+3. **Approve the browser's permission prompt.** Without it, the extension can't run on that site.
+4. **Reload any tabs** you already had open on that site.
+
+Repeat for each environment you use (dev, QA, and so on). To remove access, click **Revoke**, which removes the site and its permission.
+
+**Optional: designer host.** Some deployments serve the Automation Designer on a different host from the one you browse, such as a public portal plus a staff portal. If yours does, fill in **designer host** for that site so the **Open** links go to the right place. Most setups can leave it blank.
+
+---
+
+## Using it
+
+### In Automation Designer
+
+| Feature | How to use it |
 |---|---|
-| Chrome / Edge / Brave | `chrome://extensions` → Developer mode → Load unpacked → **`build/chrome/`** |
-| Firefox / Zen | `about:debugging` → This Firefox → Load Temporary Add-on → **`build/firefox/manifest.json`** |
+| **Large text editor** | Hover over any text box and click **⤢** (top-right corner). Opens a full-screen editor with line numbers, search (`Ctrl+F`) and syntax highlighting. It detects the language automatically: SQL, SpEL, JavaScript, JSON, Java, Python or plain text. `Ctrl+S` saves the text back into the box. On published methods, the editor opens read-only. |
+| **Copy a text box** | Hover over a text box and click **⧉**. |
+| **Edit inputs as JSON** | Click the **JSON** button next to a method's **Inputs** heading, or press `Shift+J`. Edit every input as one JSON document. Your changes go back into each input field with the correct type, including dates, booleans and structured data. |
+| **Copy an output** | Hover over an output and click **⧉**. |
+| **Run Test from anywhere** | `Ctrl+Shift+Enter`, even while you're typing in a field. It saves the field first, so the test uses your latest edit. |
+| **Copy a link to the method** | `Shift+L` copies a link labelled `category::method`. It pastes as a clickable link in Slack and docs. |
+| **Readable tab titles** | Tabs show `AD: <method name>` rather than a generic title. |
 
-> The repo-root `manifest.json` is a template, not a loadable manifest. It carries both `background.service_worker` (Chromium) and `background.scripts` (Firefox); the build splits them per browser and adds Firefox's required `browser_specific_settings.gecko` block. Loading the root directly works on Chromium by accident and fails on Firefox.
+### In Page Designer
 
-### Keeping your sites across rebuilds
+The tab title updates to `PD: <page name>`, and the text-editor, copy and settings tools work the same as in Automation Designer.
 
-Browsers wipe an extension's storage when it is uninstalled, and loading a temporary add-on in Firefox uninstalls the previous copy — so a rebuild-and-re-add cycle loses your site list every time.
+### DevTools: AD Network
 
-Copy `sites.default.json.example` to `sites.default.json` and list your hosts there:
+Open DevTools (`F12`) on an allowed site and select the **AD Network** tab. It lists every Automation Designer method call the page makes, in order, with each method's **name and category**. The regular Network tab only shows IDs.
 
-```json
-{ "hosts": [ { "host": "your-host.internal", "designerHost": "" } ] }
-```
+- **Click a row** to see its headers, request payload, response and timing.
+- **Actions** on each row: **copy as cURL**, **copy a Slack link**, and **Open**. **Open** opens the method in the designer, and if the request sent inputs, fills them in.
+- Requests still in progress show as **pending**, and cancelled ones show a red **canceled** label.
+- Use **Filter** to search by name, UUID or URL. Tick **Preserve log** to keep entries when the page navigates.
 
-The build ships it into both trees, and on a fresh install the background script restores the list from it. `sites.default.json` is **gitignored** — it holds your own internal hostnames, which do not belong in this repository.
+Requests made before you opened the tab are still listed.
 
-Host *permissions* cannot be restored this way; only a user gesture can grant them. Seeded hosts appear in the options page badged `not granted`, with a **Grant** button — one click each and you are back.
+### DevTools: PD Inspector
 
-> Prefer **Reload** over remove-and-re-add during development (the reload icon on `chrome://extensions`, or Reload on `about:debugging`). Reloading preserves both storage and granted permissions, so nothing is lost in the first place.
+Open a **published** page (a `/pages/...` URL) on an allowed site, open DevTools and select the **PD Inspector** tab.
 
-## Build
+- The panel shows the page's **component tree**, including the navbar and sidebar the page is placed inside.
+- Click **Inspect**, then point at anything on the page to see **which PD component rendered it** and where that component sits in the tree. Click to select it.
+- Click a component in the tree to **highlight** it on the page.
+- **Refresh** reloads the page's configuration after a redeploy.
+
+### Settings
+
+Click the **⚙** button next to the page title in AD or PD, or press `Alt+Shift+S`. Here you can switch any feature on or off and set the editor's default font size and line wrapping. Changes apply immediately and are shared across all your sites.
+
+---
+
+## Keyboard shortcuts
+
+| Shortcut | Does | Where |
+|---|---|---|
+| `Ctrl+Shift+Enter` | Run Test | AD |
+| `Shift+J` | Open the JSON input editor | AD |
+| `Shift+L` | Copy a link to this method | AD |
+| `Esc` `Esc` | Leave the current field (so your edit registers) | AD, PD |
+| `Alt+Shift+S` | Open settings | AD, PD |
+| `Ctrl+,` or `Alt+,` | Open settings (`Ctrl+,` is taken by Firefox and Zen) | AD, PD |
+| `Ctrl+S` / `Ctrl+F` / `Esc` | Save / search / close | Large editor |
+| `Ctrl+Shift+A` | Jump to the newest entry in AD Network | DevTools open |
+| `Ctrl+Shift+P` | Refresh PD Inspector | DevTools open |
+
+`Alt+Shift+S`, `Ctrl+Shift+A` and `Ctrl+Shift+P` are browser-level shortcuts, and you can change them at `chrome://extensions/shortcuts`. In Firefox, go to `about:addons` → ⚙ → **Manage Extension Shortcuts**. Browsers don't let extensions open DevTools, so `Ctrl+Shift+A` and `Ctrl+Shift+P` only work while DevTools is open on the right tab.
+
+---
+
+## Troubleshooting
+
+**Nothing appears on the page.** Check that the site is in **Allowed sites** and shows **Revoke**. If it shows **Grant** or `not granted`, click **Grant**. Then reload the tab.
+
+**The DevTools tabs are missing.** They only appear on allowed sites. Close and reopen DevTools after adding a site.
+
+**AD Network shows `(resolving…)` instead of names.** Method names are looked up using your existing login, so sign in to the site. The panel retries by itself.
+
+**The extension disappeared in Firefox.** Temporary add-ons are removed when Firefox closes. Load it again (see [Install](#install)).
+
+**A feature stopped working after an upstream UI change.** The extension relies on the AD/PD page structure, so that's the likeliest cause. Please [open an issue](https://github.com/ParthKapoor-dev/belz-extension/issues).
+
+---
+
+## Development
 
 | Command | What it does |
 |---|---|
-| `bun install` | install dependencies |
-| `bun run build` | bundle to `dist/`, then assemble `build/chrome/` and `build/firefox/` — the one command you need |
-| `bun run build:dist` | bundle to `dist/` only, skipping the per-browser trees |
-| `bun run dev` | watch-mode rebuild of content scripts + the DevTools panel |
+| `bun install` | Install dependencies |
+| `bun run build` | Bundle everything and assemble `build/chrome` + `build/firefox`. The only command you normally need. |
+| `bun run build:dist` | Bundle to `dist/` only, without the per-browser folders |
 
-## Release
+**The edit loop:** change code → `bun run build` → click the extension's **reload** icon (`chrome://extensions`, or **Reload** in `about:debugging`) → reload the page. Reloading keeps your sites and permissions, but removing and re-adding the extension clears them.
 
-Push a tag matching `v*` (e.g. `v1.1.0`). The `release.yml` workflow:
+> `bun run dev` isn't usable yet. It writes to `dist/` using a different file layout, and the extension you loaded reads from `build/`. Use the loop above.
 
-1. Builds per-browser trees with `scripts/pack.mjs`.
-2. Signs a Chromium CRX (deterministic ID derived from the `CHROME_CRX_KEY` secret).
-3. Signs a Firefox XPI via the Mozilla AMO API (`AMO_JWT_*` secrets).
-4. Generates `updates.xml` (Chrome) and `updates.json` (Firefox).
-5. Attaches the CRX + XPI to the GitHub Release and publishes the update manifests to GitHub Pages.
+**Keeping your sites across reinstalls.** Browsers delete an extension's data when it's removed, and so does Firefox's temporary-add-on reload. To avoid retyping your sites, copy `sites.default.json.example` to `sites.default.json` and list them there:
 
-Required repo secrets:
+```json
+{ "hosts": [ { "host": "your-instance.example.com", "designerHost": "" } ] }
+```
 
-- `CHROME_CRX_KEY` — PEM private key for CRX signing. Generate once with `openssl genrsa 2048 > key.pem` and **never rotate** (it pins the Chrome extension ID).
-- `AMO_JWT_ISSUER` / `AMO_JWT_SECRET` — Mozilla add-ons API credentials.
+On a fresh install they're restored automatically. You still need to click **Grant** once for each, because only you can approve a site permission. The file is gitignored so that your internal hostnames stay out of the repository.
 
-One-time setup: enable GitHub Pages (Settings → Pages → source: GitHub Actions). After the first release, copy the printed Chrome extension ID into `release.config.json` (`chromeId`) so subsequent updates resolve cleanly.
-
-## Layout
+**How it works.** Start with [`AGENTS.md`](./AGENTS.md), the maintained map of the codebase. [`docs/codebase.html`](./docs/codebase.html) covers the architecture, timing and optimizations in depth, and [`docs/primer.html`](./docs/primer.html) explains the terminology from scratch.
 
 ```
 src/
-  ad-content.js          AD page content script (entry)
-  pd-content.js          PD page content script (entry)
-  pd-inspector.js        PD inspector content script (entry)
-  background.js          MV3 service worker / Firefox background scripts
-  options.js             user-facing options page (sites list)
-  config/                routes, endpoints, storage keys, DOM namespace
-  devtools/              DevTools page + panels (AD Network + PD Inspector)
-                         plus ad-origin/ad-api/ad-cache and pending-capture
-  features/              feature modules (title, keyboard, json-editor, …)
-  core/                  bootstrap, settings, state, logger, observer
-  ui/                    modal, toast, modal-lock, theme tokens
-  utils/                 dom + clipboard helpers
-scripts/
-  build.mjs              bundles each entry point with bun build
-  escape-non-ascii.mjs   post-bundle pass for loader compatibility
-  pack.mjs               assembles per-browser unpacked trees
-manifest.json            MV3 manifest
-options.html             options page markup (loads dist/options.js)
-release.config.json      extension identity (firefox id, chrome update URL)
+  ad-content.js / pd-content.js   content scripts for AD and PD pages
+  pd-inspector.js                 PD Inspector engine, on published pages
+  background.js                   site registration, shortcuts, message relay
+  options.js                      the Allowed sites page
+  devtools/                       the AD Network and PD Inspector panels
+  features/                       one folder per feature
+  core/ ui/ utils/ config/        shared plumbing
+scripts/                          build and per-browser packaging
 ```
+
+### Releasing
+
+A release hasn't been published yet, but the pipeline is in place. Pushing a `v*` tag runs `.github/workflows/release.yml`, which does three things:
+
+- Builds and signs a Chrome `.crx` and a Firefox `.xpi`.
+- Attaches both to a GitHub Release.
+- Publishes auto-update manifests to GitHub Pages.
+
+Once a release exists, browsers can install the extension by policy and keep it updated automatically.
+
+Before the first tag, you need to:
+
+- Add the repo secrets: `CHROME_CRX_KEY` (make it once with `openssl genrsa 2048 > key.pem` and **never rotate it**, because it fixes the Chrome extension ID), plus `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` for Mozilla signing.
+- Enable GitHub Pages (Settings → Pages → Source: GitHub Actions).
+- After the first release, copy the printed Chrome extension ID into `chromeId` in `release.config.json`.
+
+---
+
+## Privacy and permissions
+
+- **Talks only to the sites you add.** No analytics, no telemetry, and no companion server. Method names and page configurations come from the site you're on, using your existing login.
+- **No website access by default.** Each site needs your explicit approval in a browser prompt, and you can revoke it at any time.
+- **Permissions requested:** `storage` (your settings and site list), `scripting` (to run on your approved sites), and `activeTab`.
 
 ## License
 
