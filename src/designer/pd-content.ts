@@ -9,12 +9,9 @@ import { OutputCopy } from './features/output-copy/index';
 import { TextareaEditor } from './features/textarea-editor/index';
 import { bootstrap } from './core/bootstrap';
 
-bootstrap(
-  {
-    titleUpdater: new TitleUpdater(),
-    runTestShortcut: new KeyboardShortcuts(),
-    outputCopy: new OutputCopy(),
-    textareaEditor: new TextareaEditor()
-  },
-  { curlAutofill: false }
-);
+bootstrap({
+  titleUpdater: new TitleUpdater(),
+  runTestShortcut: new KeyboardShortcuts(),
+  outputCopy: new OutputCopy(),
+  textareaEditor: new TextareaEditor()
+});

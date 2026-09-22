@@ -100,13 +100,17 @@ export function settingsIn(section: SettingSection): Array<[SettingKey, SettingS
 }
 
 /**
- * `value` as a valid value of setting `key`, or the default. Select values
- * compare as text, so `'16'` from a <select> element is read as 16.
+ * `value` as a valid value of setting `key`, or the default. Numeric options
+ * accept anything that parses to them, so `'16'` from a <select> element (or
+ * `'16px'`) is read as 16.
  */
 export function sanitizeSetting<K extends SettingKey>(key: K, value: unknown): Settings[K] {
   const spec: SettingSpec = SETTINGS[key];
   if (spec.kind === 'toggle') return Boolean(value) as Settings[K];
-  const match = spec.options.find((option) => String(option.value) === String(value));
+  const parsed = Number.parseInt(String(value), 10);
+  const match = spec.options.find((option) =>
+    typeof option.value === 'number' ? option.value === parsed : option.value === value
+  );
   return (match ? match.value : spec.default) as Settings[K];
 }
 

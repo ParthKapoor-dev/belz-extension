@@ -14,6 +14,7 @@
 
 import { toast } from '../../ui/toast';
 import { copyText } from '../../utils/clipboard';
+import { textareaUnderPointer } from '../../utils/dom';
 import { ns } from '../../../config/namespace';
 import { HoverOverlay, type OverlaySize } from '../../ui/hover-overlay';
 import {
@@ -41,20 +42,11 @@ type ModalModule = typeof import('./modal');
 // read-only source: TextareaEditorModal.showSource() marks the subtitle
 // "(read only)" and disables Save, and save() bails on a disabled button.
 //
-// The second branch is for `disabled` specifically. The browser dispatches no
-// pointer events to a disabled control — the hover is retargeted to its
-// nearest enabled ancestor — so document-level delegation never sees the
-// textarea itself, and dropping the guard alone would not be enough. Hit
-// testing is not suppressed the same way, so elementFromPoint still finds it.
-// Guarded on clientX because focusin carries no coordinates; without that it
-// would hit-test the viewport's top-left corner on every focus.
+// The hit test is for `disabled` specifically: document-level delegation
+// never sees a disabled textarea itself (see textareaUnderPointer).
 function resolveTextarea(node: Element, event: Event): HTMLTextAreaElement | null {
   if (node.tagName === 'TEXTAREA') return node as HTMLTextAreaElement;
-
-  const { clientX, clientY } = event as MouseEvent;
-  if (typeof clientX !== 'number') return null;
-  const under = document.elementFromPoint(clientX, clientY);
-  return under && under.tagName === 'TEXTAREA' ? (under as HTMLTextAreaElement) : null;
+  return textareaUnderPointer(event);
 }
 
 // A short textarea cannot carry two full-size buttons stacked without covering
@@ -131,7 +123,7 @@ export class TextareaEditor implements Feature {
     this.overlay.stop();
     // Only an editor that was ever loaded can be open. Never trigger the load
     // just to close something that cannot exist.
-    this.modal?.then((m) => m.textareaEditorModal.close(), () => {});
+    this.modal?.then((m) => m.textareaEditorModal.dispose(), () => {});
   }
 
   private loadModal(): Promise<ModalModule> {

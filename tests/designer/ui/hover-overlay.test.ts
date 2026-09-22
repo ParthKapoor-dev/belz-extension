@@ -53,7 +53,7 @@ describe('hover overlay', () => {
       visibleBox(t);
       hover(t);
     }
-    expect(document.querySelectorAll('#testOverlay')).toHaveLength(1);
+    expect(document.querySelectorAll('#testOverlay').length).toBe(1);
   });
 
   test('a button click acts on the current target', () => {
@@ -83,8 +83,8 @@ describe('hover overlay', () => {
     make().start();
     hover(t);
     overlay!.stop();
-    expect(document.getElementById('testOverlay')).toBeNull();
+    expect(document.getElementById('testOverlay') === null).toBe(true);
     hover(t);
-    expect(document.getElementById('testOverlay')).toBeNull();
+    expect(document.getElementById('testOverlay') === null).toBe(true);
   });
 });

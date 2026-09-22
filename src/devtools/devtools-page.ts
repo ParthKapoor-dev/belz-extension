@@ -51,7 +51,7 @@ async function tryCreatePanels(): Promise<void> {
     chrome.devtools.panels.create(title, '', page, () => {
       if (chrome.runtime && chrome.runtime.lastError) {
         created.delete(title);
-        log.error(`[${title}] panel registration failed:`, chrome.runtime.lastError);
+        log.error(`panel "${title}" failed to register:`, chrome.runtime.lastError);
       }
     });
   }

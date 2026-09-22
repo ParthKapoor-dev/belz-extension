@@ -20,6 +20,7 @@
 
 import { EXTENSION_OWNED_ATTR } from '../../config/namespace';
 import { applyHoverEffect, type StyleMap } from './styles';
+import { Rearm } from '../core/rearm';
 import { createLogger } from '../../shared/logger';
 
 const log = createLogger('hover-overlay');
@@ -65,8 +66,6 @@ export interface HoverOverlayConfig<T extends HTMLElement> {
 
 /** Keep the overlay up briefly so the pointer can travel onto the buttons. */
 const HIDE_GRACE_MS = 120;
-/** Re-arm points, in ms after start — spanning a slow SPA bootstrap. */
-const REARM_DELAYS_MS = [1000, 3000, 6000];
 
 const DEFAULT_BUTTON_SIZE = 28;
 
@@ -97,9 +96,15 @@ export class HoverOverlay<T extends HTMLElement> {
   private listenersAttached = false;
   /** The document the delegation is currently registered on. */
   private attachedDocument: Document | null = null;
-  private readonly rearmTimers: Array<ReturnType<typeof setTimeout>> = [];
-  private started = false;
   private loggedAttach = false;
+  /** Re-registers the delegation while the host app boots; see core/rearm.ts. */
+  private readonly rearm = new Rearm(() => {
+    if (this.attachedDocument !== document) {
+      log.debug(`${this.config.label}: document was replaced — re-arming`);
+    }
+    this.detachListeners();
+    this.attachListeners();
+  });
 
   constructor(private readonly config: HoverOverlayConfig<T>) {
     this.inset = config.inset ?? 6;
@@ -127,14 +132,12 @@ export class HoverOverlay<T extends HTMLElement> {
     // with it, leaving the feature permanently dead until something called
     // stop()/start() again. Toggling the setting off and on was the only way
     // back.
-    this.started = true;
     this.attachListeners();
-    this.scheduleRearms();
+    this.rearm.start();
   }
 
   stop(): void {
-    this.started = false;
-    this.cancelRearms();
+    this.rearm.stop();
     this.detachListeners();
 
     if (this.hideTimer) clearTimeout(this.hideTimer);
@@ -375,35 +378,5 @@ export class HoverOverlay<T extends HTMLElement> {
     document.removeEventListener('input', this.onInput, true);
     document.removeEventListener('scroll', this.onScrollOrResize, true);
     window.removeEventListener('resize', this.onScrollOrResize);
-  }
-
-  // Re-register the delegation from scratch. The host SPA bootstraps after our
-  // content script runs (document_idle), and listeners registered before that
-  // point were observed never to receive events, while identical ones
-  // registered afterwards work — which is exactly what toggling the feature off
-  // and on was doing by hand. Re-arming a few times over the first seconds, and
-  // on the document lifecycle events, covers it without depending on why.
-  private readonly rearmListeners = (): void => {
-    if (!this.started) return;
-    if (this.attachedDocument !== document) {
-      log.debug(`${this.config.label}: document was replaced — re-arming`);
-    }
-    this.detachListeners();
-    this.attachListeners();
-  };
-
-  private scheduleRearms(): void {
-    for (const delay of REARM_DELAYS_MS) {
-      this.rearmTimers.push(setTimeout(this.rearmListeners, delay));
-    }
-    window.addEventListener('load', this.rearmListeners);
-    window.addEventListener('pageshow', this.rearmListeners);
-  }
-
-  private cancelRearms(): void {
-    for (const timer of this.rearmTimers) clearTimeout(timer);
-    this.rearmTimers.length = 0;
-    window.removeEventListener('load', this.rearmListeners);
-    window.removeEventListener('pageshow', this.rearmListeners);
   }
 }

@@ -35,7 +35,7 @@ import {
 import { hydrate as hydrateCache } from './cache';
 import { AUTOFILL_PARAM } from '../../config/endpoints';
 import { required } from '../../shared/dom';
-import { watchFocusFlag } from '../focus-flag';
+import { watchFocusFlag } from '../../shared/focus-flag';
 import type { HarEntry, MethodSummary, PendingEntry } from './types';
 import { createLogger } from '../../shared/logger';
 

@@ -11,16 +11,17 @@
 // See designer/ui/hover-overlay.ts.
 
 import { AD } from '../../../config/selectors';
-import { EXTENSION_OWNED_ATTR } from '../../../config/namespace';
+import { EXTENSION_OWNED_ATTR, ns } from '../../../config/namespace';
 import { toast } from '../../ui/toast';
 import { copyText } from '../../utils/clipboard';
+import { textareaUnderPointer } from '../../utils/dom';
 import { HoverOverlay } from '../../ui/hover-overlay';
 import {
   ICON_BUTTON_STYLE, ICON_BUTTON_HOVER, ICON_BUTTON_UNHOVER
 } from '../../ui/styles';
 import type { Feature } from '../../core/feature';
 
-const CONTROLS_ID = 'sdExtensionOutputCopyControls';
+const CONTROLS_ID = ns('OutputCopyControls');
 
 function extractOutputText(container: HTMLElement): string {
   const clone = container.cloneNode(true) as HTMLElement;
@@ -38,14 +39,8 @@ function resolveOutputContainer(node: Element, event: Event): HTMLElement | null
   // which is the more specific target — otherwise both would appear stacked in
   // the same corner.
   if (node.tagName === 'TEXTAREA') return null;
-  // Same rule, for a textarea the tag check cannot see. A `disabled` control
-  // dispatches no pointer events, so the hover is retargeted to this container
-  // and `node` is never the textarea — hit-test the pointer to catch it.
-  const { clientX, clientY } = event as MouseEvent;
-  if (typeof clientX === 'number') {
-    const under = document.elementFromPoint(clientX, clientY);
-    if (under && under.tagName === 'TEXTAREA') return null;
-  }
+  // Same rule, for a disabled textarea the tag check cannot see.
+  if (textareaUnderPointer(event)) return null;
   return node.closest<HTMLElement>(AD.outputContainer);
 }
 

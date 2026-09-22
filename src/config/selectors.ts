@@ -86,6 +86,7 @@ export const AD_INPUTS = {
 /** AD's custom form widgets, which the JSON editor drives by clicking. */
 export const AD_WIDGETS = {
   select: {
+    host: 'exp-select',
     /** The selected option's text. */
     text: '.ui-select-match-text',
     /** What to click to open the dropdown; the <exp-select> itself is the last resort. */

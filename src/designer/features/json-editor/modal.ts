@@ -219,12 +219,10 @@ export class JsonEditorModal {
       if (e.target === overlay) this.close();
     });
 
-    // One Escape listener for the modal's lifetime. It used to be added on every
-    // open and removed only by an Escape press, so each open closed with Cancel
-    // left one more listener behind.
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.isOpen) this.close();
-    });
+    // One Escape listener for the modal's lifetime (until dispose()). It used
+    // to be added on every open and removed only by an Escape press, so each
+    // open closed with Cancel left one more listener behind.
+    document.addEventListener('keydown', this.onEscape);
 
     document.body.appendChild(overlay);
     return { overlay, title, textarea, loading, info, errors, syncButton };
@@ -298,6 +296,18 @@ export class JsonEditorModal {
     this.parts.overlay.style.display = 'none';
     modalLock.unlock();
   }
+
+  /** Close, and remove the modal's DOM and listeners. The next open rebuilds it. */
+  dispose(): void {
+    this.close();
+    document.removeEventListener('keydown', this.onEscape);
+    this.parts?.overlay.remove();
+    this.parts = null;
+  }
+
+  private readonly onEscape = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && this.isOpen) this.close();
+  };
 
   /** Write the editor's JSON into the page's inputs. */
   private sync(): void {

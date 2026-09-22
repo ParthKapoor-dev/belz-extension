@@ -9,9 +9,8 @@ import { pageObserver } from '../../core/observer';
 import { PRIMARY_BUTTON_STYLE } from '../../ui/styles';
 import { isOpenSettings } from '../../../shared/messages';
 import { createLogger } from '../../../shared/logger';
-import type { Feature } from '../../core/feature';
 
-const log = createLogger('settings');
+const log = createLogger('settings-ui');
 
 const SETTINGS_BUTTON_ID = ns('SettingsButton');
 
@@ -70,42 +69,20 @@ function injectSettingsButton(onOpen: () => void): boolean {
   return true;
 }
 
-export class SettingsLauncher implements Feature {
-  private unsubscribe: (() => void) | null = null;
-  private firstTry: ReturnType<typeof setTimeout> | null = null;
+/** Always on for the life of the page: the way back to turning features on. */
+export class SettingsLauncher {
   private debounce: ReturnType<typeof setTimeout> | null = null;
-  private listening = false;
 
   start(): void {
-    this.firstTry ??= setTimeout(() => injectSettingsButton(this.open), TIMINGS.settingsButtonFirstTry);
+    setTimeout(() => injectSettingsButton(this.open), TIMINGS.settingsButtonFirstTry);
     // The AD app re-renders its header; put the button back when it goes.
-    this.unsubscribe ??= pageObserver.subscribe(() => {
+    pageObserver.subscribe(() => {
       if (this.debounce) clearTimeout(this.debounce);
       this.debounce = setTimeout(() => injectSettingsButton(this.open), TIMINGS.settingsButtonDebounce);
     });
 
-    if (this.listening) return;
-    this.listening = true;
     document.addEventListener('keydown', this.onKeydown, true);
     chrome.runtime?.onMessage?.addListener(this.onMessage);
-  }
-
-  stop(): void {
-    this.unsubscribe?.();
-    this.unsubscribe = null;
-    if (this.firstTry) clearTimeout(this.firstTry);
-    this.firstTry = null;
-    if (this.debounce) clearTimeout(this.debounce);
-    this.debounce = null;
-
-    if (this.listening) {
-      this.listening = false;
-      document.removeEventListener('keydown', this.onKeydown, true);
-      chrome.runtime?.onMessage?.removeListener(this.onMessage);
-    }
-
-    settingsModal.close();
-    document.getElementById(SETTINGS_BUTTON_ID)?.remove();
   }
 
   private readonly open = (): void => settingsModal.open();

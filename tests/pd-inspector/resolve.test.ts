@@ -67,6 +67,6 @@ describe('createResolver', () => {
   test('elementsForComponent finds the innermost owner only', () => {
     const { resolver } = setup('<div class="a"></div>', node('div', 'a'));
     expect(resolver.elementsForComponent('page').map((e: Element) => e.className)).toEqual(['a']);
-    expect(resolver.elementsForComponent('other')).toHaveLength(0);
+    expect(resolver.elementsForComponent('other').length).toBe(0);
   });
 });

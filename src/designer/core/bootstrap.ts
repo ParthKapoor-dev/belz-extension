@@ -6,7 +6,6 @@
 // code, and no designer code ships to general/published pages at all.
 
 import { SettingsLauncher } from '../features/settings/index';
-import { startCurlAutofillFeature } from '../features/curl-autofill/index';
 import { settings } from './settings';
 import type { Feature } from './feature';
 import type { SettingKey, Settings } from '../../config/settings';
@@ -16,11 +15,6 @@ const log = createLogger('bootstrap');
 
 /** The features of one designer, keyed by the on/off setting of each. */
 export type Features = Partial<Record<SettingKey, Feature>>;
-
-export interface BootstrapOptions {
-  /** Consume the AD Network panel's autofill parameter (AD pages only). */
-  curlAutofill?: boolean;
-}
 
 /**
  * Starts and stops each feature as its setting changes, for the life of the
@@ -73,7 +67,7 @@ class FeatureSwitchboard {
 }
 
 /** Wire up a designer content script. */
-export function bootstrap(features: Features, options: BootstrapOptions = {}): void {
+export function bootstrap(features: Features): void {
   function init(): void {
     log.debug('Extension initializing...');
 
@@ -88,10 +82,6 @@ export function bootstrap(features: Features, options: BootstrapOptions = {}): v
 
     // Always on: the way back to turning features on.
     new SettingsLauncher().start();
-
-    if (options.curlAutofill) {
-      startCurlAutofillFeature();
-    }
 
     log.debug('Extension initialized successfully');
   }

@@ -12,16 +12,16 @@ import {
   type SettingSection,
   type ToggleSpec
 } from '../../../config/settings';
-import { EXTENSION_OWNED_ATTR, ns } from '../../../config/namespace';
+import { EXTENSION_OWNED_ATTR, ns, nsAttr } from '../../../config/namespace';
 import { modalLock } from '../../ui/modal-lock';
 import { T, RADIUS } from '../../ui/theme';
 
 const SETTINGS_MODAL_ID = ns('SettingsModal');
 const CONTENT_ID = ns('SettingsContent');
-const CHECKBOX_ATTR = 'data-sd-setting-key';
-const SELECT_ATTR = 'data-sd-setting-select-key';
-const SWITCH_TRACK_ATTR = 'data-sd-setting-switch-track';
-const SWITCH_THUMB_ATTR = 'data-sd-setting-switch-thumb';
+const CHECKBOX_ATTR = nsAttr('setting-key');
+const SELECT_ATTR = nsAttr('setting-select-key');
+const SWITCH_TRACK_ATTR = nsAttr('setting-switch-track');
+const SWITCH_THUMB_ATTR = nsAttr('setting-switch-thumb');
 
 /** Paint the switch of setting `settingKey`, found under `root`. */
 function syncSwitchVisual(root: ParentNode, settingKey: string, isEnabled: boolean): void {

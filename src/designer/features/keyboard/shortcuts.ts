@@ -3,8 +3,7 @@ import { triggerRunTest } from '../run-test/index';
 import { modalLock } from '../../ui/modal-lock';
 import { extractMethodName, extractServiceCategory } from '../../utils/dom';
 import { toast } from '../../ui/toast';
-import { pageObserver } from '../../core/observer';
-import { jsonEditorModal } from '../json-editor/modal';
+import { Rearm } from '../../core/rearm';
 import { AD_ROUTE_PREFIX } from '../../../config/routes';
 import { TIMINGS } from '../../../config/timings';
 import type { Feature } from '../../core/feature';
@@ -68,21 +67,26 @@ async function copyAdRichLink(): Promise<void> {
 
 export class KeyboardShortcuts implements Feature {
   private lastEscapeTime = 0;
-  private unsubscribe: (() => void) | null = null;
+  /**
+   * Re-attach while the host app boots: a listener registered too early can
+   * go dead, and the shortcuts then stayed dead until a settings toggle.
+   */
+  private readonly rearm = new Rearm(() => this.attach());
+
+  /**
+   * @param openJsonEditor What Shift+J opens. Only the AD content script
+   *   passes one, so the JSON editor is not bundled into PD pages.
+   */
+  constructor(private readonly openJsonEditor: (() => void) | null = null) {}
 
   start(): void {
     this.attach();
-    // Re-assert the listener on DOM churn (and via the observer's poll). The
-    // previous flag-guarded attach could go stale: once the listener was
-    // dropped, the shortcuts stayed dead until a settings toggle re-attached
-    // them. Self-healing here keeps them working without that toggle.
-    this.unsubscribe ??= pageObserver.subscribe(() => this.attach());
+    this.rearm.start();
   }
 
   stop(): void {
+    this.rearm.stop();
     window.removeEventListener('keydown', this.onKeydown, true);
-    this.unsubscribe?.();
-    this.unsubscribe = null;
   }
 
   // Idempotently (re)attach the keydown listener. Bound to `window` so it
@@ -139,13 +143,13 @@ export class KeyboardShortcuts implements Feature {
     }
 
     // Open the JSON input editor — Shift+J (ignored while typing in a field).
-    if (event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === 'J') {
+    if (this.openJsonEditor && event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === 'J') {
       if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
       if (isEditableElement(document.activeElement)) return;
 
       event.preventDefault();
       event.stopPropagation();
-      jsonEditorModal.open();
+      this.openJsonEditor();
     }
   };
 }

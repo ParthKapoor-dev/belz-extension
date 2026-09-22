@@ -7,7 +7,7 @@
 
 import { HOSTS_STORAGE_KEY } from '../config/storage-keys';
 import { AD_ROUTE_PREFIX, PD_ROUTE_PREFIX, PAGES_ROUTE_PREFIX } from '../config/routes';
-import { readEnabledHosts, writeHosts, type HostEntry } from '../shared/hosts';
+import { hostPattern, readEnabledHosts, writeHosts, type HostEntry } from '../shared/hosts';
 import { createLogger } from '../shared/logger';
 
 const log = createLogger('background');
@@ -35,7 +35,7 @@ type Registration = chrome.scripting.RegisteredContentScript;
 export function scriptForHost(host: string, template: ScriptTemplate): Registration {
   return {
     id: `${template.key}-${host}`,
-    matches: [`https://${host}${template.path}`],
+    matches: [hostPattern(host, template.path)],
     js: [template.js],
     runAt: 'document_idle',
     world: 'ISOLATED'
@@ -130,7 +130,7 @@ export async function seedHostsIfEmpty(): Promise<void> {
     if (!hosts.length) return;
 
     await writeHosts(hosts);
-    log.info(
+    log.warn(
       `seeded ${hosts.length} site(s) from sites.default.json — ` +
         'open the options page to grant them.'
     );

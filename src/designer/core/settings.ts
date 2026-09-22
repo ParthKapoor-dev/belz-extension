@@ -16,7 +16,7 @@ import {
 } from '../../config/settings';
 import { createLogger } from '../../shared/logger';
 
-const log = createLogger('settings');
+const log = createLogger('settings-store');
 
 export type SettingsListener = (settings: Settings) => void;
 

@@ -21,7 +21,7 @@ import {
   type WrapMode
 } from '../../../config/settings';
 import { toast } from '../../ui/toast';
-import { EXTENSION_OWNED_ATTR } from '../../../config/namespace';
+import { EXTENSION_OWNED_ATTR, ns } from '../../../config/namespace';
 import { modalLock } from '../../ui/modal-lock';
 import { settingsModal } from '../settings/modal';
 import { T, FONT_MONO, RADIUS } from '../../ui/theme';
@@ -38,15 +38,15 @@ import { copyText } from '../../utils/clipboard';
 import type { Extension } from '@codemirror/state';
 import type { CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 
-const OVERLAY_ID = 'sdTextareaEditorOverlay';
-const TITLE_ID = 'sdTextareaEditorTitle';
-const SUBTITLE_ID = 'sdTextareaEditorSubtitle';
-const EDITOR_HOST_ID = 'sdTextareaEditorHost';
-const SAVE_BTN_ID = 'sdTextareaEditorSave';
-const LANG_SELECT_ID = 'sdTextareaEditorLanguage';
-const WRAP_SELECT_ID = 'sdTextareaEditorWrapMode';
-const FONT_SIZE_SELECT_ID = 'sdTextareaEditorFontSize';
-const EDITOR_SETTINGS_BUTTON_ID = 'sdTextareaEditorSettingsButton';
+const OVERLAY_ID = ns('TextareaEditorOverlay');
+const TITLE_ID = ns('TextareaEditorTitle');
+const SUBTITLE_ID = ns('TextareaEditorSubtitle');
+const EDITOR_HOST_ID = ns('TextareaEditorHost');
+const SAVE_BTN_ID = ns('TextareaEditorSave');
+const LANG_SELECT_ID = ns('TextareaEditorLanguage');
+const WRAP_SELECT_ID = ns('TextareaEditorWrapMode');
+const FONT_SIZE_SELECT_ID = ns('TextareaEditorFontSize');
+const EDITOR_SETTINGS_BUTTON_ID = ns('TextareaEditorSettingsButton');
 
 const EDITOR_VERTICAL_PADDING_PX = 14;
 const EDITOR_HORIZONTAL_PADDING_PX = 16;
@@ -575,6 +575,16 @@ export class TextareaEditorModal {
     modalLock.unlock();
   }
 
+  /** Close, and remove the modal's DOM, listeners and settings subscription. */
+  dispose(): void {
+    this.close();
+    document.removeEventListener('keydown', this.onKeydown, true);
+    this.unsubscribeSettings?.();
+    this.unsubscribeSettings = null;
+    this.overlay?.remove();
+    this.overlay = null;
+  }
+
   private async copyAll(): Promise<void> {
     const text = this.text();
     if (!text.trim()) {
@@ -630,39 +640,39 @@ export class TextareaEditorModal {
     this.createView(sourceEl);
   }
 
-  private attachShortcuts(): void {
-    document.addEventListener('keydown', (event) => {
-      if (!this.overlay || this.overlay.style.display !== 'flex') {
-        return;
-      }
+  // Escape, Ctrl+S and Ctrl+F while the editor is open. Capture phase, so
+  // the host page's own shortcuts never see them.
+  private readonly onKeydown = (event: KeyboardEvent): void => {
+    if (!this.overlay || this.overlay.style.display !== 'flex') {
+      return;
+    }
 
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        this.close();
-        return;
-      }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.close();
+      return;
+    }
 
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        this.save();
-        return;
-      }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      this.save();
+      return;
+    }
 
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
-        event.preventDefault();
-        event.stopPropagation();
-        const view = this.view;
-        if (view) {
-          openSearchPanel(view);
-          // The view itself, not `this.view`: the editor may have been closed
-          // (and this.view cleared) by the time the frame runs.
-          requestAnimationFrame(() => {
-            view.dom.querySelector<HTMLInputElement>('.cm-search input')?.focus();
-          });
-        }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+      event.preventDefault();
+      event.stopPropagation();
+      const view = this.view;
+      if (view) {
+        openSearchPanel(view);
+        // The view itself, not `this.view`: the editor may have been closed
+        // (and this.view cleared) by the time the frame runs.
+        requestAnimationFrame(() => {
+          view.dom.querySelector<HTMLInputElement>('.cm-search input')?.focus();
+        });
       }
-    }, true);
-  }
+    }
+  };
 
   private ensureOverlay(): HTMLDivElement {
     if (this.overlay) return this.overlay;
@@ -905,7 +915,7 @@ export class TextareaEditorModal {
 
     document.body.appendChild(overlay);
     this.overlay = overlay;
-    this.attachShortcuts();
+    document.addEventListener('keydown', this.onKeydown, true);
     this.followSettings();
     languageSelect.addEventListener('change', () => this.onLanguagePicked());
     wrapSelect.addEventListener('change', () => this.onWrapPicked());

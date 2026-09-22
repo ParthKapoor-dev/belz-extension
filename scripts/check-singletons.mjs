@@ -1,17 +1,17 @@
 // Fails the build if a stateful module is bundled more than once into the
 // designer content scripts.
 //
-// Why this exists. A module with module-level state — core/state, the
-// settings cache, the modal lock — only works if there is ONE copy of it per
+// Why this exists. A module with module-level state — the settings store,
+// the modal lock, the modals — only works if there is ONE copy of it per
 // page. If a second bundle carries its own copy, both copies run and neither
 // knows about the other. Nothing errors. The concrete case that was measured:
 // build the lazy editor as a separate bundle, and it opens and looks perfect,
 // but Ctrl+Shift+Enter fires Run Test behind the open editor, because the
-// shortcut and the editor check different copies of ui/modal-lock.js.
+// shortcut and the editor check different copies of ui/modal-lock.ts.
 //
 // How it works. Each stateful module starts with a marker:
 //
-//     /*! belz-singleton: core/state */
+//     /*! belz-singleton: designer/core/settings */
 //
 // A `/*!` comment is a "legal" comment, which the minifier keeps, and it
 // travels with the module into whichever output file contains it. So the
@@ -25,8 +25,9 @@
 //
 // Adding a module with module-level state that the content script shares?
 // Give it a marker. You do not have to remember to: the check also scans the
-// designer source for top-level state (`let`, `var`, a module-level Set/Map,
-// the exported `state` object) and fails on any such module without one.
+// designer source for top-level state (`let`, `var`, or a top-level object
+// built with `new`, such as `export const settings = new SettingsStore(...)`)
+// and fails on any such module without one.
 //
 // usage: node scripts/check-singletons.mjs    (run by build.mjs automatically)
 import { readdirSync, readFileSync, statSync } from 'node:fs';

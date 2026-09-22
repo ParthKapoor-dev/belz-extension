@@ -25,7 +25,7 @@ export class JsonEditor implements Feature {
     this.unsubscribe = null;
     if (this.firstTry) clearTimeout(this.firstTry);
     this.firstTry = null;
-    jsonEditorModal.close();
+    jsonEditorModal.dispose();
     this.button?.remove();
   }
 }

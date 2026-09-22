@@ -63,7 +63,7 @@ const overlayShown = () => {
     const editor = await waitFor(() => $('.cm-editor'), 5000);
     r.editorOpened = !!editor;
     r.contentMatches = editor ? $('.cm-content').textContent === ta.value : false;
-    r.detected = ($('#sdTextareaEditorLanguage') || {}).value || null;
+    r.detected = ($('#sdExtensionTextareaEditorLanguage') || {}).value || null;
 
     // The lazily loaded editor and the eagerly loaded shortcut must share ONE
     // modal lock: with the editor open, Run Test must not fire.
@@ -73,7 +73,7 @@ const overlayShown = () => {
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await sleep(200);
-    r.editorClosed = $('#sdTextareaEditorOverlay').style.display === 'none';
+    r.editorClosed = $('#sdExtensionTextareaEditorOverlay').style.display === 'none';
     chord(); await sleep(400);
     r.runTestAfterClose = runTestClicks - clicksBefore;
 

@@ -33,6 +33,7 @@ describe('settings schema', () => {
 describe('sanitizeSetting', () => {
   test('select values compare as text and come back typed', () => {
     expect(sanitizeSetting('textareaEditorFontSize', '16')).toBe(16);
+    expect(sanitizeSetting('textareaEditorFontSize', ' 16px')).toBe(16);
     expect(sanitizeSetting('textareaEditorWrap', 'nowrap')).toBe('nowrap');
   });
 

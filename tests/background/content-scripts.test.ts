@@ -26,15 +26,15 @@ describe('reconcileContentScripts', () => {
   });
 
   test('removes scripts for hosts that left the list, keeps the rest', async () => {
-    await writeHosts([{ host: 'a.test' }, { host: 'b.test' }]);
+    await writeHosts([{ host: 'a.test', enabled: true }, { host: 'b.test', enabled: true }]);
     await reconcileContentScripts();
-    await writeHosts([{ host: 'b.test' }]);
+    await writeHosts([{ host: 'b.test', enabled: true }]);
     await reconcileContentScripts();
     expect(ids()).toEqual(['ad-b.test', 'pd-b.test', 'pdi-b.test']);
   });
 
   test('is idempotent', async () => {
-    await writeHosts([{ host: 'a.test' }]);
+    await writeHosts([{ host: 'a.test', enabled: true }]);
     await reconcileContentScripts();
     await reconcileContentScripts();
     expect(ids()).toHaveLength(3);
@@ -56,7 +56,7 @@ describe('seedHostsIfEmpty', () => {
 
   test('never overwrites a list the user emptied on purpose', async () => {
     await writeHosts([]);
-    serveSeed({ hosts: [{ host: 'a.test' }] });
+    serveSeed({ hosts: [{ host: 'a.test', enabled: true }] });
     await seedHostsIfEmpty();
     expect(fakeChrome.storage.local.data.get(HOSTS_STORAGE_KEY)).toEqual({ hosts: [] });
   });

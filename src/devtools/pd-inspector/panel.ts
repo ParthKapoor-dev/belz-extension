@@ -11,7 +11,7 @@
 // messaging, which works in both Chromium and Firefox.
 
 import { KIND_BADGE } from '../../pd-inspector/tree';
-import { watchFocusFlag } from '../focus-flag';
+import { watchFocusFlag } from '../../shared/focus-flag';
 import { required } from '../../shared/dom';
 import { isPdPick, type PdCommand, type PdRelayMessage } from '../../shared/messages';
 import type {

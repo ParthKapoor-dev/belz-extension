@@ -15,9 +15,9 @@
 //      switch DevTools panels, so the shortcut writes a session flag that
 //      the AD Network and PD Inspector panels react to when they're open.
 
-import { FOCUS_STORAGE_KEY } from '../config/storage-keys';
 import { isHostsChange } from '../shared/hosts';
 import { isPdRelay, type FocusFlag, type OpenSettingsMessage } from '../shared/messages';
+import { writeFocusFlag } from '../shared/focus-flag';
 import { reconcileContentScripts, seedHostsIfEmpty } from './content-scripts';
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -92,11 +92,6 @@ if (chrome.commands && chrome.commands.onCommand) {
       command === 'focus-ad-network' ? 'ad'
       : command === 'focus-pd-inspector' ? 'pd'
       : null;
-    if (!target) return;
-    const value: FocusFlag = { target, ts: Date.now() };
-    // Prefer session storage so the flag doesn't survive browser restart.
-    // Fall back to local storage if session is unavailable (older Firefox).
-    const store = chrome.storage.session || chrome.storage.local;
-    store.set({ [FOCUS_STORAGE_KEY]: value });
+    if (target) writeFocusFlag(target);
   });
 }

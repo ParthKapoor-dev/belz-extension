@@ -14,10 +14,9 @@ export interface HostEntry {
   host: string;
   /**
    * Whether the browser has granted this host. `false` for an entry restored
-   * from sites.default.json and not yet granted. Missing on old entries,
-   * which count as enabled.
+   * from sites.default.json and not yet granted.
    */
-  enabled?: boolean;
+  enabled: boolean;
   /** Host that serves the Automation Designer UI, when it differs. */
   designerHost?: string;
   /** Restored from sites.default.json and never granted since. */
@@ -48,9 +47,14 @@ export function normalizeHost(input: string | null | undefined): string | null {
   return host;
 }
 
+/** A match pattern for `path` on `host`; the whole site by default. */
+export function hostPattern(host: string, path = '/*'): string {
+  return `https://${host}${path}`;
+}
+
 /** The match pattern a host's permission is granted for. */
 export function originPattern(host: string): string {
-  return `https://${host}/*`;
+  return hostPattern(host);
 }
 
 function isHostEntry(value: unknown): value is HostEntry {
@@ -65,9 +69,9 @@ export async function readHosts(): Promise<HostEntry[]> {
   return raw.hosts.filter(isHostEntry);
 }
 
-/** Entries the extension should act on: not explicitly disabled. */
+/** Entries the extension should act on: granted. */
 export async function readEnabledHosts(): Promise<HostEntry[]> {
-  return (await readHosts()).filter((h) => h.enabled !== false);
+  return (await readHosts()).filter((h) => h.enabled === true);
 }
 
 export async function writeHosts(hosts: HostEntry[]): Promise<void> {

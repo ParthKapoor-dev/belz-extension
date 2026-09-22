@@ -149,7 +149,7 @@ All console output goes through `createLogger(scope)` from `src/shared/logger.ts
   - boolean `exp-select`
   - date pickers (programmatic calendar navigation + model event dispatch)
   - structured-data textareas
-- Sync result: `{ success, warnings, errors, counts, failed, missing }`.
+- Sync result (`SyncResult` in `sync.ts`): `{ success, message, errors, warnings, filledCount, skippedMissingKeys, failedKeys }`.
 
 ## DevTools panel (AD chain inspector)
 

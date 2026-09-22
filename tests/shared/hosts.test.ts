@@ -44,13 +44,12 @@ describe('host storage', () => {
     expect((await readHosts()).map((h: any) => h.host)).toEqual(['b.test', 'a.test']);
   });
 
-  test('enabled means "not explicitly disabled"', async () => {
+  test('only granted entries are enabled', async () => {
     await writeHosts([
       { host: 'on.test', enabled: true },
-      { host: 'legacy.test' },
       { host: 'off.test', enabled: false }
     ]);
-    expect((await readEnabledHosts()).map((h: any) => h.host)).toEqual(['on.test', 'legacy.test']);
+    expect((await readEnabledHosts()).map((h: any) => h.host)).toEqual(['on.test']);
   });
 
   test('change detection only fires for the host key in local storage', () => {

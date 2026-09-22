@@ -3,9 +3,9 @@ node_modules/
 bun.lockb
 
 # Build output
-dist/
-build/
-dist-pack/
+/dist/
+/build/
+/dist-pack/
 
 # Logs
 *.log

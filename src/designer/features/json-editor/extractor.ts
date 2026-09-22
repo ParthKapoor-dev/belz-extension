@@ -286,7 +286,7 @@ export function extractAllInputs(): ExtractedInput[] {
         let currentValue = (testValueElement as HTMLInputElement).value || '';
 
         // For boolean exp-select, get value from match text
-        if (type === 'Boolean' && testValueElement.tagName.toLowerCase() === 'exp-select') {
+        if (type === 'Boolean' && testValueElement.matches(AD_WIDGETS.select.host)) {
           const matchText = testValueElement.querySelector(AD_WIDGETS.select.text);
           currentValue = matchText?.textContent?.trim() ?? '';
           log.debug(`Got boolean value from select: ${currentValue}`);
