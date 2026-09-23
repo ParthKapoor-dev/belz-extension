@@ -16,7 +16,7 @@ here. The modules hold no state, so each world can safely carry its own copy.
 | [`endpoints.ts`](endpoints.ts) | Paths on the inspected host: `CHAIN_PATH_RE`, `PD_DEPLOYABLE_PATH`, `chainV2Path()`, `chainV1Path()`, `designerPath()`, `pdPagePath()`, `pdSymbolPath()`. |
 | [`extension-files.ts`](extension-files.ts) | Paths of the extension's own files in the packaged tree: `CONTENT_SCRIPT_FILES`, `PANEL_PAGES`, `SITES_SEED_FILE`. |
 | [`storage-keys.ts`](storage-keys.ts) | `chrome.storage` keys: `SETTINGS_STORAGE_KEY`, `HOSTS_STORAGE_KEY`, `AD_CACHE_STORAGE_KEY`, `FOCUS_STORAGE_KEY`, and the `AUTOFILL_HANDOFF_KEY_PREFIX` of an "Open in draft" handoff. |
-| [`namespace.ts`](namespace.ts) | The one naming prefix, `belz`: `EXT_PREFIX`, `ns()`, `nsAttr()`, `nsGlobal()`, `EXTENSION_OWNED_ATTR`, `PAGE_GLOBALS`, `COMMAND_MESSAGE_KEY`, `AUTOFILL_MESSAGE_KEY`, `AUTOFILL_FRAGMENT_PARAM`. |
+| [`namespace.ts`](namespace.ts) | The one naming prefix, `belz`: `EXT_PREFIX`, `ns()`, `nsAttr()`, `nsGlobal()`, `EXTENSION_OWNED_ATTR`, `PAGE_GLOBALS` (the AD Network wrapper's one global in the inspected page), `COMMAND_MESSAGE_KEY`, `AUTOFILL_MESSAGE_KEY`, `AUTOFILL_FRAGMENT_PARAM`. |
 
 ## The naming prefix
 

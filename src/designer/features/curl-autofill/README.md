@@ -1,6 +1,6 @@
 # `src/designer/features/curl-autofill/`
 
-Fills a method's test inputs when the AD page was opened by the AD Network DevTools panel's **Open** ("Open in draft") action. The request body never travels in the URL: the panel leaves it in extension storage and puts a one-time id in the URL fragment; this code asks the background for the body and writes it into the inputs. AD pages of allowed sites only.
+Fills a method's test inputs when the AD page was opened by the AD Network DevTools panel's **Open in draft** action. The request body never travels in the URL: the panel leaves it in extension storage and puts a one-time id in the URL fragment; this code asks the background for the body and writes it into the inputs. AD pages of allowed sites only.
 
 ## Contents
 
@@ -19,7 +19,7 @@ Fills a method's test inputs when the AD page was opened by the AD Network DevTo
 
 ## How it connects
 
-- **Used by:** `ad-content.ts`. The URL and the stored body come from `withAutofill()` in `src/devtools/ad-network/network-panel.ts`.
+- **Used by:** `ad-content.ts`. The URL and the stored body come from `withAutofill()` in `src/devtools/ad-network/open-draft.ts`.
 - **Depends on:** `json-editor/extractor.ts` and `json-editor/sync.ts`, `ui/toast.ts`, `config/namespace.ts`, `config/routes.ts`, `config/selectors.ts` (`AD_INPUTS.keyElements`, for a log line), `config/timings.ts`, `shared/messages.ts`, and the background relay (`chrome.runtime.sendMessage`).
 
 ## Conventions

@@ -114,7 +114,7 @@ describe('OptionsPage', () => {
     expect(rows()).toEqual([{ host: 'site.test', granted: false, button: 'Grant' }]);
   });
 
-  test('Revoke removes the permission, then the stored entry', async () => {
+  test('Revoke removes the stored entry and the permission', async () => {
     await submit('site.test');
     button('site.test').click();
     await flush();
@@ -129,7 +129,8 @@ describe('OptionsPage', () => {
     button('site.test').click();
     await flush();
     expect(errorText()).toBe('Could not revoke site.test.');
-    expect((await readHosts()).map((h) => h.host)).toEqual(['site.test']);
+    expect((await readHosts()).map((h) => [h.host, h.enabled])).toEqual([['site.test', true]]);
+    expect(rows()).toEqual([{ host: 'site.test', granted: true, button: 'Revoke' }]);
   });
 
   test('the designer host is saved on blur, normalised, and cleared when blank', async () => {

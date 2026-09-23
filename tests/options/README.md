@@ -6,7 +6,7 @@ Unit tests for the options page in [`src/options/`](../../src/options/): the **A
 
 | File | Source under test | What it covers |
 |---|---|---|
-| [`options-page.test.ts`](options-page.test.ts) | [`options-page.ts`](../../src/options/options-page.ts) | The real `OptionsPage` over the real `options.html` markup: Add asks for the permission first and stores the normalised host; an invalid host is refused without asking; a denied request stores nothing; a seeded entry shows **Grant** and granting clears `seeded`; the stored `enabled` flag follows the browser; an out-of-band `permissions.onRemoved` repaints; **Revoke** removes the permission, then the entry, and a refused removal keeps it; the designer host is saved on blur, normalised, cleared when blank and refused when invalid; `start()` is idempotent and `stop()` removes every listener. |
+| [`options-page.test.ts`](options-page.test.ts) | [`options-page.ts`](../../src/options/options-page.ts) | The real `OptionsPage` over the real `options.html` markup: Add asks for the permission first and stores the normalised host; an invalid host is refused without asking; a denied request stores nothing; a seeded entry shows **Grant** and granting clears `seeded`; the stored `enabled` flag follows the browser; an out-of-band `permissions.onRemoved` repaints; **Revoke** removes the entry and the permission, and a refused removal puts the entry back; the designer host is saved on blur, normalised, cleared when blank and refused when invalid; `start()` is idempotent and `stop()` removes every listener. |
 
 ## How it works
 

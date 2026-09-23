@@ -8,8 +8,9 @@
 // of storage (so it can be read once), checks its age, and answers. A link
 // copied to someone else, or opened twice, finds nothing and fills nothing.
 //
-// Session storage, so a body never outlives the browser session; local
-// storage on browsers without it, where the age check still bounds it.
+// Session storage, so a body never outlives the browser session. takeHandoff()
+// reads, then removes: its one caller, the background relay, runs takes one
+// at a time, so a body is handed over at most once.
 
 import { AUTOFILL_HANDOFF_KEY_PREFIX as KEY_PREFIX } from '../config/storage-keys';
 
@@ -20,10 +21,6 @@ interface StoredHandoff {
   body: string;
   /** When the panel stored it (epoch ms). */
   ts: number;
-}
-
-function area(): chrome.storage.StorageArea {
-  return chrome.storage.session ?? chrome.storage.local;
 }
 
 /** A random id: unguessable, and safe in a URL fragment. */
@@ -41,18 +38,18 @@ export function isHandoffId(id: string): boolean {
 export async function storeHandoff(body: string): Promise<string> {
   const id = newId();
   const value: StoredHandoff = { body, ts: Date.now() };
-  await area().set({ [KEY_PREFIX + id]: value });
+  await chrome.storage.session.set({ [KEY_PREFIX + id]: value });
   return id;
 }
 
 /**
  * Background side: the body stored under `id`, removed so it cannot be read
  * again; null when there is none or it is too old. Also drops any other
- * handoff that expired unread.
+ * handoff that expired unread. Callers run one take at a time (see top).
  */
 export async function takeHandoff(id: string, now = Date.now()): Promise<string | null> {
   if (!isHandoffId(id)) return null;
-  const store = area();
+  const store = chrome.storage.session;
   const all = (await store.get(null)) as Record<string, unknown>;
   const expired = Object.keys(all).filter((key) => {
     if (!key.startsWith(KEY_PREFIX) || key === KEY_PREFIX + id) return false;

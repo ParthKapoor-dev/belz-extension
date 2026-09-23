@@ -27,7 +27,10 @@ sends it commands.
    it matches the path against the domain's route table). It then looks for an **app shell**, a
    separate page found by the first path segment whose layout contains a `router-outlet` node
    (`fetchShellConfig()`), and fetches every embedded component recursively into one shared graph
-   (`fetchComponentGraph()`). A component that fails to fetch becomes a stub with an `error`.
+   (`fetchComponentGraph()`). A component that fails to fetch becomes a stub with an `error`. Every
+   request goes through `fetchJson()`: a network error or a transient status (408, 429, 5xx:
+   `isTransientStatus()` from [`shared/errors.ts`](../shared/errors.ts)) is tried again, three tries
+   in all; any other status (a 401, a 404) fails at once.
 3. `buildComponentTree()` assembles the nesting from configs alone, splicing the page in at the
    shell's outlet. A component reference is a childless `isSymbol` node. This half is exact.
 4. `buildConfigIndex()` flattens the whole composed config and groups nodes by `props.className`.
@@ -78,7 +81,7 @@ anchored rather than guessed.
 ## Testing
 
 Tests live in [`tests/pd-inspector-page/`](../../tests/pd-inspector-page/): `config-fetch.test.ts`
-(page, shell and component fetches), `model.test.ts` (config tree, references, component tree) and
+(page, shell and component fetches, and which failures `fetchJson()` retries), `model.test.ts` (config tree, references, component tree) and
 `resolve.test.ts` (`buildConfigIndex` and `Resolver`) and `engine.test.ts` (the `PdEngine` and
 `Highlighter` lifecycle, the build generation guard, inspect-mode clicks, the watchdog, and the
 sender and command checks). To run the tests, see the root

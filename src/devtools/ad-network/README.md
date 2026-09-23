@@ -11,13 +11,15 @@ the page's session, only while the inspected page is on an allowed site.
 |---|---|
 | [`panel.html`](panel.html) | Panel markup and styles: toolbar, request table, detail pane, toast. Ships as `panel.html` at the extension root and loads `dist/panel.js`. |
 | [`panel.ts`](panel.ts) | Entry: constructs and starts an `AdNetworkPanel`. |
-| [`network-panel.ts`](network-panel.ts) | `AdNetworkPanel`: captures requests, renders the table, row actions (copy as cURL, copy Slack link, open in draft), filter, preserve log, pending rows, and what the panel may do on the inspected site. Also `withAutofill()`. |
+| [`network-panel.ts`](network-panel.ts) | `AdNetworkPanel`: captures requests, renders the table, row actions (copy as cURL, copy Slack link, Open in draft), filter, preserve log, pending rows, and what the panel may do on the inspected site. |
+| [`open-draft.ts`](open-draft.ts) | "Open in draft": `OpenQueue` (clicks handled one at a time, dropped by `stop()`), `withAutofill()` (the handoff URL) and `openInBackgroundTab()`. |
+| [`status.ts`](status.ts) | `PanelStatus`: the toast and the offline pill. |
 | [`detail.ts`](detail.ts) | `DetailPane`: Headers, Payload, Response and Timing tabs for the selected row, and a Copy button. |
 | [`names.ts`](names.ts) | `MethodNames` (names and categories learned so far) and `ResolveQueue` (debounced, batched lookups with backed-off, capped retries; `RetryPolicy`). |
 | [`api.ts`](api.ts) | `MethodResolver`: the chain-API client. Per-origin auth, V2 then V1, designer URLs. Also `ApiError` and `isRetryableError()`. |
 | [`cache.ts`](cache.ts) | `MethodCache`: stale-while-revalidate cache of method summaries in `chrome.storage.local`, merged with the stored map on every flush. |
-| [`origin.ts`](origin.ts) | `InspectedSite`: the inspected origin, whether it is an allowed site (`isAllowed`, `isAllowedOrigin()`), and the designer origin from the site's `designerHost` override. |
-| [`pending-capture.ts`](pending-capture.ts) | `PendingCapture` and the page scripts `WRAPPER_SCRIPT` / `UNINSTALL_SCRIPT`: a fetch/XHR wrapper in the page, polled for in-flight chain requests. |
+| [`origin.ts`](origin.ts) | `InspectedSite`: the inspected origin (null while unknown), whether it is an allowed site (`isAllowed`, `isAllowedOrigin()`), `forget()` on navigation, and the designer origin from the site's `designerHost` override. |
+| [`pending-capture.ts`](pending-capture.ts) | `PendingCapture` and the page scripts `WRAPPER_SCRIPT` / `UNINSTALL_SCRIPT` / `READ_SCRIPT`: a fetch/XHR wrapper in the page, polled for in-flight chain requests, and installed again when a poll finds it gone. |
 | [`extract.ts`](extract.ts) | Pure: `classifyChainUrl()`, `extractMethodNameFromChainResponse()`, `definitionOf()`, `nameFromDefinition()`, `asObject()`, `firstString()`. |
 | [`format.ts`](format.ts) | Pure: HAR reading and formatting (`statusGroup()`, `buildCurl()`, `harKey()`, `formatBytes()`, `lookupFailure()`, ...). |
 | [`view.ts`](view.ts) | Small DOM builders: `iconButton()`, `flashOk()`, `flashText()`, `kvGrid()`. |
@@ -34,22 +36,27 @@ the page's session, only while the inspected page is on an allowed site.
    (`classifyChainUrl()`), drops duplicates by `harKey()`, and inserts rows in start-time order
    (at most 300 rows). Rows are listed on any site.
 3. **Allowed sites only.** DevTools stays open when the tab navigates elsewhere, so on every navigation
-   (`onNavigated`) the panel first calls `MethodResolver.forgetAuth()`, then re-detects the origin and
-   runs `applySiteAccess()`. On an allowed site (`InspectedSite.isAllowed`: https, and a granted host of
+   (`onNavigated`) the panel at once forgets the origin (`InspectedSite.forget()`: nothing is allowed
+   until the new page is known), calls `MethodResolver.forgetAuth()`, and stops `PendingCapture` and
+   the lookup queue. Once `detect()` answers for the new page it runs `applySiteAccess()`. On an allowed site (`InspectedSite.isAllowed`: https, and a granted host of
    the list) it starts `PendingCapture` and queues name lookups. Anywhere else it stops
    `PendingCapture` (putting the page's fetch/XHR back), stops the queue, forgets auth, looks nothing up,
    and says "not on an allowed site" in the offline pill. The site list is watched, so granting or
    revoking a site takes effect at once.
 4. **In-flight requests** come from `PendingCapture`. `start()` injects `WRAPPER_SCRIPT` with
-   `evalInPage()`; the wrapper records chain requests in the page global `PAGE_GLOBALS.pending`
-   ([`config/namespace.ts`](../../config/namespace.ts)), and the panel polls it every 500 ms to show
-   pending rows. `install()` wraps again after a navigation. `stop()` runs `UNINSTALL_SCRIPT`, which
-   puts back every original the page has not replaced since and switches the wrapper off either way
-   (it then passes every call through). The wrapper also retires itself the same way when the panel
-   has not polled it for `STALE_MS`, as happens when DevTools closes without a `stop()`.
+   `evalInPage()`; the wrapper keeps its state, with a map of in-flight chain requests, in the one
+   page global `PAGE_GLOBALS.capture` ([`config/namespace.ts`](../../config/namespace.ts)), and the
+   panel polls it every 500 ms (`READ_SCRIPT`) to show pending rows. `stop()` runs `UNINSTALL_SCRIPT`,
+   which puts back every original the page has not replaced since and switches the wrapper off either
+   way (it then passes every call through). The wrapper also retires itself the same way when the
+   panel has not polled it for `STALE_MS` (10 s), as happens when DevTools closes without a `stop()`.
+   A poll that finds no active wrapper (a new document, or one retired while a hidden panel's timers
+   were throttled) installs it again; over a wrapper that could not put everything back, installing
+   wraps again what was put back and switches it on.
 5. **Names.** A definition fetch carries the name in its response body; on an allowed site the panel
-   reads it with `getContent()` and records it (`MethodNames.learnName()`,
-   `MethodResolver.rememberName()`). Every row's uuid also goes to `ResolveQueue`, which waits 250 ms
+   reads it with `getContent()` and shows it at once (`MethodNames.learnName()`). That is display
+   only: the category and the routing come from the platform, so every row's uuid also goes to
+   `ResolveQueue`, which waits 250 ms
    and resolves up to 4 uuids at a time through `MethodResolver.resolveSummary()`. A uuid that fails
    with an error `isRetryableError()` says may clear on its own (unreachable host, 401/403,
    408/429/5xx, or no HTTP status) is retried on the schedule in `TIMINGS.resolveRetry`: the wait
@@ -57,7 +64,9 @@ the page's session, only while the inspected page is on an allowed site.
    failed lookups. Other HTTP errors (a 404 on both endpoints) and `final` errors (not an allowed site)
    are not retried. Failures show in the offline pill.
 6. **`MethodResolver`** refuses outright when the inspected page is not allowed. Otherwise it reads the
-   cache first; on a miss it calls the V2 chain endpoint, then V1, on the inspected origin. Auth is
+   cache first (an entry without a category or state is not served: it is asked for again); on a
+   miss it calls the V2 chain endpoint, then V1, on the inspected origin, with `redirect: 'error'`
+   so the auth headers never follow a redirect elsewhere. Auth is
    always for the origin it came from, in this order:
    - the `Authorization` / `Expertly-Auth-Token` header seen on an observed chain request to that
      origin (`rememberAuth()`, kept per origin and only for allowed origins);
@@ -68,17 +77,22 @@ the page's session, only while the inspected page is on an allowed site.
 
    A 401/403 with a remembered header or token drops it and tries once more with fresh auth.
 7. **Row actions.** "Copy Slack link" puts a `category::method` link on the clipboard with
-   `copyRichLink()` ([`shared/rich-link.ts`](../../shared/rich-link.ts)), label escaped. "Open" builds
-   the designer URL (`buildDesignerUrl()`, on `InspectedSite.designerOrigin`; a published method opens
-   its linked draft) and opens it in a background tab, one queued request at a time. When the request
-   had a body, `withAutofill()` leaves it in extension storage with `storeHandoff()`
+   `copyRichLink()` ([`shared/rich-link.ts`](../../shared/rich-link.ts)), label escaped. "Open in
+   draft" builds the designer URL (`buildDesignerUrl()`, on `InspectedSite.designerOrigin`, under the
+   method's category; a published method opens its linked draft, `referenceId`; with no category
+   nothing is guessed and the action reports it) and opens it in a background tab
+   (`openInBackgroundTab()`: `chrome.tabs.create`, else `window.open`), one queued click at a time
+   (`OpenQueue`). Both actions check the run id (or the queue's generation) after every wait, so a
+   lookup that answers after `stop()` opens nothing and shows nothing. When the request had a body, `withAutofill()` leaves it in extension storage with `storeHandoff()`
    ([`shared/autofill-handoff.ts`](../../shared/autofill-handoff.ts)) and puts only the one-time id in
    the URL's fragment (`#belz-autofill=<id>`). The `curl-autofill` feature in
    [`src/designer/`](../../designer/) takes the body from the background and fills the inputs.
 8. **Cache.** `MethodCache` keeps entries fresh for 6 h, serves them stale (revalidating) up to 14 days,
    and keeps at most 800. Several DevTools windows share the stored map, so a flush writes only the
    entries this panel changed, merged into what is stored at that moment (the newer entry wins per key), and
-   learns the other windows' entries. `flush()` writes at once; writes are otherwise debounced.
+   learns the other windows' entries. `flush()` writes at once; writes are otherwise debounced, and
+   `AdNetworkPanel.stop()` (also run on `pagehide`) flushes, so no write waits on a timer that will
+   never fire.
 
 The resolution order is also described in [AGENTS.md](../../../AGENTS.md)
 ("DevTools panel (AD chain inspector)").
@@ -116,15 +130,19 @@ The resolution order is also described in [AGENTS.md](../../../AGENTS.md)
 ## Testing
 
 Tests live in [`tests/devtools/`](../../../tests/devtools/): `ad-network-panel.test.ts` drives the real
-panel over its real markup (including allowed-site gating, navigation and the "Open in draft"
-handoff); `api.test.ts` covers per-origin auth, the token scan and the 401 rescan;
-`pending-capture.test.ts` runs the page scripts against the test page's window; `cache.test.ts`,
+panel over its real markup (including allowed-site gating, the gap between a navigation and the new
+origin, names from a definition body, the "Open in draft" handoff, the `window.open` fallback, a
+lookup answering after `stop()`, and the cache flush on `stop()`); `api.test.ts` covers per-origin
+auth, the token scan, the 401 rescan, partial cache entries, `redirect: 'error'` and
+`buildDesignerUrl()`; `pending-capture.test.ts` runs the page scripts against the test page's window,
+including a retired wrapper installed again by the next poll; `cache.test.ts`,
 `extract.test.ts`, `format.test.ts` and `names.test.ts` cover those modules. To run the tests, see the
 root [README](../../../README.md#development)'s Development section.
 
 ## Adding or changing things
 
-- **A new row action:** add an `iconButton()` in `AdNetworkPanel.renderRow()` and a matching
+- **A new row action:** add an `iconButton()` in `AdNetworkPanel.renderRow()`; async work checks the
+  run id after each wait. Add a matching
   `<th>` only if you add a column (the pending row in `renderPendingRow()` must keep the same column
   count).
 - **A new field from the chain API:** add it to `MethodSummary` in `types.ts`, read it in

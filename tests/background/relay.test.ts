@@ -43,10 +43,12 @@ describe('PD Inspector relay', () => {
     expect(fakeChrome.tabs.messages).toEqual([[7, PD_COMMAND]]);
   });
 
-  test('ignores a command from a content script or another extension', async () => {
+  test('ignores a command from a content script, another extension, or a sender with no extension URL', async () => {
     const msg = { __pdRelay: 'cmd', tabId: 7, payload: PD_COMMAND };
     expect(await send(msg, contentScriptSender(AD_PAGE))).toBe('ignored');
     expect(await send(msg, { id: 'another-extension' })).toBe('ignored');
+    expect(await send(msg, { id: 'test-extension' })).toBe('ignored'); // no url
+    expect(await send(msg, { id: 'test-extension', url: 'https://site.test/' })).toBe('ignored');
     expect(fakeChrome.tabs.messages).toEqual([]);
   });
 
@@ -107,6 +109,15 @@ describe('autofill handoff', () => {
     expect(await send(take(id), extensionPageSender)).toBeNull(); // no tab: not a page
     // Still there for the right page.
     expect(await send(take(id), contentScriptSender(AD_PAGE))).toBe('{"a":1}');
+  });
+
+  test('two requests for one id at once: only one gets the body', async () => {
+    const id = await storeHandoff('{"once":true}');
+    const answers = await Promise.all([
+      send(take(id), contentScriptSender(AD_PAGE)),
+      send(take(id), contentScriptSender(AD_PAGE))
+    ]);
+    expect(answers.filter((a) => a !== null)).toEqual(['{"once":true}']);
   });
 
   test('an unknown or malformed id finds nothing', async () => {

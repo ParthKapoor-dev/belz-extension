@@ -10,9 +10,10 @@ import { waitFor } from '../wait';
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const created = () => fakeChrome.devtools.panels.created.map(([title]) => title);
 
-/** Make the inspected page answer `location.hostname` with `hostname`. */
-function inspect(hostname: string | null) {
-  fakeChrome.devtools.inspectedWindow.evalHandler = (expr) => (expr === 'location.hostname' ? hostname : null);
+/** Make the inspected page an https page on `hostname` (null: DevTools cannot tell). */
+function inspect(hostname: string | null, scheme = 'https') {
+  fakeChrome.devtools.inspectedWindow.evalHandler = (expr) =>
+    expr === 'location.origin' && hostname ? `${scheme}://${hostname}` : null;
 }
 
 let registrar: PanelRegistrar;
@@ -40,14 +41,20 @@ describe('PanelRegistrar', () => {
     expect(created().length).toBe(2);
   });
 
-  test('asks for the hostname, so a page on a non-default port still matches', async () => {
+  test('a page on a non-default port still matches its host', async () => {
     await writeHosts([{ host: 'site.test', enabled: true }]);
-    // What the page would answer: hostname has no port, host has one.
-    fakeChrome.devtools.inspectedWindow.evalHandler = (expr) =>
-      expr === 'location.hostname' ? 'site.test' : expr === 'location.host' ? 'site.test:8443' : null;
+    inspect('site.test:8443');
     registrar.start();
     await flush();
     expect(created().length).toBe(2);
+  });
+
+  test('creates nothing on a plain-http page of a granted host', async () => {
+    await writeHosts([{ host: 'site.test', enabled: true }]);
+    inspect('site.test', 'http');
+    registrar.start();
+    await flush();
+    expect(created()).toEqual([]);
   });
 
   test('creates nothing on a site that is not listed, or listed but not granted', async () => {

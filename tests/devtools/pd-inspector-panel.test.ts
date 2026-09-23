@@ -7,6 +7,7 @@ import { writeFocusFlag } from '../../src/shared/focus-flag';
 import { TIMINGS } from '../../src/config/timings';
 import type { PdCommand, PdRelayMessage } from '../../src/shared/messages';
 import type { EngineState, SerializedComponentNode } from '../../src/pd-inspector-page/types';
+import { sleep, waitFor } from '../wait';
 
 // Drives the real PD Inspector panel over its real markup (panel.html). The
 // page-side engine is faked behind chrome.runtime.sendMessage, which is how
@@ -111,20 +112,39 @@ describe('PdInspectorPanel', () => {
     expect(commands).toEqual([{ ns: 'pd', cmd: 'highlightComponent', name: 'Header' }]);
   });
 
-  test('Inspect toggles inspect mode on the engine, with a heartbeat while on', async () => {
-    const heartbeat = () => (panel as unknown as { heartbeat: unknown }).heartbeat !== null;
+  test('Inspect toggles inspect mode on the engine', async () => {
     $('#inspect').click();
     await flush();
     expect(text('#inspect')).toBe('Inspecting…');
-    expect(heartbeat()).toBe(true);
     $('#inspect').click();
     await flush();
     expect(text('#inspect')).toBe('Inspect');
-    expect(heartbeat()).toBe(false);
     expect(commands).toEqual([
       { ns: 'pd', cmd: 'setInspect', on: true },
       { ns: 'pd', cmd: 'setInspect', on: false }
     ]);
+  });
+
+  test('while inspecting, "inspect on" is re-sent as a heartbeat; stop() ends it with "inspect off"', async () => {
+    panel.stop();
+    const quick = new PdInspectorPanel(20);
+    quick.start();
+    try {
+      await flush();
+      $('#inspect').click();
+      await flush();
+      commands = [];
+      await waitFor(() => inspectCommands().length >= 2, 'two heartbeats');
+      expect(inspectCommands().every((c) => c.cmd === 'setInspect' && c.on)).toBe(true);
+      commands = [];
+      quick.stop();
+      await sleep(100); // five heartbeat intervals: none may come
+      expect(inspectCommands()).toEqual([{ ns: 'pd', cmd: 'setInspect', on: false }]);
+    } finally {
+      quick.stop();
+      panel.start();
+      await flush();
+    }
   });
 
   test('the button follows the engine: no answer means not inspecting', async () => {
@@ -207,7 +227,6 @@ describe('PdInspectorPanel', () => {
     window.dispatchEvent(new Event('pagehide'));
     await flush();
     expect(inspectCommands()).toEqual([{ ns: 'pd', cmd: 'setInspect', on: false }]);
-    expect((panel as unknown as { heartbeat: unknown }).heartbeat === null).toBe(true);
     panel.start();
     await flush();
   });

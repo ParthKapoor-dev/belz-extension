@@ -14,12 +14,15 @@
 //                    per site in the options page (`designerHost`) and we
 //                    read it from there. Nothing is hardcoded.
 //
+// Both are null while the inspected page is unknown: before the first
+// detect(), and from a navigation (forget()) until detect() answers again.
+//
 // It also answers the question every network-touching part of the panel asks
 // first: is the inspected page on an allowed site? DevTools stays open when
 // the tab navigates elsewhere, and on any other site the panel must not look
 // up names, lift auth headers or patch the page's fetch.
 
-import { isHostsChange, normalizeHost, readHosts } from '../../shared/hosts';
+import { isAllowedUrl, isHostsChange, normalizeHost, readHosts } from '../../shared/hosts';
 import { evalInPage } from '../inspected';
 import { createLogger } from '../../shared/logger';
 
@@ -27,42 +30,36 @@ const log = createLogger('ad-network');
 
 /** The page DevTools is inspecting, and where its designer UI lives. */
 export class InspectedSite {
-  private origin = '';
-  private host = '';
+  private origin: string | null = null;
+  private host: string | null = null;
   /** host → designer host, mirrored from the user's site list. */
   private readonly designerHostByHost = new Map<string, string>();
   /** The granted hosts of the user's site list. */
   private readonly enabled = new Set<string>();
 
-  /** The inspected page's origin; '' until detect() has answered. */
-  get apiOrigin(): string {
+  /** The inspected page's origin; null while unknown. */
+  get apiOrigin(): string | null {
     return this.origin;
   }
 
-  /** The inspected page's host, normalised (lowercase, no port); '' until detect() has answered. */
-  get apiHost(): string {
+  /** The inspected page's host, normalised (lowercase, no port); null while unknown. */
+  get apiHost(): string | null {
     return this.host;
   }
 
-  /** True when the inspected page is https and its host is a granted site. */
+  /** True when the inspected page is known, https, and on a granted site. */
   get isAllowed(): boolean {
     return this.isAllowedOrigin(this.origin);
   }
 
   /** True when `origin` is https on a granted site. */
-  isAllowedOrigin(origin: string): boolean {
-    try {
-      const url = new URL(origin);
-      const host = normalizeHost(url.hostname);
-      return url.protocol === 'https:' && host !== null && this.enabled.has(host);
-    } catch {
-      return false;
-    }
+  isAllowedOrigin(origin: string | null): boolean {
+    return isAllowedUrl(origin, this.enabled);
   }
 
-  /** The origin whose Automation Designer UI should be opened for this page. */
-  get designerOrigin(): string {
-    if (!this.host) return this.origin;
+  /** The origin whose Automation Designer UI should be opened for this page; null while unknown. */
+  get designerOrigin(): string | null {
+    if (!this.origin || !this.host) return null;
     const mapped = this.designerHostByHost.get(this.host);
     if (!mapped || mapped === this.host) return this.origin;
     try {
@@ -75,20 +72,30 @@ export class InspectedSite {
   }
 
   /**
+   * The inspected page navigated: its origin is unknown, and so not allowed,
+   * until detect() answers for the new page.
+   */
+  forget(): void {
+    this.origin = null;
+    this.host = null;
+  }
+
+  /**
    * Read the inspected window's origin. Resolves once DevTools answers, with
    * the origin; an answer that is not an http(s) origin (about:blank, a
-   * chrome:// page) forgets the previous one.
+   * chrome:// page) leaves it unknown (null).
    */
-  async detect(): Promise<string> {
+  async detect(): Promise<string | null> {
     const result = await evalInPage('location.origin');
-    const origin = typeof result === 'string' && /^https?:/i.test(result) ? result : '';
-    let host = '';
-    try {
-      host = origin ? normalizeHost(new URL(origin).hostname) ?? '' : '';
-    } catch {
-      host = '';
+    let host: string | null = null;
+    if (typeof result === 'string' && /^https?:/i.test(result)) {
+      try {
+        host = normalizeHost(new URL(result).hostname);
+      } catch {
+        host = null;
+      }
     }
-    this.origin = host ? origin : '';
+    this.origin = host ? (result as string) : null;
     this.host = host;
     return this.origin;
   }

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { fakeChrome } from '../fakes/chrome';
 import { HOSTS_STORAGE_KEY } from '../../src/config/storage-keys';
-import { writeHosts } from '../../src/shared/hosts';
+import { hostPattern, readHosts, writeHosts } from '../../src/shared/hosts';
 import {
   ContentScriptSync,
   reconcileContentScripts,
@@ -114,6 +114,30 @@ describe('ContentScriptSync', () => {
     }
     expect(ids()).toEqual(['ad-a.test', 'pd-a.test', 'pdi-a.test']);
     expect(fakeChrome.scripting.registered.get('ad-a.test')!.js).toEqual(['dist/ad-content.js']);
+  });
+
+  test('a permission removed outside the options page unmarks the host and unregisters its scripts', async () => {
+    await writeHosts([{ host: 'a.test', enabled: true }, { host: 'b.test', enabled: true }]);
+    fakeChrome.permissions.granted.add(hostPattern('a.test'));
+    fakeChrome.permissions.granted.add(hostPattern('b.test'));
+    sync.start();
+    await sync.reconcile();
+    expect(ids()).toHaveLength(6);
+
+    fakeChrome.permissions.granted.delete(hostPattern('b.test'));
+    fakeChrome.permissions.onRemoved.dispatch({ origins: [hostPattern('b.test')] });
+    await waitFor(() => ids().length === 3, 'b.test to be unregistered');
+    expect(ids()).toEqual(['ad-a.test', 'pd-a.test', 'pdi-a.test']);
+    expect((await readHosts()).map((h) => [h.host, h.enabled])).toEqual([['a.test', true], ['b.test', false]]);
+  });
+
+  test('a permission granted outside the options page marks the host and registers its scripts', async () => {
+    await writeHosts([{ host: 'a.test', enabled: false, seeded: true }]);
+    sync.start();
+    fakeChrome.permissions.granted.add(hostPattern('a.test'));
+    fakeChrome.permissions.onAdded.dispatch({ origins: [hostPattern('a.test')] });
+    await waitFor(() => ids().length === 3, 'a.test to be registered');
+    expect(await readHosts()).toEqual([{ host: 'a.test', enabled: true }]);
   });
 });
 

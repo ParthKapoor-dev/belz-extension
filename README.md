@@ -67,7 +67,7 @@ That creates a ready-to-load extension for each browser family under `build/`. L
 
 Repeat for each environment you use (dev, QA, and so on). To remove access, click **Revoke**, which removes the site and its permission.
 
-**Optional: designer host.** Some deployments serve the Automation Designer on a different host from the one you browse, such as a public portal plus a staff portal. If yours does, fill in **designer host** for that site so the **Open** links go to the right place. For **Open** to also fill in the method's inputs, add the designer host as an allowed site of its own and grant it. Most setups can leave it blank.
+**Optional: designer host.** Some deployments serve the Automation Designer on a different host from the one you browse, such as a public portal plus a staff portal. If yours does, fill in **designer host** for that site so **Open in draft** and the copied links go to the right place. For **Open in draft** to also fill in the method's inputs, add the designer host as an allowed site of its own and grant it. Most setups can leave it blank.
 
 ---
 
@@ -112,10 +112,10 @@ Open DevTools (`F12`) on an allowed site and select the **AD Network** tab. It l
 - **Filter** searches by name, category, UUID or URL. The list keeps the newest 300 requests.
 - **Click a row** to see its headers, request payload, response and timing. `↑`/`↓` move between rows. The detail pane's **Copy** copies what the open tab shows.
 - **Click a UUID** to copy it.
-- **Actions** on each row: **copy as cURL**, **copy a Slack link**, and **Open**. **Open** opens the method in the designer in a background tab, so you stay where you are; several clicks are queued and opened one after another. If the request sent inputs, the opened method's inputs are filled in with them (the designer host must be an allowed site).
+- **Actions** on each row: **copy as cURL**, **copy a Slack link**, and **Open in draft**. **Open in draft** opens the method's draft in the designer in a background tab, so you stay where you are (a published method opens its linked draft); several clicks are queued and opened one after another. If the request sent inputs, the opened method's inputs are filled in with them (the designer host must be an allowed site). If the method's inputs have not appeared 30 seconds after the page shows the method (a minute at most in all), autofill gives up and says so in a toast.
 - Requests still in progress show as **pending**, and cancelled ones show a red **canceled** label.
 
-Requests made before you opened the tab are still listed. Names and categories are looked up on the same site with your existing sign-in; while they are unknown, a row shows the start of its UUID.
+Requests made while DevTools was open, before you selected the tab, are still listed; requests from before DevTools opened are not. Names and categories are looked up on the same site with your existing sign-in; while they are unknown, a row shows the start of its UUID.
 
 ### DevTools: PD Inspector
 
@@ -185,7 +185,7 @@ Browsers don't let extensions open DevTools or switch its tabs, so `Ctrl+Shift+A
 
 **AD Network shows UUIDs instead of names.** While a name is being looked up, a row shows the start of its UUID and `…` for the category. If the lookup fails, a red **names unavailable — …** pill in the toolbar says why (hover it for the full message). The usual reason is not being signed in: sign in to the site; the panel retries by itself for about a minute, and again for each new request. **this page is not on an allowed site** means DevTools is on a site you haven't added.
 
-**Open didn't fill in the inputs.** The designer host must be an allowed, granted site, and the tab must be opened from the panel: a copied or reopened link fills nothing.
+**Open in draft didn't fill in the inputs.** The designer host must be an allowed, granted site, and the tab must be opened from the panel: a copied or reopened link fills nothing. If the method's inputs take more than 30 seconds to appear, autofill gives up.
 
 **The extension disappeared in Firefox.** Temporary add-ons are removed when Firefox closes. Load it again (see [Install](#install)).
 
@@ -256,7 +256,7 @@ The workflow needs, once:
 
 What the extension asks for, and why:
 
-- **`storage`**: your settings, your list of allowed sites, and a cache of AD method names and categories (see below). It also passes an **Open** request's inputs from the AD Network panel to the tab it opens, for one use and at most 5 minutes, in session storage that the browser clears when it closes.
+- **`storage`**: your settings, your list of allowed sites, and a cache of AD method names and categories (see below), in local storage. Session storage, which the browser clears when it closes, holds two short-lived things: an **Open in draft** request's inputs, passed from the AD Network panel to the tab it opens, for one use and at most 5 minutes; and the flag `Ctrl+Shift+A` / `Ctrl+Shift+P` leave for a DevTools panel, honoured for 60 seconds.
 - **`scripting`**: to run its scripts on the sites you allowed, and only on their Automation Designer, Page Designer and published pages.
 - **Optional host access (`https://*/*`)**: the extension starts with access to no site. Each site you add asks for its own permission (`https://<your site>/*`), which you can revoke at any time. Plain-http sites can't be added.
 - **`web_accessible_resources` (`dist/modules/*`, on https pages)**: the AD and PD scripts load their code from these files. A side effect: in Chromium browsers the extension's ID is fixed, so an https page that knows it could request one of these files and learn that the extension is installed. The files contain no secrets. Firefox gives each install a random ID, so it can't be detected this way.
@@ -265,8 +265,8 @@ What the extension asks for, and why:
 
 What the DevTools panels do on an allowed site:
 
-- **AD Network** wraps the inspected page's `fetch` and `XMLHttpRequest` to show requests that are still in flight. It puts the page's own versions back when the tab leaves the allowed site or DevTools closes (within seconds, even if the panel could not say goodbye).
-- To show method names, it asks that same site's API, with the page's own sign-in: the authorization header the page itself sent, or the sign-in token in the page's storage. These are used only for the site they came from, and forgotten when the tab navigates.
+- **AD Network** wraps the inspected page's `fetch` and `XMLHttpRequest` to show requests that are still in flight. It puts the page's own versions back when the tab leaves the allowed site or DevTools closes (within 10 seconds, even if the panel could not say goodbye).
+- To show method names, it asks that same site's API, with the page's own sign-in: the authorization header the page itself sent, or the sign-in token in the page's storage. These are used only for the site they came from, never follow a redirect, and are forgotten when the tab navigates.
 - Names and categories are cached in `chrome.storage.local` per site: used as they are for 6 hours, shown and refreshed in the background up to 14 days, and never more than 800 methods (the oldest go first).
 - **PD Inspector** reads the published page's configuration from the same site.
 
@@ -274,4 +274,4 @@ On any other site, the panels look nothing up and change nothing on the page.
 
 ## License
 
-MIT. See [`LICENSE`](./LICENSE).
+The code is MIT-licensed; see [`LICENSE`](./LICENSE). The bundled Ioskeley Mono fonts are under the SIL Open Font License; see [`fonts/OFL.txt`](./fonts/OFL.txt).

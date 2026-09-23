@@ -15,7 +15,8 @@
 //     (api.ts)               inspected host, cached SWR in MethodCache
 //
 // This file is the table and the wiring; the detail pane (detail.ts), name
-// resolution (names.ts) and formatting (format.ts, view.ts) live apart.
+// resolution (names.ts), "Open in draft" (open-draft.ts), the toast and
+// offline pill (status.ts) and formatting (format.ts, view.ts) live apart.
 
 import { classifyChainUrl, extractMethodNameFromChainResponse } from './extract';
 import { PendingCapture } from './pending-capture';
@@ -24,6 +25,8 @@ import { MethodResolver } from './api';
 import { MethodCache } from './cache';
 import { MethodNames, ResolveQueue } from './names';
 import { DetailPane } from './detail';
+import { OpenQueue, openInBackgroundTab, withAutofill } from './open-draft';
+import { PanelStatus } from './status';
 import {
   buildCurl,
   formatBytes,
@@ -38,8 +41,6 @@ import {
 } from './format';
 import { flashOk, flashText, iconButton, ICON_COPY, ICON_LINK, ICON_OPEN } from './view';
 import { el, FocusFlash } from '../view';
-import { AUTOFILL_FRAGMENT_PARAM } from '../../config/namespace';
-import { storeHandoff } from '../../shared/autofill-handoff';
 import { required } from '../../shared/dom';
 import { errorText } from '../../shared/errors';
 import { watchFocusFlag } from '../../shared/focus-flag';
@@ -48,9 +49,6 @@ import { copyRichLink } from '../../shared/rich-link';
 import type { HarEntry, MethodSummary, PendingEntry, Row } from './types';
 
 const MAX_ROWS = 300;
-const TOAST_MS = 3000;
-/** Pause between two queued "open in draft" tabs. */
-const OPEN_QUEUE_GAP_MS = 150;
 
 const log = createLogger('ad-network');
 
@@ -87,11 +85,14 @@ export class AdNetworkPanel {
   private readonly names = new MethodNames((uuid) => this.repaint(uuid));
   /** Settles once origin, site config and cache are loaded; made anew by each start(). */
   private ready: Promise<void> = Promise.resolve();
+  private readonly status: PanelStatus;
   private readonly queue = new ResolveQueue(this.resolver, this.names, () => this.ready, (failed, reason) =>
-    this.setOffline(failed, reason)
+    this.status.setOffline(failed, reason)
   );
   private readonly detail: DetailPane;
   private readonly pending = new PendingCapture((entries) => this.updatePending(entries));
+  /** "Open in draft" requests, handled one at a time. */
+  private readonly openQueue = new OpenQueue<Row>((row, isCurrent) => this.openInDraft(row, isCurrent));
   private readonly flash = new FocusFlash();
 
   /** Chronological (oldest first by start time); mirrors the DOM order. */
@@ -100,15 +101,10 @@ export class AdNetworkPanel {
   private readonly seen = new Set<string>();
   /** In-flight rows: pending id -> table row. */
   private readonly pendingRows = new Map<number, HTMLTableRowElement>();
-  /** "Open in draft" requests, processed one at a time. */
-  private readonly openQueue: Row[] = [];
-  private openProcessing = false;
-  private openTimer: ReturnType<typeof setTimeout> | null = null;
   private nextId = 1;
   private recording = true;
   private preserveLog = false;
   private filterText = '';
-  private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private started = false;
   /** Bumped per start and stop, so async work from an earlier run is dropped. */
   private runId = 0;
@@ -118,6 +114,7 @@ export class AdNetworkPanel {
   /** Only keeps references: nothing is read or wired until start(). */
   constructor(private readonly els: PanelElements = panelElements()) {
     this.detail = new DetailPane(els.detail, this.names, this.site, () => this.markSelected(null));
+    this.status = new PanelStatus(els.toast, els.offline);
   }
 
   start(): void {
@@ -153,7 +150,10 @@ export class AdNetworkPanel {
     });
   }
 
-  /** Undo start(): every listener, timer, poll and watcher. The rows stay. */
+  /**
+   * Undo start(): every listener, timer, poll and watcher; cache writes still
+   * waiting for their debounce are written now. The rows stay.
+   */
   stop(): void {
     if (!this.started) return;
     this.started = false;
@@ -175,12 +175,10 @@ export class AdNetworkPanel {
     this.unwatchFocus = null;
     this.unwatchSite?.();
     this.unwatchSite = null;
+    this.openQueue.stop();
+    this.status.stop();
     this.flash.cancel();
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toastTimer = null;
-    if (this.openTimer) clearTimeout(this.openTimer);
-    this.openTimer = null;
-    this.openQueue.length = 0;
+    void this.cache.flush();
   }
 
   // ---- toolbar and browser events -------------------------------------------
@@ -210,19 +208,22 @@ export class AdNetworkPanel {
     this.onRequest(req as unknown as HarEntry);
   };
 
-  // A navigation may have taken the tab to another site: forget every header
-  // and token learned on the old page at once, before anything else can use
-  // them, then decide afresh what the panel may do on the new one.
+  // A navigation may have taken the tab to another site. At once, before
+  // anything else can act on the old page's behalf: the inspected origin is
+  // unknown (so not allowed), every header and token learned is forgotten,
+  // and capture and lookups stop. Once detect() answers for the new page,
+  // applySiteAccess() decides afresh what the panel may do there.
   private readonly onNavigated = (): void => {
     const runId = this.runId;
+    this.site.forget();
     this.resolver.forgetAuth();
+    this.pending.stop();
+    this.queue.stop();
     if (!this.preserveLog) this.clearAll();
     this.ready = this.ready.then(async () => {
       await this.site.detect();
       if (runId !== this.runId) return;
       this.applySiteAccess();
-      // A new document has the page's own fetch again.
-      this.pending.install();
     });
   };
 
@@ -235,13 +236,13 @@ export class AdNetworkPanel {
     if (!this.started) return;
     if (this.site.isAllowed) {
       this.pending.start();
-      this.setOffline(false);
+      this.status.setOffline(false);
       for (const row of this.rows) this.queue.add(row.uuid);
     } else {
       this.pending.stop();
       this.queue.stop();
       this.resolver.forgetAuth();
-      if (this.site.apiOrigin) this.setOffline(true, 'this page is not on an allowed site');
+      if (this.site.apiOrigin) this.status.setOffline(true, 'this page is not on an allowed site');
     }
   };
 
@@ -313,17 +314,15 @@ export class AdNetworkPanel {
     this.renderRow(row, insertAt);
     if (atBottom && isAppend) pane.scrollTop = pane.scrollHeight;
 
-    // Name: definition fetches carry it in their body — read it instantly.
-    // HAR entries from getHAR() lack a working getContent(); the resolver
-    // fills in.
+    // Name: definition fetches carry it in their body — show it at once.
+    // Only shown: the category and routing still come from the platform, so
+    // the uuid is looked up (and cached) like any other. HAR entries from
+    // getHAR() lack a working getContent().
     if (allowed && info.kind === 'fetch' && typeof har.getContent === 'function') {
       try {
         har.getContent((body: string) => {
           const name = extractMethodNameFromChainResponse(body || '');
-          if (!name) return;
-          this.names.learnName(info.uuid, name);
-          // Free name — persist it so the next panel open skips the round-trip.
-          this.resolver.rememberName(info.uuid, name);
+          if (name) this.names.learnName(info.uuid, name);
         });
       } catch {
         /* backfill entries: no content available */
@@ -380,7 +379,7 @@ export class AdNetworkPanel {
     // # cell text is set by renumberRows() after insertion; placeholder here.
     const srCell = el('td', { className: 'sr' }, '');
     // Clicking name or category opens the request-details pane (via the
-    // row-level handler below). Only the Actions "Open" button opens draft mode.
+    // row-level handler below). Only the Actions "Open in draft" button opens the designer.
     const nameCell = el('td', null);
     const categoryCell = el('td', null);
     row.nameCell = nameCell;
@@ -393,7 +392,7 @@ export class AdNetworkPanel {
         navigator.clipboard.writeText(buildCurl(row.har)).then(() => flashOk(btn), () => {});
       }),
       iconButton(ICON_LINK, 'Copy Slack link', (btn) => this.copySlackLink(row, btn)),
-      iconButton(ICON_OPEN, 'Open in draft mode (background tab)', (btn) => {
+      iconButton(ICON_OPEN, 'Open in draft (background tab)', (btn) => {
         this.enqueueOpen(row);
         flashOk(btn);
       })
@@ -548,134 +547,80 @@ export class AdNetworkPanel {
 
   // ---- row actions ---------------------------------------------------------
 
-  /** Look a row's method up (cache first) and paint what came back. */
-  private async summaryFor(row: Row): Promise<{ summary: MethodSummary | null; url: string }> {
+  /**
+   * Look a row's method up (cache first) and build its designer URL. Rejects
+   * when it cannot be opened: not an allowed site, unknown on this instance,
+   * or no category to route with.
+   */
+  private async lookUp(row: Row): Promise<{ summary: MethodSummary | null; url: string }> {
     await this.ready;
     const summary = await this.resolver.resolveSummary(row.uuid, (fresh) => this.names.apply(row.uuid, fresh));
     const url = this.resolver.buildDesignerUrl(row.uuid, summary);
-    if (!url) throw new Error('method not found on this instance');
-    this.names.apply(row.uuid, summary);
-    this.setOffline(false);
+    if (!url) {
+      throw new Error(summary ? 'the method has no category to open it under' : 'method not found on this instance');
+    }
     return { summary, url };
+  }
+
+  /** A lookup succeeded: paint what it found, and clear the offline pill. */
+  private found(row: Row, summary: MethodSummary | null): void {
+    this.names.apply(row.uuid, summary);
+    this.status.setOffline(false);
   }
 
   // Copy a Slack-pasteable rich link to the method's designer page — mirrors
   // the Shift+L "copy AD rich link" feature on AD pages.
   private async copySlackLink(row: Row, btn: HTMLButtonElement): Promise<void> {
+    const runId = this.runId;
     try {
-      const { summary, url } = await this.summaryFor(row);
+      const { summary, url } = await this.lookUp(row);
+      if (runId !== this.runId) return;
+      this.found(row, summary);
       const name = summary?.name || this.names.name(row.uuid) || shortUuid(row.uuid);
       const category = summary?.category || this.names.category(row.uuid) || '';
       const label = [category, name].filter(Boolean).join('::');
       await copyRichLink(label, url);
+      if (runId !== this.runId) return;
       flashOk(btn);
-      this.showToast('copied link · ' + label);
+      this.status.toast('copied link · ' + label);
     } catch (err) {
-      this.setOffline(true, errorText(err));
-      this.showToast('could not copy link — ' + lookupFailure(err));
+      if (runId !== this.runId) return;
+      this.status.setOffline(true, errorText(err));
+      this.status.toast('could not copy link — ' + lookupFailure(err));
     }
   }
 
   // "Open in draft": opens the method's draft designer page, with inputs
   // autofilled, in a BACKGROUND tab — the user stays where they are.
   private enqueueOpen(row: Row): void {
-    this.openQueue.push(row);
-    this.showToast(
+    this.openQueue.add(row);
+    const waiting = this.openQueue.size;
+    this.status.toast(
       'queued ' + (this.names.name(row.uuid) || shortUuid(row.uuid)) +
-        ' · ' + this.openQueue.length + ' in queue'
+        (waiting ? ' · ' + waiting + ' in queue' : '')
     );
-    this.processOpenQueue();
   }
 
-  private async processOpenQueue(): Promise<void> {
-    if (this.openProcessing) return;
-    const row = this.openQueue.shift();
-    if (!row) return;
-    this.openProcessing = true;
+  /** One queued open. Does nothing more once the panel stopped (`isCurrent`). */
+  private async openInDraft(row: Row, isCurrent: () => boolean): Promise<void> {
     try {
-      const { summary, url } = await this.summaryFor(row);
-      openInBackgroundTab(await withAutofill(url, row.har));
-      const remaining = this.openQueue.length;
-      this.showToast(
-        'opening ' + (summary?.name || shortUuid(row.uuid)) + ' in draft mode' +
+      const { summary, url } = await this.lookUp(row);
+      if (!isCurrent()) return;
+      this.found(row, summary);
+      const target = await withAutofill(url, row.har);
+      if (!isCurrent()) return;
+      await openInBackgroundTab(target);
+      if (!isCurrent()) return;
+      const remaining = this.openQueue.size;
+      this.status.toast(
+        'opening ' + (summary?.name || shortUuid(row.uuid)) + ' in draft' +
           (remaining ? ' · ' + remaining + ' queued' : '')
       );
     } catch (err) {
-      this.setOffline(true, errorText(err));
-      this.showToast('could not open ' + shortUuid(row.uuid) + ' — ' + lookupFailure(err));
-    } finally {
-      this.openProcessing = false;
-      if (this.openQueue.length) {
-        this.openTimer = setTimeout(() => {
-          this.openTimer = null;
-          void this.processOpenQueue();
-        }, OPEN_QUEUE_GAP_MS);
-      }
+      if (!isCurrent()) return;
+      this.status.setOffline(true, errorText(err));
+      this.status.toast('could not open ' + shortUuid(row.uuid) + ' — ' + lookupFailure(err));
     }
-  }
-
-  // ---- status --------------------------------------------------------------
-
-  private showToast(text: string): void {
-    const toast = this.els.toast;
-    toast.textContent = text;
-    toast.classList.remove('hidden');
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => toast.classList.add('hidden'), TOAST_MS);
-  }
-
-  // The offline pill is the only place a resolve failure is visible, so it
-  // carries the actual reason rather than a generic "unavailable". Hover for
-  // the full message; the panel console gets the raw error too.
-  private setOffline(off: boolean, reason?: string): void {
-    const pill = this.els.offline;
-    pill.classList.toggle('hidden', !off);
-    if (!off) {
-      pill.title = '';
-      return;
-    }
-    const detail = reason ? String(reason) : '';
-    pill.textContent = detail
-      ? `names unavailable — ${detail}`
-      : 'names unavailable — sign in to this site and retry';
-    pill.title = detail
-      ? `${detail}\n\nOpen the panel's own console (right-click → Inspect on this ` +
-        `panel) for the full error.`
-      : '';
-  }
-}
-
-/**
- * A designer URL that autofills the method's inputs with this request's body.
- * The body is left in extension storage under a one-time id, and only the id
- * goes in the URL's fragment (see shared/autofill-handoff.ts).
- */
-export async function withAutofill(url: string, har: HarEntry): Promise<string> {
-  const body = har.request?.postData?.text || '';
-  if (!body) return url;
-  try {
-    const id = await storeHandoff(body);
-    return `${url.split('#')[0]}#${AUTOFILL_FRAGMENT_PARAM}=${id}`;
-  } catch (err) {
-    log.warn('cannot hand the request body over; opening without autofill:', err);
-    return url;
-  }
-}
-
-function openInBackgroundTab(url: string): void {
-  try {
-    if (chrome.tabs?.create) {
-      chrome.tabs.create({ url, active: false });
-      return;
-    }
-  } catch (err) {
-    // Firefox DevTools pages have no chrome.tabs; fall through to window.open.
-    log.debug('chrome.tabs.create failed, using window.open:', err);
-  }
-  try {
-    window.open(url, '_blank');
-  } catch (err) {
-    log.warn('cannot open a tab:', err);
   }
 }
 

@@ -10,12 +10,14 @@
 //     for the request body the AD Network panel left for it. Answered only
 //     for this extension's content script on an Automation Designer page of a
 //     granted https site; the body is read once (shared/autofill-handoff.ts).
+//     Takes run one at a time, so two requests for one id cannot both read
+//     the body before either has removed it.
 //
 // Anything else, or from anyone else, is ignored.
 
 import { AD_ROUTE_PREFIX } from '../config/routes';
 import { takeHandoff } from '../shared/autofill-handoff';
-import { enabledHostSet, httpsHostOf } from '../shared/hosts';
+import { enabledHostSet, isAllowedUrl } from '../shared/hosts';
 import { createLogger } from '../shared/logger';
 import {
   isFromExtension,
@@ -31,14 +33,15 @@ const log = createLogger('background');
 type Sender = chrome.runtime.MessageSender;
 type Respond = (response: unknown) => void;
 
-/** True when `url` is https on a granted site. */
-async function isAllowedUrl(url: string | undefined): Promise<boolean> {
-  const host = httpsHostOf(url);
-  return host !== null && (await enabledHostSet()).has(host);
+/** True when `url` is https on a granted site, as stored now. */
+async function isOnAllowedSite(url: string | undefined): Promise<boolean> {
+  return isAllowedUrl(url, await enabledHostSet());
 }
 
 export class MessageRelay {
   private started = false;
+  /** The handoff take running now (or the last one); the next waits for it. */
+  private taking: Promise<unknown> = Promise.resolve();
 
   start(): void {
     if (this.started) return;
@@ -85,7 +88,7 @@ export class MessageRelay {
 
   private async open(url: string): Promise<boolean> {
     try {
-      if (!(await isAllowedUrl(url))) {
+      if (!(await isOnAllowedSite(url))) {
         log.warn('refusing to open a URL that is not on an allowed site:', url);
         return false;
       }
@@ -105,7 +108,10 @@ export class MessageRelay {
     } catch {
       return null;
     }
-    if (!path.startsWith(AD_ROUTE_PREFIX) || !(await isAllowedUrl(sender.url))) return null;
-    return takeHandoff(msg.id);
+    if (!path.startsWith(AD_ROUTE_PREFIX) || !(await isOnAllowedSite(sender.url))) return null;
+    // One take at a time: takeHandoff reads, then removes.
+    const take = this.taking.then(() => takeHandoff(msg.id));
+    this.taking = take.catch(() => null);
+    return take;
   }
 }

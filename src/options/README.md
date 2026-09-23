@@ -24,12 +24,16 @@ settings.
    the user gesture, and only on a grant writes the entry (`enabled: true`) with `writeHosts()`. A
    seeded entry that is granted this way is marked enabled rather than added twice. Sites are https
    only: the extension never asks for plain-http access.
-3. **Render.** `refresh()` reads the list, asks `chrome.permissions.contains` for each host
-   (`withGrantState()`), fixes any stored `enabled` flag that disagrees (`syncEnabledFlags()`), and
-   renders. A granted host shows **Revoke**; an ungranted one shows a "not granted" badge and
-   **Grant**. The browser, not storage, decides which.
-4. **Revoke.** `revoke()` removes the permission first, then drops the entry from storage (only if the
-   browser agreed). The background sees the storage change and unregisters the host's scripts.
+3. **Render.** `refresh()` calls `syncEnabledFlags()` from [`shared/hosts.ts`](../shared/hosts.ts),
+   which asks `chrome.permissions.contains` for each host and fixes any stored `enabled` flag that
+   disagrees, then renders the list with those answers. A granted host shows **Revoke**; an
+   ungranted one shows a "not granted" badge and **Grant**. The browser, not storage, decides which.
+   The background keeps the flags in step too, whenever a permission changes, so the list is right
+   even when this page was closed.
+4. **Revoke.** `revoke()` drops the entry from storage, then removes the permission. The entry goes
+   first so that the background, which marks a listed host "not granted" when its permission goes,
+   finds nothing to mark. If the browser refuses the removal, the entry is put back. The background
+   sees the storage change and unregisters the host's scripts.
 5. **Designer host.** Each row has an optional field for the host that serves the Automation Designer
    UI, saved on blur or Enter. The AD Network panel reads it through `InspectedSite` and opens methods
    there. For "Open in draft" to fill in the inputs, the designer host must itself be in the list and
@@ -44,7 +48,7 @@ storage key and registers or unregisters the content scripts.
 
 - **Used by:** the browser, through `options_ui` in `manifest.json`.
 - **Depends on:** [`shared/hosts.ts`](../shared/hosts.ts) (`normalizeHost`, `hostPattern`,
-  `readHosts`, `writeHosts`, `isHostsChange`), [`shared/dom.ts`](../shared/dom.ts) (`required()`),
+  `readHosts`, `writeHosts`, `syncEnabledFlags`, `isHostsChange`), [`shared/dom.ts`](../shared/dom.ts) (`required()`),
   [`shared/errors.ts`](../shared/errors.ts) (`errorText()`), [`shared/logger.ts`](../shared/logger.ts),
   and the `chrome.permissions` and `chrome.storage` APIs.
 - **Read by others:** the host list is read by [`src/background/`](../background/),
@@ -62,8 +66,8 @@ storage key and registers or unregisters the content scripts.
 ## Testing
 
 [`tests/options/options-page.test.ts`](../../tests/options/options-page.test.ts) drives `OptionsPage`
-over the real `options.html` markup with the fake `chrome` (add, deny, grant sync, revoke, designer
-host, `stop()`). The host logic it uses is tested in
+over the real `options.html` markup with the fake `chrome` (add, deny, grant sync, revoke, a refused
+revoke that puts the entry back, designer host, `stop()`). The host logic it uses is tested in
 [`tests/shared/hosts.test.ts`](../../tests/shared/hosts.test.ts). To run the tests, see the root
 [README](../../README.md#development)'s Development section.
 

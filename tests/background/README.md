@@ -6,8 +6,8 @@ Unit tests for the background service worker's logic in [`src/background/`](../.
 
 | File | Source under test | What it covers |
 |---|---|---|
-| [`content-scripts.test.ts`](content-scripts.test.ts) | [`content-scripts.ts`](../../src/background/content-scripts.ts) | `ContentScriptSync`, `reconcileContentScripts()` and `seedHostsIfEmpty()`. |
-| [`relay.test.ts`](relay.test.ts) | [`relay.ts`](../../src/background/relay.ts), [`commands.ts`](../../src/background/commands.ts) | `MessageRelay` (PD Inspector relay and the autofill handoff) and `CommandHandler`. |
+| [`content-scripts.test.ts`](content-scripts.test.ts) | [`content-scripts.ts`](../../src/background/content-scripts.ts) | `ContentScriptSync` (including permissions removed or granted outside the options page), `reconcileContentScripts()` and `seedHostsIfEmpty()`. |
+| [`relay.test.ts`](relay.test.ts) | [`relay.ts`](../../src/background/relay.ts), [`commands.ts`](../../src/background/commands.ts) | `MessageRelay` (PD Inspector relay, its sender check, and the autofill handoff, one take at a time) and `CommandHandler`. |
 
 ## What is covered
 

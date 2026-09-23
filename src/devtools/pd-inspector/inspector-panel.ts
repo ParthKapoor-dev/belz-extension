@@ -131,6 +131,12 @@ export class PdInspectorPanel {
   private readonly flash = new FocusFlash();
   private unwatchFocus: (() => void) | null = null;
 
+  /**
+   * @param heartbeatMs How often "inspect on" is re-sent while inspecting;
+   *   TIMINGS.pdInspectHeartbeat unless a test passes its own.
+   */
+  constructor(private readonly heartbeatMs: number = TIMINGS.pdInspectHeartbeat) {}
+
   start(): void {
     if (this.started) return;
     this.started = true;
@@ -215,7 +221,7 @@ export class PdInspectorPanel {
     this.inspectBtn.classList.toggle('on', on);
     this.inspectBtn.textContent = on ? 'Inspecting…' : 'Inspect';
     if (on && !this.heartbeat) {
-      this.heartbeat = setInterval(this.beat, TIMINGS.pdInspectHeartbeat);
+      this.heartbeat = setInterval(this.beat, this.heartbeatMs);
     } else if (!on && this.heartbeat) {
       clearInterval(this.heartbeat);
       this.heartbeat = null;

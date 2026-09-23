@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
   fetchComponentGraph,
+  fetchJson,
   fetchPageConfig,
   fetchShellConfig
 } from '../../src/pd-inspector-page/config';
@@ -39,6 +40,33 @@ function serveDeployables(opts: {
 }
 
 describe('fetchPageConfig', () => {
+  test('fetchJson retries a network error or a transient status, never a definite one', async () => {
+    /** Answers the queued statuses in turn (0: a network error), then 200. */
+    const serveStatuses = (statuses: number[]) => {
+      let calls = 0;
+      globalThis.fetch = (async () => {
+        const status = statuses[calls++] ?? 200;
+        if (status === 0) throw new TypeError('Failed to fetch');
+        return { ok: status < 400, status, json: async () => ({ ok: true }) };
+      }) as any;
+      return () => calls;
+    };
+
+    let calls = serveStatuses([0, 503]);
+    expect(await fetchJson('/x')).toEqual({ ok: true });
+    expect(calls()).toBe(3);
+
+    calls = serveStatuses([429, 429, 429, 200]);
+    await expect(fetchJson('/x')).rejects.toThrow('HTTP 429');
+    expect(calls()).toBe(3);
+
+    for (const status of [401, 403, 404]) {
+      calls = serveStatuses([status]);
+      await expect(fetchJson('/x')).rejects.toThrow(`HTTP ${status}`);
+      expect(calls()).toBe(1);
+    }
+  });
+
   test('a static page is found at its literal path', async () => {
     serveDeployables({ pages: { [ctx.path]: { path: ctx.path, layout: { name: 'root' }, referencePageId: 'r1' } } });
     expect(await fetchPageConfig(ctx)).toEqual({

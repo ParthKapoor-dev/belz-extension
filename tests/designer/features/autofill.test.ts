@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { contentScriptSender, fakeChrome } from '../../fakes/chrome';
 import { renderInputs } from '../../fixtures/ad-inputs';
-import { withAutofill } from '../../../src/devtools/ad-network/network-panel';
+import { withAutofill } from '../../../src/devtools/ad-network/open-draft';
 import { startCurlAutofillFeature } from '../../../src/designer/features/curl-autofill/index';
 import { MessageRelay } from '../../../src/background/relay';
 import { writeHosts } from '../../../src/shared/hosts';

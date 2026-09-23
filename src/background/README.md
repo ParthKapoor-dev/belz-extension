@@ -1,7 +1,9 @@
 # `src/background/`
 
 The extension's background context: a service worker in Chromium, a background script in Firefox
-(the per-browser split is made by [`scripts/pack.mjs`](../../scripts/pack.mjs)). It has no UI. It
+(the per-browser split is made by `browserManifest()` in
+[`scripts/manifests.mjs`](../../scripts/manifests.mjs), which [`scripts/pack.mjs`](../../scripts/pack.mjs)
+writes out). It has no UI. It
 decides which sites the content scripts run on, answers the few messages other worlds send it, and
 handles the browser-level keyboard shortcuts.
 
@@ -10,7 +12,7 @@ handles the browser-level keyboard shortcuts.
 | File / directory | What it does |
 |---|---|
 | [`index.ts`](index.ts) | Entry, built to `dist/background.js`. Only constructs and starts `ContentScriptSync`, `MessageRelay` and `CommandHandler`. |
-| [`content-scripts.ts`](content-scripts.ts) | `ContentScriptSync` keeps the registered content scripts in step with the site list; `reconcileContentScripts()` is one pass; `seedHostsIfEmpty()` restores the list from `sites.default.json`. |
+| [`content-scripts.ts`](content-scripts.ts) | `ContentScriptSync` keeps the registered content scripts in step with the site list, and the list's `enabled` flags in step with the browser's permissions; `reconcileContentScripts()` is one pass; `seedHostsIfEmpty()` restores the list from `sites.default.json`. |
 | [`relay.ts`](relay.ts) | `MessageRelay`: the PD Inspector relay and the "Open in draft" autofill handoff, for validated senders only. |
 | [`commands.ts`](commands.ts) | `CommandHandler`: the `chrome.commands` shortcuts (`open-settings`, `focus-ad-network`, `focus-pd-inspector`). |
 
@@ -30,25 +32,33 @@ handles the browser-level keyboard shortcuts.
 2. **Serialised reconciles.** `ContentScriptSync.reconcile()` never runs two passes at once: a pass
    waits for the running one, and every request that arrives before it starts shares it. It reads the
    list when it starts, so the latest list wins. It never rejects. `ContentScriptSync.start()` calls it
-   on `runtime.onInstalled` (after `seedHostsIfEmpty()`), `runtime.onStartup`, and any
-   `storage.onChanged` that touches the host list (`isHostsChange()`).
-3. **Seeding.** `seedHostsIfEmpty()` fetches `SITES_SEED_FILE` from the extension root when storage has
+   on any `storage.onChanged` that touches the host list (`isHostsChange()`).
+3. **Grant sync.** A permission can change outside the options page (the browser's own extension
+   settings). `ContentScriptSync.syncGrants()` runs `syncEnabledFlags()` from
+   [`shared/hosts.ts`](../shared/hosts.ts), in the same one-at-a-time queue as the reconciles, then
+   reconciles: each stored `enabled` flag becomes what `chrome.permissions.contains` says, so a
+   revoked host's scripts are unregistered and a granted one's registered. It runs on
+   `permissions.onAdded` / `onRemoved`, `runtime.onStartup`, and `runtime.onInstalled` (after
+   `seedHostsIfEmpty()`).
+4. **Seeding.** `seedHostsIfEmpty()` fetches `SITES_SEED_FILE` from the extension root when storage has
    no host key at all. Each seeded `host` and `designerHost` goes through `normalizeHost()`, like a host
    typed on the options page, and invalid ones are dropped. Seeded entries are stored
    `enabled: false, seeded: true`, because only a user gesture on the options page can grant a
    permission. A list the user emptied (`{hosts: []}`) is never re-seeded.
-4. **Message relay.** `MessageRelay.onMessage` acts only on messages that pass the full-shape guards in
+5. **Message relay.** `MessageRelay.onMessage` acts only on messages that pass the full-shape guards in
    [`shared/messages.ts`](../shared/messages.ts), and checks who sent them:
-   - `PdRelayMessage`, only from this extension's own pages (`isFromExtensionPage()`), because Firefox
+   - `PdRelayMessage`, only from this extension's own pages (`isFromExtensionPage()`: no tab, and a
+     URL on the extension's origin), because Firefox
      gives DevTools panels no `chrome.tabs`. `__pdRelay: 'cmd'` forwards a well-formed `PdCommand` to
      the tab with `chrome.tabs.sendMessage` and passes the answer back (null on error).
-     `__pdRelay: 'open'` opens the URL only when it is https on a granted site (`httpsHostOf()`,
+     `__pdRelay: 'open'` opens the URL only when it is https on a granted site (`isAllowedUrl()` over
      `enabledHostSet()`), and answers `{ ok }`.
    - `TakeAutofillMessage`, only from this extension's content script (`isFromExtension()`, with a
      `sender.tab`) on an Automation Designer page of a granted https site. It answers with
      `takeHandoff()` from [`shared/autofill-handoff.ts`](../shared/autofill-handoff.ts), which removes
-     the body so it can be read once; anyone else gets null.
-5. **Commands.** `open-settings` sends an `OpenSettingsMessage` (key `COMMAND_MESSAGE_KEY`) to the
+     the body so it can be read once; anyone else gets null. Takes run one at a time (a promise chain
+     in `MessageRelay`), so two requests for one id cannot both read the body.
+6. **Commands.** `open-settings` sends an `OpenSettingsMessage` (key `COMMAND_MESSAGE_KEY`) to the
    active tab, where the designer content script opens the in-page Settings modal.
    `focus-ad-network` and `focus-pd-inspector` call `writeFocusFlag()` from
    [`shared/focus-flag.ts`](../shared/focus-flag.ts), because no browser lets an extension open or
@@ -65,7 +75,7 @@ handles the browser-level keyboard shortcuts.
   (focus flag).
 - **Depends on:** [`config/`](../config/) (routes, extension files, storage keys, namespace),
   [`shared/`](../shared/) (hosts, messages, autofill handoff, focus flag, logger), and the
-  `chrome.scripting`, `chrome.storage`, `chrome.tabs`, `chrome.commands` APIs.
+  `chrome.scripting`, `chrome.storage`, `chrome.permissions`, `chrome.tabs`, `chrome.commands` APIs.
 
 ## Conventions
 
@@ -81,9 +91,11 @@ handles the browser-level keyboard shortcuts.
 
 [`tests/background/content-scripts.test.ts`](../../tests/background/content-scripts.test.ts) covers
 `reconcileContentScripts`, `ContentScriptSync` (concurrent and coalesced reconciles, duplicate ids, no
-unhandled rejections) and `seedHostsIfEmpty`.
+unhandled rejections, permissions removed or granted outside the options page) and
+`seedHostsIfEmpty`.
 [`tests/background/relay.test.ts`](../../tests/background/relay.test.ts) covers `MessageRelay` (sender
-and payload checks, the `open` allow-list, the autofill handoff) and `CommandHandler`. Both use the
+and payload checks, the `open` allow-list, the autofill handoff, two takes of one id at once) and
+`CommandHandler`. Both use the
 fake `chrome` in [`tests/fakes/chrome.ts`](../../tests/fakes/chrome.ts). To run the tests, see the root
 [README](../../README.md#development)'s Development section.
 

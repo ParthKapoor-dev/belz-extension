@@ -4,6 +4,7 @@ import { InspectedSite } from '../../src/devtools/ad-network/origin';
 import { MethodCache } from '../../src/devtools/ad-network/cache';
 import { ApiError, MethodResolver } from '../../src/devtools/ad-network/api';
 import { writeHosts } from '../../src/shared/hosts';
+import type { MethodSummary } from '../../src/devtools/ad-network/types';
 
 // Every test gets its own site, cache and resolver: nothing is shared.
 
@@ -203,24 +204,52 @@ describe('token scan', () => {
 });
 
 describe('buildDesignerUrl', () => {
+  const summary = (fields: Partial<MethodSummary>): MethodSummary =>
+    ({ name: 'm', category: null, state: 'DRAFT', referenceId: null, ...fields });
+
   test('a draft opens by its own uuid', () => {
-    expect(resolver.buildDesignerUrl('u1', { category: 'My Cat', state: 'DRAFT' }))
+    expect(resolver.buildDesignerUrl('u1', summary({ category: 'My Cat' })))
       .toBe(`${ORIGIN}/automation-designer/My%20Cat/u1`);
   });
 
   test('a published method opens its linked draft', () => {
-    expect(resolver.buildDesignerUrl('u1', { category: 'C', state: 'PUBLISHED', referenceId: 'd9' }))
+    expect(resolver.buildDesignerUrl('u1', summary({ category: 'C', state: 'PUBLISHED', referenceId: 'd9' })))
       .toBe(`${ORIGIN}/automation-designer/C/d9`);
   });
 
   test('the designer host override is used for the link', async () => {
     await writeHosts([{ host: 'nsm.test', enabled: true, designerHost: 'staff.nsm.test' }]);
     await site.loadSiteConfig();
-    expect(resolver.buildDesignerUrl('u1', { category: 'C', state: 'DRAFT' }))
+    expect(resolver.buildDesignerUrl('u1', summary({ category: 'C' })))
       .toBe('https://staff.nsm.test/automation-designer/C/u1');
   });
 
-  test('no summary, no url', () => {
+  test('no summary, or no category, or an unknown page: no url, nothing guessed', () => {
     expect(resolver.buildDesignerUrl('u1', null)).toBeNull();
+    expect(resolver.buildDesignerUrl('u1', summary({ name: 'only a name' }))).toBeNull();
+    site.forget();
+    expect(resolver.buildDesignerUrl('u1', summary({ category: 'C' }))).toBeNull();
+  });
+});
+
+describe('the cache', () => {
+  test('an entry without a category is not a hit: the platform is asked', async () => {
+    cache.write(ORIGIN, UUID, { name: 'from a definition body' });
+    serve({ [V2]: () => [200, { name: 'getUser', metadata: { service: { name: 'Users' }, state: 'PUBLISHED', referenceId: 'd1' } }] });
+    const summary = await resolver.resolveSummary(UUID);
+    expect(calls).toHaveLength(1);
+    expect(summary).toEqual({ name: 'getUser', category: 'Users', state: 'PUBLISHED', referenceId: 'd1' });
+    expect(resolver.buildDesignerUrl(UUID, summary)).toBe(`${ORIGIN}/automation-designer/Users/d1`);
+  });
+
+  test('requests refuse to follow a redirect, so auth headers stay on the origin', async () => {
+    let redirect: unknown;
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      redirect = init.redirect;
+      calls.push({ url, headers: {} });
+      return { ok: true, status: 200, json: async () => found()[1] };
+    }) as unknown as typeof fetch;
+    await resolver.resolveSummary(UUID);
+    expect(redirect).toBe('error');
   });
 });

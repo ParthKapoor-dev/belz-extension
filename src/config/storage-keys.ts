@@ -2,9 +2,11 @@
 // of state lives under one of these — new keys added here so name collisions
 // are easy to spot.
 //
-// The `sdExtension…V1` keys predate the extension's `belz` prefix (see
-// namespace.ts) and keep their names on purpose: renaming a key would lose
-// what every user already has stored under it.
+// The `sdExtension…V1` keys do not carry the extension's `belz` prefix (see
+// namespace.ts) and keep their names: renaming a key loses what every user
+// has stored under it. The same goes for the shape stored under a key: an
+// incompatible change needs a new key or a migration (config/README.md,
+// "Stored shapes").
 
 /** Feature toggles + IDE defaults. Written by src/designer/core/settings.ts. */
 export const SETTINGS_STORAGE_KEY = 'sdExtensionSettingsV1';
@@ -20,9 +22,8 @@ export const HOSTS_STORAGE_KEY = 'sdExtensionHostsV1';
 export const AD_CACHE_STORAGE_KEY = 'sdExtensionAdCacheV1';
 
 /**
- * Focus-hint flag written by chrome.commands. Session-scoped (falls back to
- * local on browsers without session storage). DevTools panels react by
- * scrolling / pulsing / refetching when the flag targets them.
+ * Focus-hint flag written by chrome.commands, in session storage. DevTools
+ * panels react by scrolling / pulsing / refetching when the flag targets them.
  */
 export const FOCUS_STORAGE_KEY = 'sdExtensionPanelFocusV1';
 

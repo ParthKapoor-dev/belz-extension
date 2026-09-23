@@ -11,13 +11,15 @@
 // the extension root, but Firefox resolves them relative to the devtools page — a
 // `dist/panel.html` would become `dist/dist/panel.html` there and load blank.
 //
-// Panels are gated to the user's allowed-sites list. Without this check the
+// Panels are gated to the user's allowed-sites list: an https page on a
+// granted host (isAllowedUrl in shared/hosts.ts, the check every world
+// uses; a port does not matter). Without this check the
 // AD Network + PD Inspector tabs would appear in DevTools on every site
 // (YouTube, chrome://newtab, etc.) because `devtools_page` runs per-DevTools-
 // window, not per-host. We check on init and again on navigation so panels
 // appear the moment the user reaches an allowed site.
 
-import { enabledHostSet, isHostsChange, normalizeHost } from '../shared/hosts';
+import { enabledHostSet, isAllowedUrl, isHostsChange } from '../shared/hosts';
 import { PANEL_PAGES } from '../config/extension-files';
 import { evalInPage } from './inspected';
 import { createLogger } from '../shared/logger';
@@ -29,14 +31,10 @@ const PANELS = [
   { title: 'PD Inspector', page: PANEL_PAGES.pdInspector }
 ];
 
-/**
- * The inspected page's host, normalised like the stored site list (lowercase,
- * no port); '' when DevTools cannot tell. `location.host` would keep a port
- * ("site.test:8443") and never match the stored "site.test".
- */
-async function currentHost(): Promise<string> {
-  const result = await evalInPage('location.hostname');
-  return typeof result === 'string' ? normalizeHost(result) ?? '' : '';
+/** The inspected page's origin; null when DevTools cannot tell. */
+async function currentOrigin(): Promise<string | null> {
+  const result = await evalInPage('location.origin');
+  return typeof result === 'string' ? result : null;
 }
 
 /** The granted hosts from the user's site list, normalised. */
@@ -92,8 +90,8 @@ export class PanelRegistrar {
 
   private async tryCreate(): Promise<void> {
     if (this.created.size === PANELS.length) return;
-    const [host, allowed] = await Promise.all([currentHost(), allowedHosts()]);
-    if (!this.started || !host || !allowed.has(host)) return;
+    const [origin, allowed] = await Promise.all([currentOrigin(), allowedHosts()]);
+    if (!this.started || !isAllowedUrl(origin, allowed)) return;
     for (const { title, page } of PANELS) {
       if (this.created.has(title)) continue;
       this.created.add(title);

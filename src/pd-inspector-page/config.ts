@@ -10,6 +10,7 @@
 import { PD_DEPLOYABLE_PATH as DEPLOYABLE } from '../config/endpoints';
 import { PAGES_ROUTE_PREFIX } from '../config/routes';
 import { PD_CONFIG_NODES } from '../config/selectors';
+import { isTransientStatus } from '../shared/errors';
 import { createLogger } from '../shared/logger';
 import type {
   ComponentConfig,
@@ -98,20 +99,32 @@ export function hasOutlet(layoutRoot: RawLayoutNode | null): boolean {
   return collectChildRefs(layoutRoot).some((r) => r.type === 'outlet');
 }
 
-/** fetch + parse JSON, with retries — rapid sequential fetches drop transiently. */
-async function fetchJson(url: string): Promise<unknown> {
+/** Tries per request, the first included. */
+const FETCH_ATTEMPTS = 3;
+
+/**
+ * fetch + parse JSON. Rapid sequential fetches drop transiently, so a
+ * network error or a transient HTTP status (408, 429, 5xx: isTransientStatus)
+ * is tried again, up to FETCH_ATTEMPTS in all. Any other status is a definite
+ * answer and fails at once.
+ */
+export async function fetchJson(url: string): Promise<unknown> {
   let lastErr: unknown = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt++) {
+    let res: Response;
     try {
-      const res = await fetch(url, { credentials: 'include' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
+      res = await fetch(url, { credentials: 'include' });
     } catch (err) {
       lastErr = err;
-      log.debug(`fetch attempt ${attempt + 1} failed:`, url, err);
+      log.debug(`fetch attempt ${attempt} failed:`, url, err);
+      continue;
     }
+    if (res.ok) return res.json();
+    lastErr = new Error(`HTTP ${res.status}`);
+    if (!isTransientStatus(res.status)) break;
+    log.debug(`fetch attempt ${attempt} failed: HTTP ${res.status}`, url);
   }
-  throw lastErr || new Error('fetch failed');
+  throw lastErr;
 }
 
 /**

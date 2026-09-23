@@ -8,12 +8,12 @@ Worlds share data only through `chrome.storage` and messages, and this folder de
 
 | File / directory | What it does |
 |---|---|
-| [`hosts.ts`](hosts.ts) | The allowed-sites list: `HostEntry`, `normalizeHost()`, `hostPattern()`, `httpsHostOf()`, `readHosts()`, `readEnabledHosts()`, `enabledHostSet()`, `writeHosts()`, `isHostsChange()`. |
+| [`hosts.ts`](hosts.ts) | The allowed-sites list: `HostEntry`, `normalizeHost()`, `hostPattern()`, `httpsHostOf()`, `isAllowedUrl()`, `readHosts()`, `readEnabledHosts()`, `enabledHostSet()`, `writeHosts()`, `syncEnabledFlags()`, `isHostsChange()`. |
 | [`logger.ts`](logger.ts) | `createLogger(scope)`: the extension's only console output, printed as `[belz:<scope>]`. |
 | [`messages.ts`](messages.ts) | Every message shape that crosses worlds (`PdCommand`, `PdPushMessage`, `PdRelayMessage`, `OpenSettingsMessage`, `TakeAutofillMessage`, `FocusFlag`), their full-shape guards, and the sender checks `isFromExtension()` / `isFromExtensionPage()`. |
 | [`autofill-handoff.ts`](autofill-handoff.ts) | The "Open in draft" handoff: `storeHandoff()` (panel side), `takeHandoff()` (background side), `isHandoffId()`, `HANDOFF_TTL_MS`. |
 | [`rich-link.ts`](rich-link.ts) | `escapeHtml()`, `richLink()` and `copyRichLink()`: a link that pastes as a clickable label, with the label escaped. |
-| [`errors.ts`](errors.ts) | `errorText(err)`: an error's message for people, `''` when there is nothing to say. |
+| [`errors.ts`](errors.ts) | `errorText(err)`: an error's message for people, `''` when there is nothing to say. `isTransientStatus(status)`: 408, 429 or 5xx, the HTTP answers worth retrying. |
 | [`dom.ts`](dom.ts) | `required(selector)`: an element the extension's own page HTML must contain; throws if missing. |
 | [`focus-flag.ts`](focus-flag.ts) | `writeFocusFlag()` (background side) and `watchFocusFlag()` (panel side) for the `Ctrl+Shift+A` / `Ctrl+Shift+P` shortcuts. |
 
@@ -24,6 +24,11 @@ Worlds share data only through `chrome.storage` and messages, and this folder de
   `enabled`. `hostPattern()` is always https: it is both the match pattern of a content script and the
   origin a host's permission is requested and checked for. `httpsHostOf()` returns the normalised host
   of an https URL and null for any other scheme; `enabledHostSet()` is the normalised granted hosts.
+  `isAllowedUrl(url, allowed)` is the one allowed-site check (https, and a host in `allowed`), used by
+  the background relay, the DevTools page and the AD Network panel. `syncEnabledFlags()` asks
+  `chrome.permissions.contains` for every listed host and stores each `enabled` flag as the browser
+  reports it (a granted seeded entry loses `seeded`); the background runs it on every permission
+  change and the options page on every render.
 - **`logger.ts`** keeps a `DebugSwitch` that follows the `debugLogging` setting through
   `chrome.storage`. Warnings and errors always print; debug and info print only while Debug Logging is
   on. In code without extension APIs it stays off.
@@ -31,17 +36,18 @@ Worlds share data only through `chrome.storage` and messages, and this folder de
   `isPdRelay`, `isOpenSettings`, `isTakeAutofill`). The guards check the whole shape, not only a tag:
   `isPdCommand` accepts only the four known commands with their fields, and `isPdRelay` also checks the
   `tabId` and the command inside. Who may send a message is the receiver's check: `isFromExtension()`
-  (this extension, not another) and `isFromExtensionPage()` (one of its own pages, never a content
-  script). A sender and its receiver use the same type, so renaming a field breaks the type check
+  (this extension, not another) and `isFromExtensionPage()` (one of its own pages: no `sender.tab`,
+  and a `sender.url` on the extension's own origin; never a content script). A sender and its receiver use the same type, so renaming a field breaks the type check
   rather than the feature.
-- **`autofill-handoff.ts`** keeps a request body in session storage (local where session storage is
-  missing) under `AUTOFILL_HANDOFF_KEY_PREFIX` plus a random 32-hex id. Only the id travels in the
-  opened URL's fragment. `takeHandoff()` removes the body as it reads it, refuses it after
-  `HANDOFF_TTL_MS`, and drops other handoffs that expired unread.
+- **`autofill-handoff.ts`** keeps a request body in `chrome.storage.session` under
+  `AUTOFILL_HANDOFF_KEY_PREFIX` plus a random 32-hex id. Only the id travels in the opened URL's
+  fragment. `takeHandoff()` removes the body as it reads it, refuses it after `HANDOFF_TTL_MS`, and
+  drops other handoffs that expired unread. It reads, then removes, so its caller (the background
+  relay) runs takes one at a time: a body is handed over at most once.
 - **`rich-link.ts`** builds the `text/html` and Markdown forms of a link. The label comes from the page
   or the platform API, so it is escaped; a URL that is not http(s) is written as plain text.
-- **`focus-flag.ts`** stores a `FocusFlag` under `FOCUS_STORAGE_KEY` in session storage (local storage
-  where session storage is missing). `writeFocusFlag()` never rejects: a failed write is logged. A
+- **`focus-flag.ts`** stores a `FocusFlag` under `FOCUS_STORAGE_KEY` in `chrome.storage.session`
+  (every supported browser has it: Firefox 128 or newer, current Chromium). `writeFocusFlag()` never rejects: a failed write is logged. A
   panel's watcher reacts to a flag for its target that is at most 60 s old, including one written
   before the panel loaded.
 
@@ -74,7 +80,7 @@ Worlds share data only through `chrome.storage` and messages, and this folder de
 ## Testing
 
 [`tests/shared/hosts.test.ts`](../../tests/shared/hosts.test.ts) covers `normalizeHost` and host
-storage. [`tests/shared/logger.test.ts`](../../tests/shared/logger.test.ts) covers `createLogger` and
+storage; `syncEnabledFlags` is covered through the options page and the background tests. [`tests/shared/logger.test.ts`](../../tests/shared/logger.test.ts) covers `createLogger` and
 fails on any stray `console.*` call in `src/`.
 [`tests/shared/rich-link.test.ts`](../../tests/shared/rich-link.test.ts) covers the escaping. The
 message guards and the handoff are covered through their users in

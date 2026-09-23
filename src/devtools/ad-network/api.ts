@@ -32,7 +32,7 @@ import type { InspectedSite } from './origin';
 import type { MethodCache } from './cache';
 import { asObject, definitionOf, firstString, nameFromDefinition } from './extract';
 import { evalInPage } from '../inspected';
-import { errorText } from '../../shared/errors';
+import { errorText, isTransientStatus } from '../../shared/errors';
 import { createLogger } from '../../shared/logger';
 import type { MethodSummary } from './types';
 
@@ -88,17 +88,15 @@ export class ApiError extends Error {
  * True when a failed resolve may succeed later without anything else
  * changing: the host was unreachable, the user is not signed in yet (401/403),
  * the server was busy or broken (408, 429, 5xx), or the failure carried no
- * HTTP status (inspected origin not known yet, a non-JSON answer such as a
- * login page). Any other HTTP status (404 on both endpoints, 400, ...) is a
- * definite answer about that uuid and is not retried, and neither is a
- * `final` error.
+ * HTTP status (a non-JSON answer such as a login page). Any other HTTP
+ * status (404 on both endpoints, 400, ...) is a definite answer about that
+ * uuid and is not retried, and neither is a `final` error.
  */
 export function isRetryableError(err: unknown): boolean {
   if (!(err instanceof ApiError)) return true;
   if (err.final) return false;
   if (err.transport || err.status === undefined) return true;
-  const s = err.status;
-  return s === 401 || s === 403 || s === 408 || s === 429 || s >= 500;
+  return isAuthFailure(err) || isTransientStatus(err.status);
 }
 
 const isAuthFailure = (err: unknown): boolean =>
@@ -139,15 +137,14 @@ function summaryFromV1(raw: unknown): MethodSummary | null {
 }
 
 async function getJson(origin: string, path: string, headers: Headers): Promise<unknown> {
-  if (!origin) {
-    throw new ApiError('inspected origin unknown — reopen DevTools on the page');
-  }
-
   let res: Response;
   try {
     res = await fetch(origin + path, {
       method: 'GET',
       credentials: 'include',
+      // A redirect would carry the auth headers to wherever it points, so
+      // the request fails instead of following one.
+      redirect: 'error',
       headers: { Accept: 'application/json, text/plain, */*', ...headers }
     });
   } catch (err) {
@@ -173,14 +170,17 @@ async function getJson(origin: string, path: string, headers: Headers): Promise<
   }
 }
 
-/** The origin of a URL, or '' when it has none. */
-function originOf(url: unknown): string {
+/** The origin of a URL, or null when it has none. */
+function originOf(url: unknown): string | null {
   try {
-    return typeof url === 'string' ? new URL(url).origin : '';
+    return typeof url === 'string' ? new URL(url).origin : null;
   } catch {
-    return '';
+    return null;
   }
 }
+
+/** True when a summary can route to the designer: it has a category and a state. */
+const isComplete = (summary: MethodSummary): boolean => Boolean(summary.category && summary.state);
 
 /**
  * Resolves AD method uuids to their name, category and designer URL, for the
@@ -236,11 +236,14 @@ export class MethodResolver {
     uuid: string,
     onRevalidated?: (summary: MethodSummary) => void
   ): Promise<MethodSummary | null> {
-    if (!this.site.isAllowed) {
+    const origin = this.site.apiOrigin;
+    if (!origin || !this.site.isAllowed) {
       throw new ApiError('this page is not on an allowed site', undefined, false, true);
     }
-    const origin = this.site.apiOrigin;
-    const cached = this.cache.read(origin, uuid);
+    const hit = this.cache.read(origin, uuid);
+    // An entry without a category or state cannot route to the designer, so
+    // it is asked for again rather than served.
+    const cached = hit && isComplete(hit.data) ? hit : null;
 
     if (cached && !cached.stale) return cached.data;
 
@@ -268,30 +271,17 @@ export class MethodResolver {
   }
 
   /**
-   * Record a name we learned for free — from a definition-fetch response body
-   * the panel already had in hand — so the next panel open resolves it from
-   * cache instead of re-asking the platform. Merges into any existing entry so
-   * a cached category is not dropped.
+   * Build the designer URL for a method. The AD UI addresses methods by
+   * category and DRAFT uuid; a published method opens its linked draft
+   * (referenceId). Null when the summary cannot route there: no summary, no
+   * category, or the designer origin is unknown. Nothing is guessed.
    */
-  rememberName(uuid: string, name: string): void {
-    if (!uuid || !name || !this.site.isAllowed) return;
-    const origin = this.site.apiOrigin;
-    const prev: Partial<MethodSummary> = this.cache.read(origin, uuid)?.data || {};
-    if (prev.name === name) return;
-    this.cache.write(origin, uuid, { ...prev, name });
-  }
-
-  /**
-   * Build the designer URL for a method. The AD UI addresses methods by DRAFT
-   * uuid; a published row points at its linked draft via referenceId. Null
-   * when there is no summary to route with.
-   */
-  buildDesignerUrl(uuid: string, summary: Partial<MethodSummary> | null): string | null {
-    if (!summary) return null;
-    const category = summary.category || 'Uncategorized';
+  buildDesignerUrl(uuid: string, summary: MethodSummary | null): string | null {
+    const origin = this.site.designerOrigin;
+    if (!summary?.category || !origin) return null;
     const draftUuid =
       summary.state === 'PUBLISHED' && summary.referenceId ? summary.referenceId : uuid;
-    return this.site.designerOrigin + designerPath(category, draftUuid);
+    return origin + designerPath(summary.category, draftUuid);
   }
 
   private revalidate(

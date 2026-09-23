@@ -5,8 +5,8 @@
 // the host app and easy to spot (Inspect → filter on "belz").
 //
 // The one exception is the storage keys in storage-keys.ts: they keep their
-// original `sdExtension…V1` names, because renaming a key would lose the
-// settings and site list every user already has stored.
+// `sdExtension…V1` names, because renaming a key would lose the settings and
+// site list every user has stored.
 
 export const EXT_PREFIX = 'belz';
 
@@ -33,9 +33,10 @@ export const EXTENSION_OWNED_ATTR = nsAttr('owned');
  * pending-capture.ts) keeps in the inspected page.
  */
 export const PAGE_GLOBALS = {
-  /** Map of in-flight chain requests: id -> { url, method, startedDateTime }. */
-  pending: nsGlobal('ADPending'),
-  /** The wrapper's own state: the page's original fetch/XHR, and whether it is active. */
+  /**
+   * The wrapper's state: the page's original fetch/XHR, whether it is
+   * active, and its map of in-flight chain requests.
+   */
   capture: nsGlobal('ADCapture')
 } as const;
 

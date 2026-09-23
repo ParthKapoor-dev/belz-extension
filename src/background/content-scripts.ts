@@ -5,6 +5,12 @@
 // list changes, ContentScriptSync makes the registered scripts match it —
 // three per enabled host (AD, PD, PD Inspector) with stable ids.
 //
+// A host's `enabled` flag follows the browser's permission, which can change
+// outside the options page (the browser's own extension settings): on
+// startup, on install and on every permission change, the flags are synced
+// with the browser (syncEnabledFlags), and the storage change that makes
+// reconciles the scripts in turn.
+//
 // Reconciles never overlap. Two at once (an install and a storage change
 // arriving together, say) would both see a script missing and both register
 // it, and the second would fail with "Duplicate script ID". So they run one
@@ -19,6 +25,7 @@ import {
   isHostsChange,
   normalizeHost,
   readEnabledHosts,
+  syncEnabledFlags,
   writeHosts,
   type HostEntry
 } from '../shared/hosts';
@@ -185,9 +192,11 @@ export async function seedHostsIfEmpty(): Promise<void> {
 // ---- the background's side --------------------------------------------------
 
 /**
- * Keeps the registrations in step with the site list for the life of the
- * background: on install (after seeding), on browser start, and on every
- * change to the list. Reconciles are serialised and coalesced (see top).
+ * Keeps the registrations in step with the site list, and the list's
+ * `enabled` flags in step with the browser's permissions, for the life of the
+ * background: on install (after seeding), on browser start, on every
+ * permission change and on every change to the list. Grant syncs and
+ * reconciles run one at a time, and reconciles are coalesced (see top).
  */
 export class ContentScriptSync {
   private started = false;
@@ -202,6 +211,8 @@ export class ContentScriptSync {
     chrome.runtime.onInstalled.addListener(this.onInstalled);
     chrome.runtime.onStartup.addListener(this.onStartup);
     chrome.storage.onChanged.addListener(this.onStorageChanged);
+    chrome.permissions.onAdded.addListener(this.onPermissionsChanged);
+    chrome.permissions.onRemoved.addListener(this.onPermissionsChanged);
   }
 
   stop(): void {
@@ -209,6 +220,8 @@ export class ContentScriptSync {
     chrome.runtime.onInstalled.removeListener(this.onInstalled);
     chrome.runtime.onStartup.removeListener(this.onStartup);
     chrome.storage.onChanged.removeListener(this.onStorageChanged);
+    chrome.permissions.onAdded.removeListener(this.onPermissionsChanged);
+    chrome.permissions.onRemoved.removeListener(this.onPermissionsChanged);
   }
 
   /**
@@ -230,12 +243,32 @@ export class ContentScriptSync {
     return pass;
   }
 
+  /**
+   * Store each host's `enabled` flag as the browser reports its permission,
+   * after whatever pass is running, then reconcile. Never rejects.
+   */
+  syncGrants(): Promise<void> {
+    const pass = this.running.then(async () => {
+      try {
+        await syncEnabledFlags();
+      } catch (err) {
+        log.error('syncing the site permissions failed:', err);
+      }
+    });
+    this.running = pass;
+    return pass.then(() => this.reconcile());
+  }
+
   private readonly onInstalled = (): void => {
-    void seedHostsIfEmpty().then(() => this.reconcile());
+    void seedHostsIfEmpty().then(() => this.syncGrants());
   };
 
   private readonly onStartup = (): void => {
-    void this.reconcile();
+    void this.syncGrants();
+  };
+
+  private readonly onPermissionsChanged = (): void => {
+    void this.syncGrants();
   };
 
   private readonly onStorageChanged = (

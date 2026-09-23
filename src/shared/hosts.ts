@@ -1,8 +1,9 @@
 // The user's list of allowed sites, as stored in chrome.storage.local.
 //
-// Read by four worlds — background (script registration), options page (the
-// editor), DevTools page (panel gating) and the AD Network panel (designer
-// host overrides) — so the storage shape and its validation live here once.
+// Read by four worlds — background (script registration, grant sync),
+// options page (the editor), DevTools page (panel gating) and the AD Network
+// panel (allowed-site check, designer host overrides) — so the storage shape,
+// its validation and the allowed-site check live here once.
 //
 // Stateless: every call reads storage afresh.
 
@@ -69,6 +70,16 @@ export function httpsHostOf(url: string | null | undefined): string | null {
   }
 }
 
+/**
+ * True when `url` (a URL or an origin) is https on one of the `allowed`
+ * hosts, as enabledHostSet() returns them. The one allowed-site check every
+ * world uses.
+ */
+export function isAllowedUrl(url: string | null | undefined, allowed: ReadonlySet<string>): boolean {
+  const host = httpsHostOf(url);
+  return host !== null && allowed.has(host);
+}
+
 function isHostEntry(value: unknown): value is HostEntry {
   const entry = value as Partial<HostEntry> | null;
   return Boolean(entry) && typeof entry!.host === 'string' && typeof entry!.enabled === 'boolean';
@@ -100,6 +111,39 @@ export async function enabledHostSet(): Promise<Set<string>> {
 export async function writeHosts(hosts: HostEntry[]): Promise<void> {
   const value: StoredHosts = { hosts };
   await chrome.storage.local.set({ [HOSTS_STORAGE_KEY]: value });
+}
+
+/** Whether the browser holds the permission for `host` now; false when it cannot tell. */
+async function isGranted(host: string): Promise<boolean> {
+  try {
+    return await chrome.permissions.contains({ origins: [hostPattern(host)] });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Store each host's `enabled` flag as the browser reports its permission:
+ * the browser, not storage, is the authority. A granted seeded entry also
+ * loses its `seeded` mark. The grants are asked first and the list is then
+ * read and written back at once, so the window in which another write could
+ * be overwritten is one storage round-trip. Resolves with each listed
+ * host's grant.
+ */
+export async function syncEnabledFlags(): Promise<Map<string, boolean>> {
+  const grants = new Map<string, boolean>();
+  for (const entry of await readHosts()) grants.set(entry.host, await isGranted(entry.host));
+  const stored = await readHosts();
+  let changed = false;
+  for (const entry of stored) {
+    const granted = grants.get(entry.host);
+    if (granted === undefined || entry.enabled === granted) continue;
+    entry.enabled = granted;
+    if (granted) delete entry.seeded;
+    changed = true;
+  }
+  if (changed) await writeHosts(stored);
+  return grants;
 }
 
 /** True when a storage.onChanged event touched the host list. */

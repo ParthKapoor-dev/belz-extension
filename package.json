@@ -1,7 +1,7 @@
 {
   "name": "belz-extension",
   "version": "1.0.1",
-  "description": "DevTools browser extension — AD Network panel and designer helpers",
+  "description": "DevTools browser extension — AD Network and PD Inspector panels plus Automation/Page Designer helpers",
   "engines": {
     "node": ">=18"
   },

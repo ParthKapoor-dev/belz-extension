@@ -15,7 +15,8 @@ component tree and highlights elements on the page is the other half, a content 
 
 ## How it works
 
-1. The constructor stores nothing. `start()` reads the inspected tab id
+1. The constructor only stores the heartbeat interval (`TIMINGS.pdInspectHeartbeat` unless a test
+   passes a shorter one). `start()` reads the inspected tab id
    (`chrome.devtools.inspectedWindow.tabId`) and the panel's elements (`panelElements()`), wires the
    listeners, and calls `load()`, which sends `{ ns: 'pd', cmd: 'getState' }` to the engine. While the
    engine answers `status: 'loading'`, it asks again every 400 ms, up to 12 times. No answer means
@@ -31,7 +32,7 @@ component tree and highlights elements on the page is the other half, a content 
    on the page, the engine pushes a `pick` message; `onPick()` shows the component chain and selects
    the innermost component in the tree.
 4. **Inspect mode never outlives the panel.** Inspect mode swallows the page's clicks, so while it is
-   on the panel re-sends `setInspect` with `on: true` every `TIMINGS.pdInspectHeartbeat` (`beat`), and
+   on the panel re-sends `setInspect` with `on: true` every heartbeat interval (`beat`), and
    the engine leaves inspect mode when those beats stop. `leaveInspect()` sends `setInspect` with
    `on: false` before every reload. `stop()` calls it too, and runs on `pagehide`, when DevTools closes
    or the panel reloads.
@@ -64,7 +65,8 @@ component tree and highlights elements on the page is the other half, a content 
 
 [`tests/devtools/pd-inspector-panel.test.ts`](../../../tests/devtools/pd-inspector-panel.test.ts)
 drives `PdInspectorPanel` over the real `panel.html` with a fake engine behind the runtime
-messaging, including the heartbeat, "inspect off" before Refresh, the focus shortcut and `pagehide`,
+messaging, including the heartbeat (with a short interval: the `on: true` messages it sends, and
+that none follow `stop()`), "inspect off" before Refresh, the focus shortcut and `pagehide`,
 and a button that follows the engine's answer. The data it renders is tested on the engine side, in
 [`tests/pd-inspector-page/`](../../../tests/pd-inspector-page/). To run the tests, see the root
 [README](../../../README.md#development)'s Development section.

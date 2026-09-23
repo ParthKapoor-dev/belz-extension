@@ -11,6 +11,7 @@ import {
   isHostsChange,
   normalizeHost,
   readHosts,
+  syncEnabledFlags,
   writeHosts,
   type HostEntry
 } from '../shared/hosts';
@@ -25,40 +26,6 @@ const SAVED_HINT_MS = 1200;
 
 /** A stored host plus what the browser says about its permission right now. */
 type HostWithGrant = HostEntry & { granted: boolean };
-
-/**
- * The browser — not storage — is the authority on whether we hold a host
- * permission. A list restored from sites.default.json, or one surviving a
- * profile change, can name hosts we no longer have access to, so every render
- * asks chrome.permissions rather than trusting the stored `enabled` flag.
- */
-async function withGrantState(hosts: HostEntry[]): Promise<HostWithGrant[]> {
-  return Promise.all(
-    hosts.map(async (entry) => {
-      let granted = false;
-      try {
-        granted = await chrome.permissions.contains({ origins: [hostPattern(entry.host)] });
-      } catch (err) {
-        log.debug(`cannot check the permission for ${entry.host}:`, err);
-      }
-      return { ...entry, granted };
-    })
-  );
-}
-
-/** Reconcile the stored enabled flag with what the browser actually reports. */
-async function syncEnabledFlags(marked: HostWithGrant[]): Promise<void> {
-  const stored = await readHosts();
-  let changed = false;
-  for (const entry of stored) {
-    const match = marked.find((m) => m.host === entry.host);
-    if (!match || entry.enabled === match.granted) continue;
-    entry.enabled = match.granted;
-    if (match.granted) delete entry.seeded;
-    changed = true;
-  }
-  if (changed) await writeHosts(stored);
-}
 
 /**
  * The Allowed sites list over options.html's markup. start() wires the form
@@ -110,14 +77,19 @@ export class OptionsPage {
     this.timers.clear();
   }
 
-  /** Re-read storage, ask the browser for permission state, and repaint. */
+  /**
+   * Ask the browser for each host's permission, bring the stored `enabled`
+   * flags in line with it, and repaint. The browser, not storage, is the
+   * authority: a list restored from sites.default.json, or one carried into
+   * another profile, can name hosts the extension holds no permission for.
+   */
   async refresh(): Promise<void> {
     const generation = ++this.generation;
-    const marked = await withGrantState(await readHosts());
+    const grants = await syncEnabledFlags();
     if (generation !== this.generation) return;
-    await syncEnabledFlags(marked);
+    const hosts = await readHosts();
     if (generation !== this.generation) return;
-    this.render(marked);
+    this.render(hosts.map((entry) => ({ ...entry, granted: grants.get(entry.host) ?? false })));
   }
 
   // ---- handlers ------------------------------------------------------------
@@ -201,21 +173,30 @@ export class OptionsPage {
   }
 
   /**
-   * Revoke: remove the permission first, then drop the entry from storage.
-   * The background sees that storage change and unregisters the host's
-   * content scripts. If the browser refuses the removal, the entry stays, so
-   * the list never hides a host the browser still trusts.
+   * Revoke: drop the entry from storage, then remove the permission. The
+   * background sees the storage change and unregisters the host's content
+   * scripts. The entry goes first so that the background's own reaction to
+   * the removed permission (it marks a listed host as not granted) finds
+   * nothing to mark. If the browser refuses the removal, the entry is put
+   * back, so the list never hides a host the browser still trusts.
    */
   private async revoke(host: string, button: HTMLButtonElement): Promise<void> {
     this.setError('');
     button.disabled = true;
     try {
-      const removed = await chrome.permissions.remove({ origins: [hostPattern(host)] });
-      if (!removed) {
-        this.setError(`Could not revoke ${host}.`);
-        return;
+      const before = await readHosts();
+      const entry = before.find((h) => h.host === host);
+      await writeHosts(before.filter((h) => h !== entry));
+      let removed = false;
+      try {
+        removed = await chrome.permissions.remove({ origins: [hostPattern(host)] });
+      } catch (err) {
+        log.debug(`removing the permission for ${host} failed:`, err);
       }
-      await writeHosts((await readHosts()).filter((h) => h.host !== host));
+      if (!removed) {
+        if (entry) await writeHosts([...(await readHosts()), entry]);
+        this.setError(`Could not revoke ${host}.`);
+      }
       await this.refresh();
     } catch (err) {
       this.setError(errorText(err));

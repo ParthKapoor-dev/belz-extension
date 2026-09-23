@@ -26,12 +26,13 @@ export function isFromExtension(sender: chrome.runtime.MessageSender | null | un
 
 /**
  * Sent by one of this extension's own pages (a DevTools panel, the options
- * page), not by a content script: those always carry `sender.tab`.
+ * page): no `sender.tab` (a content script always has one), and a URL on the
+ * extension's own origin.
  */
 export function isFromExtensionPage(sender: chrome.runtime.MessageSender | null | undefined): boolean {
   if (!isFromExtension(sender) || sender!.tab) return false;
   const url = sender!.url;
-  return !url || url.startsWith(chrome.runtime.getURL(''));
+  return typeof url === 'string' && url.startsWith(chrome.runtime.getURL(''));
 }
 
 // ---- PD Inspector: panel <-> page engine -----------------------------------

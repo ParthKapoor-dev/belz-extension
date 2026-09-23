@@ -21,9 +21,9 @@ page with its own bundle. For how this folder fits with the rest of `src/`, see
 
 1. The browser loads the DevTools page (`devtools_page` in `manifest.json`) once per open DevTools
    window, on every site.
-2. `PanelRegistrar.start()` reads the inspected host with `evalInPage('location.hostname')`,
-   normalised by `normalizeHost()` (lowercase, no port) like the stored list, and the
-   granted hosts with `enabledHostSet()`. If the host is allowed, it calls
+2. `PanelRegistrar.start()` reads the inspected origin with `evalInPage('location.origin')` and the
+   granted hosts with `enabledHostSet()`, and asks `isAllowedUrl()` (https, and a granted host,
+   normalised like the stored list: lowercase, any port). If the page is allowed, it calls
    `chrome.devtools.panels.create` for "AD Network" and "PD Inspector", with the pages named in
    `PANEL_PAGES` ([`config/extension-files.ts`](../config/extension-files.ts): `panel.html`,
    `panel-pd.html`). It tries again on `devtools.network.onNavigated` and whenever the host list

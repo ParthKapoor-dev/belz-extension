@@ -6,11 +6,12 @@
 // into DevTools' start-of-request signal — an API extensions do not get.
 //
 // Workaround: inject a fetch + XMLHttpRequest wrapper into the inspected
-// page via chrome.devtools.inspectedWindow.eval. The wrapper maintains a map
-// (PAGE_GLOBALS.pending in config/namespace.ts) keyed by a monotonic id;
-// entries appear on request start and disappear on completion or error. The
-// panel polls this map ~2× per second via inspectedWindow.eval and reconciles
-// a set of "pending" rows against it.
+// page via chrome.devtools.inspectedWindow.eval. The wrapper keeps its state,
+// including a map of in-flight chain requests keyed by a monotonic id, in one
+// page global (PAGE_GLOBALS.capture in config/namespace.ts); entries appear
+// on request start and disappear on completion or error. The panel polls that
+// map ~2× per second via inspectedWindow.eval and reconciles a set of
+// "pending" rows against it.
 //
 // The panel only starts this on an allowed site (network-panel.ts decides),
 // and stop() puts the page's own fetch and XMLHttpRequest back. If the page
@@ -19,14 +20,16 @@
 // The page also retires the wrapper by itself (the same way) when the panel
 // has not polled it for STALE_MS: DevTools was closed, so no stop() could run.
 //
-// Idempotent: the wrapper installs at most once per page context; install()
-// on a page that still has it (switched off) switches it back on.
+// A poll that finds no active wrapper installs it again: a new document (a
+// navigation), or a wrapper retired while the panel's timers were throttled
+// (a hidden panel can poll as rarely as once a minute). Installing is
+// idempotent per page context: on a page that still has a retired wrapper it
+// wraps again whatever retiring put back, and switches it on.
 
 import { evalInPage } from '../inspected';
 import { PAGE_GLOBALS } from '../../config/namespace';
 import type { PendingEntry } from './types';
 
-const PENDING = JSON.stringify(PAGE_GLOBALS.pending);
 const CAPTURE = JSON.stringify(PAGE_GLOBALS.capture);
 
 const POLL_INTERVAL_MS = 500;
@@ -43,7 +46,7 @@ const STALE_MS = 10_000;
 export const WRAPPER_SCRIPT = `
 (function () {
   var state = window[${CAPTURE}];
-  if (state) { state.active = true; state.seen = Date.now(); return true; }
+  if (state) { state.revive(); return true; }
   var XHR = window.XMLHttpRequest;
   var proto = XHR && XHR.prototype;
   state = window[${CAPTURE}] = {
@@ -52,24 +55,36 @@ export const WRAPPER_SCRIPT = `
     fetch: window.fetch,
     open: proto && proto.open,
     send: proto && proto.send,
-    wrapped: {}
+    wrapped: {},
+    pending: new Map()
   };
-  var pending = window[${PENDING}] = new Map();
+  var pending = state.pending;
   var nextId = 1;
   var CHAIN_RE = /\\/rest\\/api\\/automation\\/chain\\//i;
   var xhrInfo = new WeakMap();
 
   // Put back every original the page has not replaced since, and switch off
-  // either way. Also what the panel's stop() runs (UNINSTALL_SCRIPT).
+  // either way. Also what the panel's stop() runs (UNINSTALL_SCRIPT). When
+  // everything was put back, the state goes too; otherwise it stays, so
+  // revive() can switch the wrapper on again.
   state.retire = function () {
     state.active = false;
+    pending.clear();
     if (state.wrapped.fetch && window.fetch === state.wrapped.fetch) window.fetch = state.fetch;
     if (proto && state.wrapped.open && proto.open === state.wrapped.open) proto.open = state.open;
     if (proto && state.wrapped.send && proto.send === state.wrapped.send) proto.send = state.send;
     var restored = (!state.wrapped.fetch || window.fetch === state.fetch) &&
       (!state.wrapped.open || (proto.open === state.open && proto.send === state.send));
     if (restored && window[${CAPTURE}] === state) delete window[${CAPTURE}];
-    if (window[${PENDING}] === pending) delete window[${PENDING}];
+  };
+  // Installing again over a retired wrapper: wrap again whatever retire()
+  // put back, and switch on.
+  state.revive = function () {
+    if (state.wrapped.fetch && window.fetch === state.fetch) window.fetch = state.wrapped.fetch;
+    if (proto && state.wrapped.open && proto.open === state.open) proto.open = state.wrapped.open;
+    if (proto && state.wrapped.send && proto.send === state.send) proto.send = state.wrapped.send;
+    state.active = true;
+    state.seen = Date.now();
   };
   // Active, unless the panel stopped polling: then retire.
   var live = function () {
@@ -126,15 +141,21 @@ export const UNINSTALL_SCRIPT = `
 `;
 
 /**
- * Serializes the current pending map back to the panel, and tells the
- * wrapper the panel is still there. Runs in the page context; the panel reads
- * its returned value via inspectedWindow.eval.
+ * Tells an active wrapper the panel is still there, and serialises its
+ * in-flight requests back to the panel; false when the page has no active
+ * wrapper. Runs in the page context; the panel reads its returned value via
+ * inspectedWindow.eval.
  */
-const READ_SCRIPT =
-  `(function () { var s = window[${CAPTURE}]; if (s) s.seen = Date.now(); })(), ` +
-  `Array.from(window[${PENDING}] || []).map(function (e) {` +
-  '  return { id: e[0], url: e[1].url, method: e[1].method, startedDateTime: e[1].startedDateTime };' +
-  '})';
+export const READ_SCRIPT = `
+(function () {
+  var s = window[${CAPTURE}];
+  if (!s || !s.active) return false;
+  s.seen = Date.now();
+  return Array.from(s.pending).map(function (e) {
+    return { id: e[0], url: e[1].url, method: e[1].method, startedDateTime: e[1].startedDateTime };
+  });
+})();
+`;
 
 /** Reports the inspected page's in-flight chain requests while started. */
 export class PendingCapture {
@@ -153,7 +174,9 @@ export class PendingCapture {
     if (this.pollTimer) return;
     this.generation++;
     this.pollTimer = setInterval(this.poll, POLL_INTERVAL_MS);
-    this.install();
+    // A null answer means the page blocked the eval, or is not there yet: the
+    // next poll tries again.
+    void evalInPage(WRAPPER_SCRIPT);
     void this.poll();
   }
 
@@ -167,21 +190,17 @@ export class PendingCapture {
     this.onUpdate([]);
   }
 
-  /**
-   * Wrap again after a navigation: a new document has the page's own fetch.
-   * A no-op when not running, or when the wrapper survived.
-   */
-  install(): void {
-    // A null answer means the page blocked the eval, or is not there yet — the
-    // poll just reports nothing until a context accepts the wrapper.
-    if (this.pollTimer) void evalInPage(WRAPPER_SCRIPT);
-  }
-
   private readonly poll = async (): Promise<void> => {
     const generation = this.generation;
     const result = await evalInPage(READ_SCRIPT);
     // Stopped while waiting, or stopped and started again: this answer is stale.
     if (!this.pollTimer || generation !== this.generation) return;
-    this.onUpdate(Array.isArray(result) ? (result as PendingEntry[]) : []);
+    if (Array.isArray(result)) {
+      this.onUpdate(result as PendingEntry[]);
+      return;
+    }
+    // No active wrapper (a new document, or it retired itself): wrap again.
+    this.onUpdate([]);
+    void evalInPage(WRAPPER_SCRIPT);
   };
 }

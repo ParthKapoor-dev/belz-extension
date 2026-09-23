@@ -5,7 +5,7 @@ import { fakeChrome } from '../fakes/chrome';
 import { AdNetworkPanel } from '../../src/devtools/ad-network/network-panel';
 import { UNINSTALL_SCRIPT, WRAPPER_SCRIPT } from '../../src/devtools/ad-network/pending-capture';
 import { AUTOFILL_FRAGMENT_PARAM } from '../../src/config/namespace';
-import { AUTOFILL_HANDOFF_KEY_PREFIX } from '../../src/config/storage-keys';
+import { AD_CACHE_STORAGE_KEY, AUTOFILL_HANDOFF_KEY_PREFIX } from '../../src/config/storage-keys';
 import { writeHosts } from '../../src/shared/hosts';
 import type { HarEntry } from '../../src/devtools/ad-network/types';
 import { sleep, waitFor } from '../wait';
@@ -18,14 +18,26 @@ const ORIGIN = 'https://nsm.test';
 const realFetch = globalThis.fetch;
 /** The origin the inspected page is on; tests navigate it. */
 let inspected = ORIGIN;
-let fetches: string[] = [];
+/** Every lookup the panel made: the URL, and the Authorization header it sent. */
+let fetches: Array<{ url: string; auth: string | undefined }> = [];
+/** Set to hold the platform's answers until the test calls it. */
+let holdFetches: Promise<void> | null = null;
 
 const UUID_A = 'a'.repeat(32);
 const UUID_B = 'b'.repeat(32);
+/** A fresh uuid per call, so the panel's cache from earlier tests cannot answer. */
+let uuidSeed = 0;
+const freshUuid = () => (++uuidSeed).toString(16).padStart(32, 'c');
 
 function har(
   uuid: string,
-  opts: { at?: string; execute?: boolean; body?: string; content?: string; origin?: string } = {}
+  opts: {
+    at?: string; execute?: boolean; body?: string; content?: string; origin?: string;
+    /** The request carries no Authorization header. */
+    anonymous?: boolean;
+    /** A live entry whose getContent() answers with this response body. */
+    liveBody?: string;
+  } = {}
 ): HarEntry {
   const path = opts.execute ? `chain/execute/${uuid}` : `chain/v2/${uuid}`;
   const entry = {
@@ -34,7 +46,7 @@ function har(
     request: {
       method: opts.execute ? 'POST' : 'GET',
       url: `${opts.origin ?? ORIGIN}/rest/api/automation/${path}`,
-      headers: [{ name: 'Authorization', value: 'Bearer t' }],
+      headers: opts.anonymous ? [] : [{ name: 'Authorization', value: 'Bearer t' }],
       queryString: [],
       postData: opts.body ? { mimeType: 'application/json', text: opts.body } : undefined
     },
@@ -43,7 +55,8 @@ function har(
       headers: [{ name: 'Content-Type', value: 'application/json' }],
       content: { size: 10, mimeType: 'application/json', text: opts.content }
     },
-    timings: { send: 1, wait: 30, receive: 11 }
+    timings: { send: 1, wait: 30, receive: 11 },
+    getContent: opts.liveBody === undefined ? undefined : (cb: (body: string) => void) => cb(opts.liveBody!)
   };
   return entry as unknown as HarEntry;
 }
@@ -82,8 +95,9 @@ beforeAll(async () => {
   await writeHosts([{ host: 'nsm.test', enabled: true }]);
   fakeChrome.devtools.inspectedWindow.evalHandler = (expr) => (expr === 'location.origin' ? inspected : null);
   // The platform knows every method as "Resolved" in "Cat".
-  globalThis.fetch = (async (url: string) => {
-    fetches.push(url);
+  globalThis.fetch = (async (url: string, init?: { headers?: Record<string, string> }) => {
+    fetches.push({ url, auth: init?.headers?.Authorization });
+    if (holdFetches) await holdFetches;
     return {
       ok: true,
       status: 200,
@@ -202,8 +216,6 @@ describe('AD Network panel', () => {
     send(har(UUID_A, { execute: true })); // on nsm.test: its Authorization header is learned
     await navigate('https://evil.test');
     expect(evaluated().includes(UNINSTALL_SCRIPT)).toBe(true);
-    const harvested = (panel as unknown as { resolver: { harvested: Map<string, unknown> } }).resolver.harvested;
-    expect(harvested.size).toBe(0);
 
     fetches = [];
     evaluated().length = 0;
@@ -217,6 +229,105 @@ describe('AD Network panel', () => {
     await navigate(ORIGIN);
     expect(evaluated().includes(WRAPPER_SCRIPT)).toBe(true);
     expect($('#offline').classList.contains('hidden')).toBe(true);
+
+    // The header learned before leaving is gone: a lookup now goes without it.
+    fetches = [];
+    send(har(freshUuid(), { execute: true, anonymous: true }));
+    await waitFor(() => fetches.length > 0, 'a lookup');
+    expect(fetches.map((f) => f.auth)).toEqual([undefined]);
+  });
+
+  test('a name read from a definition body is shown at once; the category is still looked up', async () => {
+    const uuid = freshUuid();
+    fetches = [];
+    send(har(uuid, { liveBody: JSON.stringify({ name: 'fromBody' }) }));
+    expect(cellText(rows()[0]!, 1)).toBe('fromBody');
+    await waitFor(() => cellText(rows()[0]!, 2) === 'Cat', 'the category');
+    expect(fetches.some((f) => f.url.includes(uuid))).toBe(true);
+  });
+
+  test('between a navigation and knowing the new page, nothing is looked up or wrapped', async () => {
+    const inspectedWindow = fakeChrome.devtools.inspectedWindow;
+    const realEval = inspectedWindow.eval;
+    let answerOrigin: (() => void) | null = null;
+    inspectedWindow.eval = (expression: string, callback?: (result: unknown) => void) => {
+      if (expression !== 'location.origin') return realEval.call(inspectedWindow, expression, callback);
+      answerOrigin = () => callback?.(inspected);
+    };
+    try {
+      fakeChrome.devtools.network.onNavigated.dispatch(`${ORIGIN}/automation-designer/`);
+      await waitFor(() => answerOrigin !== null, 'the origin to be asked');
+      fetches = [];
+      evaluated().length = 0;
+      const uuid = freshUuid();
+      send(har(uuid, { liveBody: JSON.stringify({ name: 'tooEarly' }) }));
+      await sleep(600); // more than twice the resolve debounce: nothing may be asked
+      expect(fetches).toEqual([]);
+      expect(evaluated().includes(WRAPPER_SCRIPT)).toBe(false);
+      expect(cellText(rows()[0]!, 1)).not.toBe('tooEarly');
+
+      answerOrigin!();
+      await ready();
+      await waitFor(() => fetches.some((f) => f.url.includes(uuid)), 'the lookup once the page is known');
+      expect(evaluated().includes(WRAPPER_SCRIPT)).toBe(true);
+    } finally {
+      inspectedWindow.eval = realEval;
+    }
+  });
+
+  test('stop() while a lookup is in flight: the answer opens no tab and shows nothing', async () => {
+    let answer!: () => void;
+    holdFetches = new Promise((resolve) => { answer = resolve; });
+    try {
+      send(har(freshUuid(), { execute: true }));
+      rows()[0]!.querySelectorAll<HTMLButtonElement>('td.actions button')[2]!.click();
+      await waitFor(() => fetches.length > 0, 'the lookup');
+      const toast = $('#toast').textContent;
+      const tabs = fakeChrome.tabs.created.length;
+      panel.stop();
+      answer();
+      await sleep(300);
+      expect(fakeChrome.tabs.created.length).toBe(tabs);
+      expect($('#toast').textContent).toBe(toast);
+    } finally {
+      holdFetches = null;
+      panel.start();
+      await ready();
+    }
+  });
+
+  test('a tab that cannot be created is opened with window.open instead', async () => {
+    const realCreate = fakeChrome.tabs.create;
+    const realOpen = window.open;
+    const opened: string[] = [];
+    fakeChrome.tabs.create = async () => { throw new Error('no tabs here'); };
+    window.open = ((url: string) => { opened.push(url); return null; }) as typeof window.open;
+    try {
+      send(har(UUID_A, { execute: true }));
+      rows()[0]!.querySelectorAll<HTMLButtonElement>('td.actions button')[2]!.click();
+      await waitFor(() => opened.length === 1, 'window.open');
+      expect(opened[0]).toBe(`${ORIGIN}/automation-designer/Cat/${UUID_A}`);
+    } finally {
+      fakeChrome.tabs.create = realCreate;
+      window.open = realOpen;
+    }
+  });
+
+  test('stop() writes the cache at once instead of after its debounce', async () => {
+    const uuid = freshUuid();
+    send(har(uuid, { execute: true }));
+    await waitFor(() => cellText(rows()[0]!, 2) === 'Cat', 'the lookup');
+    panel.stop();
+    const stored = () => {
+      const value = fakeChrome.storage.local.data.get(AD_CACHE_STORAGE_KEY) as { entries: Record<string, unknown> } | undefined;
+      return Boolean(value?.entries[`${ORIGIN}|${uuid}`]);
+    };
+    try {
+      await waitFor(stored, 'the flushed cache entry', 200); // the debounce is 400 ms
+    } finally {
+      panel.start();
+      await ready();
+    }
   });
 
   test('start() is idempotent; stop() removes what it added; it restarts', async () => {
