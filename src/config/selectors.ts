@@ -35,6 +35,19 @@ export const PD = {
   pageTitle: ['div.page_title', 'div.symbol_title']
 } as const;
 
+/**
+ * Node names in Page Designer's compiled page configs (not DOM selectors),
+ * read by the PD Inspector.
+ */
+export const PD_CONFIG_NODES = {
+  /** Where an app shell splices in its content page. */
+  outlet: 'router-outlet',
+  formFields: ['exp-form-field', 'exp-field'],
+  buttons: ['button', 'exp-button'],
+  /** Any node whose name contains this is a data table. */
+  dataTablePart: 'data-table'
+} as const;
+
 /** The Inputs step of an AD method: read by the JSON editor and autofill. */
 export const AD_INPUTS = {
   /** An input's key is its element id after this prefix: INPUT_LIST_<key>. */

@@ -23,32 +23,35 @@ export interface Logger {
   error(...args: unknown[]): void;
 }
 
-let verbose = false;
-
 function readDebugFlag(stored: unknown): boolean {
   return Boolean(stored && typeof stored === 'object' && (stored as { debugLogging?: unknown }).debugLogging);
 }
 
-function followDebugSetting(): void {
-  // Code injected into the inspected page has no extension APIs.
-  const storage = typeof chrome !== 'undefined' ? chrome.storage : undefined;
-  if (!storage?.local) return;
-  storage.local.get(SETTINGS_STORAGE_KEY, (result: Record<string, unknown>) => {
-    verbose = readDebugFlag(result?.[SETTINGS_STORAGE_KEY]);
-  });
-  storage.onChanged?.addListener((changes, areaName) => {
-    if (areaName !== 'local' || !changes[SETTINGS_STORAGE_KEY]) return;
-    verbose = readDebugFlag(changes[SETTINGS_STORAGE_KEY].newValue);
-  });
+/** The "Debug Logging" setting, followed live through chrome.storage. */
+class DebugSwitch {
+  on = false;
+
+  constructor() {
+    // Code injected into the inspected page has no extension APIs.
+    const storage = typeof chrome !== 'undefined' ? chrome.storage : undefined;
+    if (!storage?.local) return;
+    storage.local.get(SETTINGS_STORAGE_KEY, (result: Record<string, unknown>) => {
+      this.on = readDebugFlag(result?.[SETTINGS_STORAGE_KEY]);
+    });
+    storage.onChanged?.addListener((changes, areaName) => {
+      if (areaName !== 'local' || !changes[SETTINGS_STORAGE_KEY]) return;
+      this.on = readDebugFlag(changes[SETTINGS_STORAGE_KEY].newValue);
+    });
+  }
 }
 
-followDebugSetting();
+const debug = new DebugSwitch();
 
 export function createLogger(scope: string): Logger {
   const prefix = `[belz:${scope}]`;
   return {
-    debug: (...args) => { if (verbose) console.debug(prefix, ...args); },
-    info: (...args) => { if (verbose) console.info(prefix, ...args); },
+    debug: (...args) => { if (debug.on) console.debug(prefix, ...args); },
+    info: (...args) => { if (debug.on) console.info(prefix, ...args); },
     warn: (...args) => console.warn(prefix, ...args),
     error: (...args) => console.error(prefix, ...args)
   };

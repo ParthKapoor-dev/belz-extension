@@ -4,6 +4,6 @@
 // engine it talks to (config fetch, component-nesting tree, DOM correlation,
 // and on-page inspect highlighting).
 
-import { startEngine } from './engine';
+import { PdEngine } from './engine';
 
-startEngine();
+new PdEngine().start();

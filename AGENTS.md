@@ -28,47 +28,53 @@ src/
     routes.ts                /automation-designer/, /ui-designer/, /pages/
     endpoints.ts             CHAIN_PATH_RE, chain/designer path builders
     storage-keys.ts          SETTINGS/HOSTS/FOCUS/AD_CACHE storage keys
-    namespace.ts             ns() + EXTENSION_OWNED_ATTR: the extension's own DOM names
-  shared/                    stateless helpers shared by every world
+    namespace.ts             ns() / nsAttr() + EXTENSION_OWNED_ATTR: the extension's own DOM names
+  shared/                    helpers shared by every world (each world gets its own copy)
     hosts.ts                 the allowed-sites list: validation + storage
     logger.ts                createLogger(scope): the only console output
     messages.ts              runtime message shapes + type guards
     dom.ts                   required(): an element the page's own HTML must have
+    focus-flag.ts            the focus-a-panel shortcut: background writes, panels watch
 
   designer/                  content scripts on AD and PD designer pages
     ad-content.ts            entry, /automation-designer/*
     pd-content.ts            entry, /ui-designer/*
-    core/                    bootstrap, Feature contract, settings store, page observer
+    core/                    bootstrap, Feature contract, settings store, page observer, Rearm
     features/                one folder per feature (see below)
     ui/                      modal frame, modal lock, toast, styles, theme, hover overlay
     utils/                   dom + clipboard helpers
 
   pd-inspector/              content script on published /pages/*
     index.ts                 entry
-    engine.ts                answers the PD Inspector panel; inspect mode
+    engine.ts                PdEngine: answers the PD Inspector panel; inspect mode
     config.ts                fetches page/shell/component compiled configs
     component-tree.ts        the component-nesting tree (config only, exact)
     tree.ts                  normalised config-node tree + visibility
-    resolve.ts               DOM element -> owning config node (className anchors)
-    highlight.ts             on-page highlight overlay (shadow DOM)
+    resolve.ts               Resolver: DOM element -> owning config node (className anchors)
+    highlight.ts             Highlighter: on-page highlight overlay (shadow DOM)
     types.ts                 config, tree and engine data shapes
 
   devtools/
     devtools.html            DevTools page shell
     devtools-page.ts         entry: registers the two panels on allowed sites
     inspected.ts             evalInPage(): run an expression in the inspected page
-    focus-flag.ts            watchFocusFlag(): the "focus this panel" command
     ad-network/              "AD Network" panel
-      panel.html, panel.ts   entry + UI
+      panel.html, panel.ts   entry: starts AdNetworkPanel
+      network-panel.ts       AdNetworkPanel: the table, capture, row actions, wiring
+      detail.ts              DetailPane: Headers / Payload / Response / Timing
+      names.ts               MethodNames + ResolveQueue: names, batched lookups, retry
+      origin.ts              InspectedSite: inspected origin + designer-host override
+      api.ts                 MethodResolver: platform chain-API client (auth reuse, v2 -> v1)
+      cache.ts               MethodCache: SWR cache of uuid -> name/category
+      pending-capture.ts     PendingCapture: fetch/XHR wrapper for in-flight requests
       extract.ts             classifyChainUrl + body parser (pure)
-      origin.ts              inspected origin + designer-host override
-      api.ts                 platform chain-API client (auth reuse, v2 -> v1)
-      cache.ts               SWR cache of uuid -> name/category
-      pending-capture.ts     fetch/XHR wrapper for in-flight requests
+      format.ts              HAR reading and formatting (pure)
+      view.ts                small DOM builders
       json-tree.ts           collapsible JSON view
-      types.ts               HarEntry, MethodSummary, …
+      types.ts               HarEntry, MethodSummary, Row, …
     pd-inspector/            "PD Inspector" panel
-      panel.html, panel.ts   entry + UI; talks to src/pd-inspector via background
+      panel.html, panel.ts   entry: starts PdInspectorPanel
+      inspector-panel.ts     PdInspectorPanel; talks to src/pd-inspector via background
 
   background/
     index.ts                 entry: wires listeners, PD relay, focus commands
@@ -77,7 +83,7 @@ src/
     options.html, index.ts
 ```
 
-Designer features (`src/designer/features/`): `title-updater` (tab title), `keyboard` (shortcuts), `run-test` (Run Test lookup + click), `json-editor` (JSON modal: extractor, sync engine, type adapters), `output-copy` (hover copy icon), `textarea-editor` (shared hover overlay + lazy CodeMirror modal), `curl-autofill` (autofill from the AD Network panel), `settings` (settings modal).
+Designer features (`src/designer/features/`): `title-updater` (tab title), `keyboard` (shortcuts), `run-test` (Run Test lookup + click), `json-editor` (JSON modal: extractor, sync engine, type adapters), `output-copy` (hover copy icon), `textarea-editor` (shared hover overlay + lazy CodeMirror modal), `curl-autofill` (autofill from the AD Network panel; started directly by `ad-content.ts`), `settings` (the always-on ⚙ button, shortcuts and settings modal).
 
 **HTML pages live next to their script** but ship at the root of the packaged extension: `scripts/pack.mjs` copies `src/devtools/devtools.html`, `src/devtools/ad-network/panel.html`, `src/devtools/pd-inspector/panel.html` and `src/options/options.html` to `devtools.html`, `panel.html`, `panel-pd.html` and `options.html`. Keep that placement: Chromium resolves a DevTools panel page path against the extension root and Firefox against the devtools page, and they agree only when all of them sit together at the root.
 
@@ -116,9 +122,12 @@ A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see
 
 Code that holds state or has a lifecycle is a class; pure helpers stay functions.
 
-- **`Feature`** (`core/feature.ts`): `start()` / `stop()`. Each toggleable feature is a class implementing it: `TitleUpdater`, `KeyboardShortcuts`, `JsonEditor`, `OutputCopy`, `TextareaEditor`, plus the always-on `SettingsLauncher`. Both must be safe to call twice, and `stop()` must undo everything `start()` did (listeners, timers, observer subscriptions, injected DOM). Event handlers are arrow-function properties so `removeEventListener` gets the same function.
+- **`Feature`** (`core/feature.ts`): `start()` / `stop()`. Each toggleable feature is a class implementing it: `TitleUpdater`, `KeyboardShortcuts`, `JsonEditor`, `OutputCopy`, `TextareaEditor`. Both must be safe to call twice, and `stop()` must undo everything `start()` did (listeners, timers, observer subscriptions, injected DOM; a feature that owns a modal calls its `dispose()`). Event handlers are arrow-function properties so `removeEventListener` gets the same function. `SettingsLauncher` is not a Feature: it is always on, for the life of the page.
+- **Dependencies are passed in**, not imported, where a feature would otherwise drag code into the wrong bundle: `KeyboardShortcuts` takes the JSON editor's `open` as a constructor argument, which only `ad-content.ts` passes, so PD pages do not bundle the JSON editor.
+- **`Rearm`** (`core/rearm.ts`) re-registers page listeners a few times while the host SPA boots (listeners attached too early were observed to go dead). `HoverOverlay` and `KeyboardShortcuts` use it.
 - **Page-wide singletons**: one instance per page, exported next to the class. `settings` (`SettingsStore`, with its storage injected: `chromeSettingsStorage()` in the extension, an in-memory one in tests), `pageObserver` (`PageObserver`), `modalLock` (`ModalLock`), `toast` (`Toast`), and the three modals: `jsonEditorModal`, `settingsModal`, `textareaEditorModal`. They are shared by several features and by the lazily loaded editor chunk, which is why each must be bundled once (see "Content-script module graph").
 - **`HoverOverlay`** (`ui/hover-overlay.ts`) is a class the features own an instance of: `OutputCopy` and `TextareaEditor` each create one.
+- **The other worlds follow the same rule.** The PD Inspector content script is `PdEngine` with a `Resolver` and a `Highlighter`; it drops a build that a newer route change has overtaken. The AD Network panel is `AdNetworkPanel`, composed of `InspectedSite`, `MethodCache`, `MethodResolver`, `MethodNames`, `ResolveQueue`, `DetailPane` and `PendingCapture`. The PD Inspector panel is `PdInspectorPanel`; the DevTools page is a `PanelRegistrar`. Each entry file (`panel.ts`, `index.ts`) only constructs and starts its class, so the class can be tested without side effects (`tests/devtools/ad-network-panel.test.ts` drives the real panel markup).
 
 ### Settings, selectors, timings: one place each
 
@@ -155,7 +164,7 @@ All console output goes through `createLogger(scope)` from `src/shared/logger.ts
 
 Two capture pipelines feed the panel:
 
-1. **`chrome.devtools.network`** (in `panel.ts` — the completed-request feed).
+1. **`chrome.devtools.network`** (in `network-panel.ts` — the completed-request feed).
    - `onRequestFinished` streams live completions.
    - `getHAR()` is called once on init to backfill anything captured before the user first opened our panel tab. Entries are keyed by `url + startedDateTime` for dedup.
    - `src/devtools/ad-network/extract.ts` classifies chain URLs and extracts the method name from definition-fetch bodies.
@@ -168,16 +177,16 @@ Two capture pipelines feed the panel:
 
 The extension is **self-contained** — it depends on no local service, CLI, or third-party API. Everything it needs about a method it reads from the inspected instance itself:
 
-1. `src/devtools/ad-network/origin.ts` resolves two origins. `apiOrigin` is the inspected window's own origin. `designerOrigin` is the same unless the user recorded a `designerHost` override for that site on the options page (split public/staff-portal deployments). No host mapping is hardcoded.
-2. `src/devtools/ad-network/api.ts` calls `GET /rest/api/automation/chain/v2/<uuid>?basicInfo=false` on `apiOrigin`, falling back to the V1 path on non-auth errors, and normalises both shapes to `{ name, category, state, referenceId }`. The designer URL is then `designerOrigin + /automation-designer/<category>/<draftUuid>`, where a `PUBLISHED` method routes through its `referenceId` (the linked draft).
+1. `InspectedSite` (`origin.ts`) resolves two origins. `apiOrigin` is the inspected window's own origin. `designerOrigin` is the same unless the user recorded a `designerHost` override for that site on the options page (split public/staff-portal deployments). No host mapping is hardcoded.
+2. `MethodResolver` (`api.ts`) calls `GET /rest/api/automation/chain/v2/<uuid>?basicInfo=false` on `apiOrigin`, falling back to the V1 path on non-auth errors, and normalises both shapes to `{ name, category, state, referenceId }`. The designer URL is then `designerOrigin + /automation-designer/<category>/<draftUuid>`, where a `PUBLISHED` method routes through its `referenceId` (the linked draft).
 3. Auth reuses whatever the page already has, in order: the `Authorization` / `Expertly-Auth-Token` header lifted off an observed chain request in the HAR; a JWT found by a generic scan of page `localStorage`/`sessionStorage`; cookies alone via `credentials: 'include'`. All three rely on the host grant the panel already requires.
-4. `src/devtools/ad-network/cache.ts` memoises results in `chrome.storage.local` under `sdExtensionAdCacheV1`, keyed `<origin>|<uuid>`. Fresh for 6h, stale-but-served (with background revalidation) to 14d, capped at 800 entries with oldest-first eviction.
+4. `MethodCache` (`cache.ts`) memoises results in `chrome.storage.local` under `sdExtensionAdCacheV1`, keyed `<origin>|<uuid>`. Fresh for 6h, stale-but-served (with background revalidation) to 14d, capped at 800 entries with oldest-first eviction.
 
-`panel.ts` batches resolves behind a 250 ms debounce with a concurrency of 4, and retries transport/auth failures every 4 s — the user may still be signing in when the panel opens.
+`ResolveQueue` (`names.ts`) batches resolves behind a 250 ms debounce with a concurrency of 4, and retries transport/auth failures every 4 s — the user may still be signing in when the panel opens.
 
 Cross-browser caveat: Firefox can't access `chrome.tabs` from a DevTools script directly, so `background/index.ts` relays messages between the PD panel and the target tab.
 
-Focus-hint shortcut: `Ctrl+Shift+A` / `Ctrl+Shift+P` fire background `chrome.commands` — neither Chrome nor Firefox exposes an API for extensions to open or switch DevTools panels, so the background writes a session flag and each panel reacts (scroll+pulse+focus for AD, refetch+pulse for PD) when the flag targets it.
+Focus-hint shortcut: `Ctrl+Shift+A` / `Ctrl+Shift+P` fire background `chrome.commands` — neither Chrome nor Firefox exposes an API for extensions to open or switch DevTools panels, so the background writes a session flag (`shared/focus-flag.ts`) and each panel reacts (scroll+pulse+focus for AD, refetch+pulse for PD) when the flag targets it.
 
 ## PD Inspector
 
@@ -185,14 +194,14 @@ Answers one question on a published page: *which Page Designer components are on
 
 - **Component tree — exact.** `config.ts` fetches the page's compiled config from the deployable endpoint, then every PD component it embeds, recursively. A component reference is a childless `isSymbol` node. `component-tree.ts` assembles the nesting from configs alone, never the DOM, so it is always right. A page can render inside an **app shell**: a separate PAGE, looked up by the first path segment, whose layout contains a `router-outlet` node. The shell is where navbar and sidebar come from. When one exists, the content page is spliced in at the outlet. Only the config's outlet counts: the rendered page also contains Angular's own `<router-outlet>` elements.
 - **Inspect mode — anchored, not guessed.** The runtime does not mark component boundaries in the DOM, but a config node's static `props.className` survives onto its rendered element. `resolve.ts` pins elements to config nodes by className: one node and one element is exact; several of each are paired in document order only when the counts agree, and refused otherwise, because a wrong anchor shadows the right one further up. Hovering an element climbs to the nearest anchored ancestor. The panel shows how many nodes were anchored.
-- **Wiring.** The panel (`devtools/pd-inspector/panel.ts`) calls the engine through the background relay, because Firefox gives DevTools panels no `chrome.tabs`. The engine pushes inspect-mode picks back with `chrome.runtime.sendMessage`. All messages carry `ns: 'pd'`. Published pages are SPAs, so the engine rebuilds when the path changes.
+- **Wiring.** The panel (`PdInspectorPanel`, `devtools/pd-inspector/inspector-panel.ts`) calls the engine through the background relay, because Firefox gives DevTools panels no `chrome.tabs`. The engine pushes inspect-mode picks back with `chrome.runtime.sendMessage`. All messages carry `ns: 'pd'`. Published pages are SPAs, so the engine rebuilds when the path changes (polled every `TIMINGS.pdRoutePoll`). Page Designer's config vocabulary (outlet, form-field and button node names) is in `PD_CONFIG_NODES` in `config/selectors.ts`.
 
 ## Textarea overlay (performance-critical)
 
 `designer/features/textarea-editor/index.ts` injects **one** controls element for the whole page, positioned over whichever textarea has pointer or keyboard focus. Do not reintroduce per-textarea DOM.
 
 - Hover/focus is handled by capture-phase delegation on `document`, using `event.composedPath()[0]` so open shadow roots resolve to the real inner target. A textarea added later therefore needs no registration and no rescan — this feature deliberately does **not** subscribe to the MutationObserver.
-- Read-only and **disabled** textareas qualify, so a PUBLISHED AD method gets the overlay too — only drafts did before. The modal already refuses to write back to a read-only source (`updateModalForSource` disables Save).
+- Read-only and **disabled** textareas qualify, so a PUBLISHED AD method gets the overlay too — only drafts did before. The modal already refuses to write back to a read-only source (`TextareaEditorModal.showSource()` disables Save).
 - A `disabled` control dispatches no pointer events: the browser retargets the hover to its nearest enabled ancestor, so delegation never sees the textarea. `resolveTarget` therefore also receives the originating **event** and hit-tests `document.elementFromPoint`, which is not suppressed the same way. `output-copy` runs the same hit test so the two overlays never both claim one pointer position.
 - Repositioning is coalesced through `requestAnimationFrame` with a 32 ms `setTimeout` backstop, because rAF is suspended in backgrounded tabs and headless rendering; without the backstop the overlay can linger over the wrong element.
 - The page's own markup is never restructured. The previous design wrapped every textarea in a positioned `<div>` plus a controls node (~480 elements on a 40-step method), which forced a layout pass over all of them and made the extension a major source of the mutations it was reacting to.

@@ -17,9 +17,11 @@ import {
   fetchComponentGraph
 } from './config';
 import { buildComponentTree, componentNames } from './component-tree';
-import { buildConfigIndex, createResolver, type Resolver } from './resolve';
-import { createHighlighter, type Highlighter } from './highlight';
+import { buildConfigIndex, Resolver } from './resolve';
+import { Highlighter } from './highlight';
 import { isPdCommand, type PdCommand, type PdPickMessage } from '../shared/messages';
+import { TIMINGS } from '../config/timings';
+import { createLogger } from '../shared/logger';
 import type {
   ComponentTreeNode,
   EngineState,
@@ -29,10 +31,7 @@ import type {
   TreeNode
 } from './types';
 
-let STATE: EngineState = { status: 'loading' };
-let resolver: Resolver | null = null;
-let highlighter: Highlighter | null = null;
-let inspecting = false;
+const log = createLogger('pd-inspector');
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -65,156 +64,172 @@ function serializeComponentTree(node: ComponentTreeNode): SerializedComponentNod
   };
 }
 
-async function build(ctx: PageContext): Promise<void> {
-  STATE = { status: 'loading' };
-  // A stale resolver answering from the previous route is worse than no
-  // answer, so inspect mode goes quiet until this build finishes.
-  resolver = null;
+export class PdEngine {
+  private state: EngineState = { status: 'loading' };
+  private resolver: Resolver | null = null;
+  private readonly highlighter = new Highlighter();
+  private inspecting = false;
+  /** Bumped per build, so a slow build for an old route cannot overwrite a newer one. */
+  private generation = 0;
+  private lastPath = location.pathname;
 
-  const pageConfig = await fetchPageConfig(ctx);
-  const shellConfig = await fetchShellConfig(ctx, pageConfig.path);
+  /** Build for the current page, answer the panel, and follow route changes. */
+  start(): void {
+    const ctx = getPageContext();
+    if (!ctx) return;
+    this.rebuild(ctx);
+    chrome.runtime.onMessage.addListener(this.onMessage);
+    // Published pages are SPAs — rebuild when the route changes.
+    setInterval(() => this.checkRoute(), TIMINGS.pdRoutePoll);
+  }
 
-  // One graph shared by shell and page, so a component embedded in both
-  // (a style or nav symbol, typically) is fetched once.
-  const graph = await fetchComponentGraph(ctx, pageConfig.layout);
-  if (shellConfig) await fetchComponentGraph(ctx, shellConfig.layout, graph);
+  private checkRoute(): void {
+    if (location.pathname === this.lastPath) return;
+    this.lastPath = location.pathname;
+    this.setInspect(false);
+    const next = getPageContext();
+    if (next) this.rebuild(next);
+  }
 
-  const componentTree = buildComponentTree(pageConfig, graph, shellConfig);
-  // Indexed from the shell when there is one, descending into the outlet, so
-  // the index covers everything the browser actually renders.
-  const index = shellConfig
-    ? buildConfigIndex(shellConfig, graph, pageConfig)
-    : buildConfigIndex(pageConfig, graph, null);
-  resolver = createResolver(index);
-  resolver.rebuild(); // so the panel can report real numbers immediately
-  const anchorStats = resolver.getStats();
+  private rebuild(ctx: PageContext): void {
+    const generation = ++this.generation;
+    this.build(ctx, generation).catch((err: unknown) => {
+      if (generation !== this.generation) return;
+      log.warn('building the page model failed:', err);
+      this.state = { status: 'error', error: errorText(err) };
+    });
+  }
 
-  STATE = {
-    status: 'ready',
-    pageInfo: {
-      host: ctx.host,
-      path: pageConfig.path,
-      env: ctx.env,
-      referencePageId: pageConfig.referencePageId,
-      pageVersionId: pageConfig.pageVersionId,
-      shellPath: shellConfig ? shellConfig.path : '',
-      shellReferencePageId: shellConfig ? shellConfig.referencePageId : '',
-      componentCount: componentNames(componentTree).length,
-      configNodes: index.nodes.length,
-      anchors: anchorStats
-    },
-    componentTree: serializeComponentTree(componentTree)
+  private async build(ctx: PageContext, generation: number): Promise<void> {
+    this.state = { status: 'loading' };
+    // A stale resolver answering from the previous route is worse than no
+    // answer, so inspect mode goes quiet until this build finishes.
+    this.resolver = null;
+
+    const pageConfig = await fetchPageConfig(ctx);
+    const shellConfig = await fetchShellConfig(ctx, pageConfig.path);
+
+    // One graph shared by shell and page, so a component embedded in both
+    // (a style or nav symbol, typically) is fetched once.
+    const graph = await fetchComponentGraph(ctx, pageConfig.layout);
+    if (shellConfig) await fetchComponentGraph(ctx, shellConfig.layout, graph);
+    if (generation !== this.generation) return; // the route moved on meanwhile
+
+    const componentTree = buildComponentTree(pageConfig, graph, shellConfig);
+    // Indexed from the shell when there is one, descending into the outlet, so
+    // the index covers everything the browser actually renders.
+    const index = shellConfig
+      ? buildConfigIndex(shellConfig, graph, pageConfig)
+      : buildConfigIndex(pageConfig, graph, null);
+    const resolver = new Resolver(index);
+    resolver.rebuild(); // so the panel can report real numbers immediately
+    this.resolver = resolver;
+
+    this.state = {
+      status: 'ready',
+      pageInfo: {
+        host: ctx.host,
+        path: pageConfig.path,
+        env: ctx.env,
+        referencePageId: pageConfig.referencePageId,
+        pageVersionId: pageConfig.pageVersionId,
+        shellPath: shellConfig ? shellConfig.path : '',
+        shellReferencePageId: shellConfig ? shellConfig.referencePageId : '',
+        componentCount: componentNames(componentTree).length,
+        configNodes: index.nodes.length,
+        anchors: resolver.getStats()
+      },
+      componentTree: serializeComponentTree(componentTree)
+    };
+    log.debug('page model ready:', this.state.pageInfo);
+  }
+
+  // ---- inspect mode --------------------------------------------------------
+
+  private setInspect(on: boolean): void {
+    if (on === this.inspecting) return;
+    this.inspecting = on;
+    if (on) {
+      document.addEventListener('mousemove', this.onMove, true);
+      document.addEventListener('click', this.onClick, true);
+    } else {
+      document.removeEventListener('mousemove', this.onMove, true);
+      document.removeEventListener('click', this.onClick, true);
+      this.highlighter.hide();
+    }
+  }
+
+  private readonly onMove = (e: MouseEvent): void => {
+    if (!this.resolver) return;
+    const hit = this.resolver.resolve(e.target as Element);
+    if (!hit) {
+      this.highlighter.hide();
+      return;
+    }
+    // The node label says WHICH config node, not just which component — the old
+    // scheme could only ever name a whole form-builder region.
+    const node = hit.node.className
+      ? `<${hit.node.name} class="${hit.node.className}">`
+      : `<${hit.node.name}>`;
+    this.highlighter.show(
+      [hit.anchorEl],
+      hit.owner + (hit.exact ? '' : '  (nearest match)'),
+      `${hit.chain.join('  ›  ')}    ${node}`
+    );
   };
-}
 
-// ---- inspect mode ----------------------------------------------------------
+  private readonly onClick = (e: MouseEvent): void => {
+    if (!this.resolver) return;
+    const hit = this.resolver.resolve(e.target as Element);
+    if (!hit) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const pick: PdPickMessage = { ns: 'pd', type: 'pick', chain: hit.chain, nodeName: hit.node.name };
+    chrome.runtime.sendMessage(pick);
+  };
 
-function onMove(e: MouseEvent): void {
-  if (!resolver || !highlighter) return;
-  const hit = resolver.resolve(e.target as Element);
-  if (!hit) {
-    highlighter.hide();
-    return;
-  }
-  // The node label says WHICH config node, not just which component — the old
-  // scheme could only ever name a whole form-builder region.
-  const node = hit.node.className
-    ? `<${hit.node.name} class="${hit.node.className}">`
-    : `<${hit.node.name}>`;
-  highlighter.show(
-    [hit.anchorEl],
-    hit.owner + (hit.exact ? '' : '  (nearest match)'),
-    `${hit.chain.join('  ›  ')}    ${node}`
-  );
-}
+  // ---- panel commands ------------------------------------------------------
 
-function onClick(e: MouseEvent): void {
-  if (!resolver) return;
-  const hit = resolver.resolve(e.target as Element);
-  if (!hit) return;
-  e.preventDefault();
-  e.stopPropagation();
-  const pick: PdPickMessage = { ns: 'pd', type: 'pick', chain: hit.chain, nodeName: hit.node.name };
-  chrome.runtime.sendMessage(pick);
-}
+  private readonly onMessage = (
+    msg: unknown,
+    _sender: chrome.runtime.MessageSender,
+    sendResponse: (response: unknown) => void
+  ): boolean => {
+    if (!isPdCommand(msg)) return false;
+    this.handleCommand(msg, sendResponse);
+    return true; // responses may be produced synchronously, but keep the port open
+  };
 
-function setInspect(on: boolean): void {
-  if (on === inspecting) return;
-  inspecting = on;
-  if (on) {
-    document.addEventListener('mousemove', onMove, true);
-    document.addEventListener('click', onClick, true);
-  } else {
-    document.removeEventListener('mousemove', onMove, true);
-    document.removeEventListener('click', onClick, true);
-    highlighter?.hide();
-  }
-}
-
-// ---- panel command handling ------------------------------------------------
-
-function handleCommand(msg: PdCommand, sendResponse: (response: unknown) => void): void {
-  switch (msg.cmd) {
-    case 'getState':
-      sendResponse(STATE);
-      return;
-    case 'setInspect':
-      setInspect(!!msg.on);
-      sendResponse({ ok: true, inspecting });
-      return;
-    case 'highlightComponent': {
-      if (!resolver || !highlighter) {
-        sendResponse({ ok: false, reason: 'not ready' });
+  private handleCommand(msg: PdCommand, sendResponse: (response: unknown) => void): void {
+    switch (msg.cmd) {
+      case 'getState':
+        sendResponse(this.state);
+        return;
+      case 'setInspect':
+        this.setInspect(!!msg.on);
+        sendResponse({ ok: true, inspecting: this.inspecting });
+        return;
+      case 'highlightComponent': {
+        if (!this.resolver) {
+          sendResponse({ ok: false, reason: 'not ready' });
+          return;
+        }
+        const els = this.resolver.elementsForComponent(msg.name);
+        if (els.length) {
+          els[0]!.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          this.highlighter.show(els, msg.name, `${els.length} region(s)`);
+        } else {
+          this.highlighter.hide();
+        }
+        sendResponse({ ok: true, count: els.length });
         return;
       }
-      const els = resolver.elementsForComponent(msg.name);
-      if (els.length) {
-        els[0]!.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        highlighter.show(els, msg.name, `${els.length} region(s)`);
-      } else {
-        highlighter.hide();
-      }
-      sendResponse({ ok: true, count: els.length });
-      return;
+      case 'clearHighlight':
+        this.highlighter.hide();
+        sendResponse({ ok: true });
+        return;
+      default:
+        sendResponse({ ok: false, reason: 'unknown command' });
     }
-    case 'clearHighlight':
-      highlighter?.hide();
-      sendResponse({ ok: true });
-      return;
-    default:
-      sendResponse({ ok: false, reason: 'unknown command' });
   }
-}
-
-// ---- lifecycle -------------------------------------------------------------
-
-export function startEngine(): void {
-  const ctx = getPageContext();
-  if (!ctx) return;
-
-  highlighter = createHighlighter();
-
-  build(ctx).catch((err: unknown) => {
-    STATE = { status: 'error', error: errorText(err) };
-  });
-
-  chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
-    if (!isPdCommand(msg)) return false;
-    handleCommand(msg, sendResponse);
-    return true; // responses may be produced synchronously, but keep the port open
-  });
-
-  // Published pages are SPAs — rebuild when the route changes.
-  let lastPath = location.pathname;
-  setInterval(() => {
-    if (location.pathname === lastPath) return;
-    lastPath = location.pathname;
-    setInspect(false);
-    const next = getPageContext();
-    if (next) {
-      build(next).catch((err: unknown) => {
-        STATE = { status: 'error', error: errorText(err) };
-      });
-    }
-  }, 1500);
 }

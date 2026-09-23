@@ -37,5 +37,8 @@ export const TIMINGS = {
   /** After toggling AM/PM. */
   afterAmPmToggle: 80,
   /** After clicking away to commit the time. */
-  afterTimeCommit: 40
+  afterTimeCommit: 40,
+
+  /** PD Inspector: how often to check a published page for a route change. */
+  pdRoutePoll: 1500
 } as const;

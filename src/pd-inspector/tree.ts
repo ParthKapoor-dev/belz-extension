@@ -5,6 +5,7 @@
 // tree the overlay can render — with a node kind, a human label, and the
 // visibility verdict that drives the "conditionally hidden" workflow.
 
+import { PD_CONFIG_NODES } from '../config/selectors';
 import type { NodeKind, NodeSummary, RawLayoutNode, TreeNode, Visibility } from './types';
 
 export const KIND: { readonly [K in NodeKind]: K } = {
@@ -28,11 +29,11 @@ export const KIND_BADGE: Record<NodeKind, string> = {
 
 function detectKind(raw: RawLayoutNode): NodeKind {
   const name = String(raw.name || '').toLowerCase();
-  if (raw.field || name === 'exp-form-field' || name === 'exp-field') {
+  if (raw.field || (PD_CONFIG_NODES.formFields as readonly string[]).includes(name)) {
     return KIND.FORM_FIELD;
   }
-  if (name.includes('data-table')) return KIND.DATA_TABLE;
-  if (name === 'button' || name === 'exp-button') return KIND.BUTTON;
+  if (name.includes(PD_CONFIG_NODES.dataTablePart)) return KIND.DATA_TABLE;
+  if ((PD_CONFIG_NODES.buttons as readonly string[]).includes(name)) return KIND.BUTTON;
   // A symbol *reference* (childless `isSymbol` leaf) is an embedded component;
   // a definition root also carries `isSymbol` but has children — that is layout.
   if (raw.isSymbol && !(raw.children && raw.children.length)) return KIND.SYMBOL;

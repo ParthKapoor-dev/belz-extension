@@ -19,6 +19,9 @@ import { isHostsChange } from '../shared/hosts';
 import { isPdRelay, type FocusFlag, type OpenSettingsMessage } from '../shared/messages';
 import { writeFocusFlag } from '../shared/focus-flag';
 import { reconcileContentScripts, seedHostsIfEmpty } from './content-scripts';
+import { createLogger } from '../shared/logger';
+
+const log = createLogger('background');
 
 chrome.runtime.onInstalled.addListener(async () => {
   await seedHostsIfEmpty();
@@ -38,7 +41,8 @@ chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
       chrome.tabs.sendMessage(msg.tabId, msg.payload, (resp: unknown) => {
         sendResponse(chrome.runtime.lastError ? null : resp);
       });
-    } catch {
+    } catch (err) {
+      log.warn('cannot relay to the PD Inspector engine:', err);
       sendResponse(null);
     }
     return true;
@@ -47,8 +51,8 @@ chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
   if (msg.__pdRelay === 'open') {
     try {
       chrome.tabs.create({ url: msg.url });
-    } catch {
-      /* ignore */
+    } catch (err) {
+      log.warn('cannot open a tab:', err);
     }
     sendResponse({ ok: true });
     return false;
@@ -82,8 +86,8 @@ if (chrome.commands && chrome.commands.onCommand) {
             void chrome.runtime.lastError;
           });
         });
-      } catch {
-        /* tabs unavailable */
+      } catch (err) {
+        log.warn('cannot ask the active tab to open settings:', err);
       }
       return;
     }

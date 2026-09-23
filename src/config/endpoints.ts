@@ -6,6 +6,8 @@
 // straight from the platform's own REST API, reusing the session the page
 // already holds. See src/devtools/ad-network/api.ts for the client.
 
+import { AD_ROUTE_PREFIX, PD_ROUTE_PREFIX } from './routes';
+
 /** AD chain URL detector — matches both fetch and execute variants. */
 export const CHAIN_PATH_RE = /\/rest\/api\/automation\/chain\//i;
 
@@ -30,7 +32,17 @@ export function chainV1Path(uuid: string): string {
 
 /** Automation Designer route for a method, given its category + draft uuid. */
 export function designerPath(categoryName: string, draftUuid: string): string {
-  return `/automation-designer/${encodeURIComponent(categoryName)}/${draftUuid}`;
+  return `${AD_ROUTE_PREFIX}${encodeURIComponent(categoryName)}/${draftUuid}`;
+}
+
+/** Page Designer route for a page, by its reference page id. */
+export function pdPagePath(referencePageId: string): string {
+  return `${PD_ROUTE_PREFIX}page/${referencePageId}`;
+}
+
+/** Page Designer route for a component (symbol), by name. */
+export function pdSymbolPath(name: string): string {
+  return `${PD_ROUTE_PREFIX}symbol/${encodeURIComponent(name)}`;
 }
 
 /**

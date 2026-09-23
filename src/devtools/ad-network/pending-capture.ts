@@ -94,37 +94,36 @@ const READ_SCRIPT =
 
 const POLL_INTERVAL_MS = 500;
 
-/**
- * Start reporting in-flight chain requests to `onUpdate`. Returns a function
- * that stops the poll and the navigation listener.
- */
-export function startPendingCapture(onUpdate: (entries: PendingEntry[]) => void): () => void {
-  let stopped = false;
+/** Reports the inspected page's in-flight chain requests while started. */
+export class PendingCapture {
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
 
-  function install(): void {
-    if (stopped) return;
-    // A null answer means the page blocked the eval, or is not there yet —
-    // the poll just reports nothing until a context accepts the wrapper.
-    void evalInPage(WRAPPER_SCRIPT);
+  constructor(private readonly onUpdate: (entries: PendingEntry[]) => void) {}
+
+  start(): void {
+    if (this.pollTimer) return;
+    // The timer first: install() and poll() only act while started.
+    this.pollTimer = setInterval(() => this.poll(), POLL_INTERVAL_MS);
+    this.install();
+    this.poll();
+    chrome.devtools.network.onNavigated.addListener(this.install);
   }
 
-  async function poll(): Promise<void> {
-    if (stopped) return;
-    const result = await evalInPage(READ_SCRIPT);
-    if (stopped) return;
-    onUpdate(Array.isArray(result) ? (result as PendingEntry[]) : []);
+  stop(): void {
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = null;
+    chrome.devtools.network.onNavigated.removeListener(this.install);
   }
 
-  install();
-  const pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-  poll();
-
-  const onNavigated = () => install();
-  chrome.devtools.network.onNavigated.addListener(onNavigated);
-
-  return function stop() {
-    stopped = true;
-    clearInterval(pollTimer);
-    chrome.devtools.network.onNavigated.removeListener(onNavigated);
+  // A null answer means the page blocked the eval, or is not there yet — the
+  // poll just reports nothing until a context accepts the wrapper.
+  private readonly install = (): void => {
+    if (this.pollTimer) void evalInPage(WRAPPER_SCRIPT);
   };
+
+  private async poll(): Promise<void> {
+    const result = await evalInPage(READ_SCRIPT);
+    if (!this.pollTimer) return; // stopped while waiting
+    this.onUpdate(Array.isArray(result) ? (result as PendingEntry[]) : []);
+  }
 }

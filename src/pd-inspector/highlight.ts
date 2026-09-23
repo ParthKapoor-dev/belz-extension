@@ -28,134 +28,127 @@ const CSS = `
 .label .s { color: #9ca3af; }
 `;
 
-export interface Highlighter {
-  /** Outline one or more elements, with a bright title and a dim subtitle. */
-  show(elements: Element[], title: string, subtitle?: string): void;
-  hide(): void;
-  destroy(): void;
-}
-
-/** Create the highlight overlay. */
-export function createHighlighter(): Highlighter {
-  const host = document.createElement('div');
-  host.id = 'pdi-highlight-host';
-  host.style.cssText =
-    'position:fixed;inset:0;pointer-events:none;z-index:2147483646;';
-  const root = host.attachShadow({ mode: 'open' });
-  const style = document.createElement('style');
-  style.textContent = CSS;
-  root.appendChild(style);
-
-  const label = document.createElement('div');
-  label.className = 'label';
-  label.style.display = 'none';
-  root.appendChild(label);
-
+export class Highlighter {
+  private readonly host: HTMLDivElement;
+  private readonly root: ShadowRoot;
+  private readonly label: HTMLDivElement;
   /** Reused box elements. */
-  const boxes: HTMLDivElement[] = [];
-  let mounted = false;
+  private readonly boxes: HTMLDivElement[] = [];
+  private mounted = false;
   /** The element(s) currently highlighted. */
-  let current: { els: Element[] } | null = null;
-  let rafPending = false;
+  private current: Element[] | null = null;
+  private rafPending = false;
 
-  function ensureMounted(): void {
-    if (!mounted) {
-      document.documentElement.appendChild(host);
-      mounted = true;
-    }
+  constructor() {
+    this.host = document.createElement('div');
+    this.host.id = 'pdi-highlight-host';
+    this.host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483646;';
+    this.root = this.host.attachShadow({ mode: 'open' });
+    const style = document.createElement('style');
+    style.textContent = CSS;
+    this.root.appendChild(style);
+
+    this.label = document.createElement('div');
+    this.label.className = 'label';
+    this.label.style.display = 'none';
+    this.root.appendChild(this.label);
+
+    // Capture-phase scroll catches scrolling inside any nested scroll
+    // container, not just the document.
+    window.addEventListener('scroll', this.onViewportChange, true);
+    window.addEventListener('resize', this.onViewportChange);
   }
 
-  function boxAt(i: number): HTMLDivElement {
-    if (!boxes[i]) {
+  /** Outline one or more elements, with a bright title and a dim subtitle. */
+  show(elements: Element[], title: string, subtitle?: string): void {
+    this.ensureMounted();
+    const els = elements.filter(Boolean);
+    if (!els.length) {
+      this.hide();
+      return;
+    }
+    this.current = els;
+    const t = document.createElement('div');
+    t.className = 't';
+    t.textContent = title;
+    this.label.replaceChildren(t);
+    if (subtitle) {
+      const s = document.createElement('div');
+      s.className = 's';
+      s.textContent = subtitle;
+      this.label.append(s);
+    }
+    this.label.style.display = 'block';
+    this.position();
+  }
+
+  hide(): void {
+    this.current = null;
+    for (const b of this.boxes) b.style.display = 'none';
+    this.label.style.display = 'none';
+  }
+
+  destroy(): void {
+    window.removeEventListener('scroll', this.onViewportChange, true);
+    window.removeEventListener('resize', this.onViewportChange);
+    if (this.mounted) this.host.remove();
+    this.mounted = false;
+    this.current = null;
+  }
+
+  private ensureMounted(): void {
+    if (this.mounted) return;
+    document.documentElement.appendChild(this.host);
+    this.mounted = true;
+  }
+
+  private boxAt(i: number): HTMLDivElement {
+    if (!this.boxes[i]) {
       const b = document.createElement('div');
       b.className = 'box';
-      root.appendChild(b);
-      boxes[i] = b;
+      this.root.appendChild(b);
+      this.boxes[i] = b;
     }
-    return boxes[i]!;
+    return this.boxes[i]!;
   }
 
-  // Position the boxes + label over `current.els`. `position: fixed` means we
-  // re-derive viewport coords here — calling this on scroll keeps the overlay
-  // pinned to the DOM element rather than the viewport.
-  function position(): void {
-    if (!current) return;
-    const els = current.els;
+  // Position the boxes + label over the current elements. `position: fixed`
+  // means we re-derive viewport coords here — calling this on scroll keeps the
+  // overlay pinned to the DOM element rather than the viewport.
+  private position(): void {
+    const els = this.current;
+    if (!els) return;
     els.forEach((el, i) => {
       const r = el.getBoundingClientRect();
-      const b = boxAt(i);
+      const b = this.boxAt(i);
       b.style.display = 'block';
       b.style.left = `${r.left}px`;
       b.style.top = `${r.top}px`;
       b.style.width = `${r.width}px`;
       b.style.height = `${r.height}px`;
     });
-    for (let i = els.length; i < boxes.length; i++) {
-      boxes[i]!.style.display = 'none';
+    for (let i = els.length; i < this.boxes.length; i++) {
+      this.boxes[i]!.style.display = 'none';
     }
 
     const first = els[0]!.getBoundingClientRect();
-    const lw = label.offsetWidth;
-    const lh = label.offsetHeight;
+    const lw = this.label.offsetWidth;
+    const lh = this.label.offsetHeight;
     let lx = first.left;
     let ly = first.top - lh - 4;
     if (ly < 4) ly = first.top + 4;
     if (lx + lw > window.innerWidth) lx = window.innerWidth - lw - 6;
-    label.style.left = `${Math.max(4, lx)}px`;
-    label.style.top = `${Math.max(4, ly)}px`;
+    this.label.style.left = `${Math.max(4, lx)}px`;
+    this.label.style.top = `${Math.max(4, ly)}px`;
   }
 
   // rAF-throttled reposition for scroll / resize.
-  function onViewportChange(): void {
-    if (rafPending || !current) return;
-    rafPending = true;
+  private readonly onViewportChange = (): void => {
+    if (this.rafPending || !this.current) return;
+    this.rafPending = true;
     requestAnimationFrame(() => {
-      rafPending = false;
-      position();
+      this.rafPending = false;
+      this.position();
     });
-  }
-
-  function show(elements: Element[], title: string, subtitle?: string): void {
-    ensureMounted();
-    const els = (elements || []).filter(Boolean);
-    if (!els.length) {
-      hide();
-      return;
-    }
-    current = { els };
-    label.innerHTML =
-      `<div class="t">${esc(title)}</div>` +
-      (subtitle ? `<div class="s">${esc(subtitle)}</div>` : '');
-    label.style.display = 'block';
-    position();
-  }
-
-  function hide(): void {
-    current = null;
-    boxes.forEach((b) => {
-      b.style.display = 'none';
-    });
-    label.style.display = 'none';
-  }
-
-  function destroy(): void {
-    window.removeEventListener('scroll', onViewportChange, true);
-    window.removeEventListener('resize', onViewportChange);
-    if (mounted) host.remove();
-    mounted = false;
-    current = null;
-  }
-
-  // Capture-phase scroll catches scrolling inside any nested scroll container,
-  // not just the document.
-  window.addEventListener('scroll', onViewportChange, true);
-  window.addEventListener('resize', onViewportChange);
-
-  return { show, hide, destroy };
-}
-
-const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
-
-function esc(s: unknown): string {
-  return String(s == null ? '' : s).replace(/[&<>]/g, (c) => HTML_ESCAPES[c] ?? c);
+  };
 }

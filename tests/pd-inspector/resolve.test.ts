@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildConfigIndex, createResolver } from '../../src/pd-inspector/resolve';
+import { buildConfigIndex, Resolver } from '../../src/pd-inspector/resolve';
 
 // The resolver maps DOM elements to config nodes. Results hold DOM elements,
 // so assertions below compare plain fields (see tests/memory-guard-worker.ts).
@@ -24,10 +24,10 @@ describe('buildConfigIndex', () => {
   });
 });
 
-describe('createResolver', () => {
+describe('Resolver', () => {
   function setup(html: string, layout: any) {
     document.body.innerHTML = html;
-    const resolver = createResolver(buildConfigIndex({ path: 'page', layout }, new Map(), null));
+    const resolver = new Resolver(buildConfigIndex({ path: 'page', layout }, new Map(), null));
     const who = (sel: string) => {
       const hit = resolver.resolve(document.querySelector(sel)!);
       return hit ? { owner: hit.owner, node: hit.node.className, exact: hit.exact } : null;

@@ -16,68 +16,77 @@
 
 import { isHostsChange, readHosts } from '../../shared/hosts';
 import { evalInPage } from '../inspected';
+import { createLogger } from '../../shared/logger';
 
-let apiOrigin = '';
-let apiHost = '';
-/** lowercase host → designer host, mirrored from the user's site list. */
-const designerHostByHost = new Map<string, string>();
+const log = createLogger('ad-network');
 
-export function getApiOrigin(): string {
-  return apiOrigin;
-}
+/** The page DevTools is inspecting, and where its designer UI lives. */
+export class InspectedSite {
+  private origin = '';
+  private host = '';
+  /** lowercase host → designer host, mirrored from the user's site list. */
+  private readonly designerHostByHost = new Map<string, string>();
 
-export function getApiHost(): string {
-  return apiHost;
-}
-
-/** The origin whose Automation Designer UI should be opened for this page. */
-export function getDesignerOrigin(): string {
-  if (!apiHost) return apiOrigin;
-  const mapped = designerHostByHost.get(apiHost);
-  if (!mapped || mapped === apiHost) return apiOrigin;
-  try {
-    const u = new URL(apiOrigin);
-    u.host = mapped;
-    return u.origin;
-  } catch {
-    return apiOrigin;
+  /** The inspected page's origin; '' until detect() has answered. */
+  get apiOrigin(): string {
+    return this.origin;
   }
-}
 
-/** Read the inspected window's origin. Resolves once DevTools answers. */
-export async function detectOrigin(): Promise<string> {
-  const result = await evalInPage('location.origin');
-  if (typeof result === 'string' && /^https?:/i.test(result)) {
-    apiOrigin = result;
+  /** The inspected page's lowercase host; '' until detect() has answered. */
+  get apiHost(): string {
+    return this.host;
+  }
+
+  /** The origin whose Automation Designer UI should be opened for this page. */
+  get designerOrigin(): string {
+    if (!this.host) return this.origin;
+    const mapped = this.designerHostByHost.get(this.host);
+    if (!mapped || mapped === this.host) return this.origin;
     try {
-      apiHost = new URL(result).host.toLowerCase();
+      const u = new URL(this.origin);
+      u.host = mapped;
+      return u.origin;
     } catch {
-      apiHost = '';
+      return this.origin;
     }
   }
-  return apiOrigin;
-}
 
-/** Mirror the user's site list so designer-host overrides are available. */
-export async function loadSiteConfig(): Promise<void> {
-  try {
-    const hosts = await readHosts();
-    designerHostByHost.clear();
-    for (const entry of hosts) {
-      const designer =
-        typeof entry.designerHost === 'string' && entry.designerHost.trim()
-          ? entry.designerHost.trim().toLowerCase()
-          : entry.host.toLowerCase();
-      designerHostByHost.set(entry.host.toLowerCase(), designer);
+  /** Read the inspected window's origin. Resolves once DevTools answers. */
+  async detect(): Promise<string> {
+    const result = await evalInPage('location.origin');
+    if (typeof result === 'string' && /^https?:/i.test(result)) {
+      this.origin = result;
+      try {
+        this.host = new URL(result).host.toLowerCase();
+      } catch {
+        this.host = '';
+      }
     }
-  } catch {
-    /* no site list yet — designer origin falls back to the api origin */
+    return this.origin;
   }
-}
 
-/** Keep the mapping live while the panel is open. */
-export function watchSiteConfig(): void {
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (isHostsChange(changes, areaName)) loadSiteConfig();
-  });
+  /** Mirror the user's site list so designer-host overrides are available. */
+  async loadSiteConfig(): Promise<void> {
+    try {
+      const hosts = await readHosts();
+      this.designerHostByHost.clear();
+      for (const entry of hosts) {
+        const designer =
+          typeof entry.designerHost === 'string' && entry.designerHost.trim()
+            ? entry.designerHost.trim().toLowerCase()
+            : entry.host.toLowerCase();
+        this.designerHostByHost.set(entry.host.toLowerCase(), designer);
+      }
+    } catch (err) {
+      // No site list yet: the designer origin falls back to the api origin.
+      log.debug('site list not loaded:', err);
+    }
+  }
+
+  /** Keep the mapping live while the panel is open. */
+  watchSiteConfig(): void {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (isHostsChange(changes, areaName)) this.loadSiteConfig();
+    });
+  }
 }

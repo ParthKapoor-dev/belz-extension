@@ -14,6 +14,9 @@ import {
   type HostEntry
 } from '../shared/hosts';
 import { required } from '../shared/dom';
+import { createLogger } from '../shared/logger';
+
+const log = createLogger('options');
 
 /** A stored host plus what the browser says about its permission right now. */
 type HostWithGrant = HostEntry & { granted: boolean };
@@ -27,8 +30,10 @@ const addBtn = required<HTMLButtonElement>('#add-btn');
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
+/** Show `msg` under the list (and log it); '' clears it. */
 function setError(msg: string): void {
   errorEl.textContent = msg || '';
+  if (msg) log.warn(msg);
 }
 
 /**
@@ -45,7 +50,8 @@ async function withGrantState(hosts: HostEntry[]): Promise<HostWithGrant[]> {
         granted = await chrome.permissions.contains({
           origins: [originPattern(entry.host)]
         });
-      } catch {
+      } catch (err) {
+        log.debug(`cannot check the permission for ${entry.host}:`, err);
         granted = false;
       }
       return { ...entry, granted };

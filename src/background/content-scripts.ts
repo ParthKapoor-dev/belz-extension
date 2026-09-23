@@ -45,7 +45,8 @@ export function scriptForHost(host: string, template: ScriptTemplate): Registrat
 async function currentRegistrations(): Promise<Registration[]> {
   try {
     return await chrome.scripting.getRegisteredContentScripts();
-  } catch {
+  } catch (err) {
+    log.warn('cannot list the registered content scripts:', err);
     return [];
   }
 }
@@ -134,7 +135,8 @@ export async function seedHostsIfEmpty(): Promise<void> {
       `seeded ${hosts.length} site(s) from sites.default.json — ` +
         'open the options page to grant them.'
     );
-  } catch {
-    /* no seed file, or it is malformed — start empty */
+  } catch (err) {
+    // No seed file, or it is malformed: start empty.
+    log.debug('no site seed loaded:', err);
   }
 }

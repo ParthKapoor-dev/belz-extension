@@ -22,7 +22,8 @@
 // climbing to the nearest anchored ancestor. On the reference page that covers
 // 98% of visible elements, against 1 usable anchor before.
 
-import { isSymbolRef, OUTLET_NODE_NAME } from './config';
+import { isSymbolRef } from './config';
+import { PD_CONFIG_NODES } from '../config/selectors';
 import type {
   AnchorStats,
   ComponentGraph,
@@ -47,13 +48,6 @@ export interface ResolveHit {
   chain: string[];
   owner: string;
   exact: boolean;
-}
-
-export interface Resolver {
-  resolve(el: Element): ResolveHit | null;
-  elementsForComponent(name: string): Element[];
-  rebuild(): void;
-  getStats(): AnchorStats;
 }
 
 /** Rebuild the anchor map at most this often while the pointer moves. */
@@ -89,7 +83,7 @@ export function buildConfigIndex(
       byClass.get(className)!.push(record);
     }
 
-    if (name === OUTLET_NODE_NAME && outletConfig && outletConfig.layout) {
+    if (name === PD_CONFIG_NODES.outlet && outletConfig && outletConfig.layout) {
       walk(outletConfig.layout, chain.concat(outletConfig.path));
       return;
     }
@@ -124,19 +118,22 @@ function selectorFor(className: string): string {
   return parts.join('');
 }
 
-/** Build a live resolver over the current DOM. */
-export function createResolver(index: ConfigIndex): Resolver {
-  let anchors = new Map<Element, Anchor>();
-  let builtAt = 0;
-  let stats: AnchorStats = { anchored: 0, exact: 0, positional: 0, unresolved: 0 };
+/** Answers "which config node owns this element?" over the live DOM. */
+export class Resolver {
+  private anchors = new Map<Element, Anchor>();
+  private builtAt = 0;
+  private stats: AnchorStats = { anchored: 0, exact: 0, positional: 0, unresolved: 0 };
 
-  function build(): void {
+  constructor(private readonly index: ConfigIndex) {}
+
+  /** Re-pin config nodes to the elements on the page now. */
+  rebuild(): void {
     const next = new Map<Element, Anchor>();
     let exact = 0;
     let positional = 0;
     let unresolved = 0;
 
-    for (const [className, configNodes] of index.byClass) {
+    for (const [className, configNodes] of this.index.byClass) {
       const selector = selectorFor(className);
       if (!selector) {
         unresolved += configNodes.length;
@@ -185,24 +182,21 @@ export function createResolver(index: ConfigIndex): Resolver {
       }
     }
 
-    anchors = next;
-    builtAt = Date.now();
-    stats = { anchored: next.size, exact, positional, unresolved };
+    this.anchors = next;
+    this.builtAt = Date.now();
+    this.stats = { anchored: next.size, exact, positional, unresolved };
   }
 
-  function ensureFresh(): void {
-    // The page is an SPA and re-renders under us; a stale anchor map points at
-    // detached elements. Rebuilding is a query per distinct className, so it is
-    // throttled rather than run per pointer move.
-    if (!anchors.size || Date.now() - builtAt > REBUILD_THROTTLE_MS) build();
+  getStats(): AnchorStats {
+    return { ...this.stats };
   }
 
   /** Who owns this element? Climbs to the nearest anchored ancestor. */
-  function resolve(el: Element): ResolveHit | null {
-    ensureFresh();
+  resolve(el: Element): ResolveHit | null {
+    this.ensureFresh();
     let cur: Element | null = el;
     while (cur && cur.nodeType === 1) {
-      const hit = anchors.get(cur);
+      const hit = this.anchors.get(cur);
       if (hit) {
         return {
           anchorEl: cur,
@@ -218,10 +212,10 @@ export function createResolver(index: ConfigIndex): Resolver {
   }
 
   /** Anchored elements belonging to a component, for highlighting. */
-  function elementsForComponent(name: string): Element[] {
-    ensureFresh();
+  elementsForComponent(name: string): Element[] {
+    this.ensureFresh();
     const out: Element[] = [];
-    for (const [element, hit] of anchors) {
+    for (const [element, hit] of this.anchors) {
       // Innermost match only: a parent component's chain contains every
       // descendant's name, so an ancestor test would highlight the whole page.
       if (hit.node.owner === name && element.isConnected) out.push(element);
@@ -229,10 +223,10 @@ export function createResolver(index: ConfigIndex): Resolver {
     return out;
   }
 
-  return {
-    resolve,
-    elementsForComponent,
-    rebuild: build,
-    getStats: () => ({ ...stats })
-  };
+  private ensureFresh(): void {
+    // The page is an SPA and re-renders under us; a stale anchor map points at
+    // detached elements. Rebuilding is a query per distinct className, so it is
+    // throttled rather than run per pointer move.
+    if (!this.anchors.size || Date.now() - this.builtAt > REBUILD_THROTTLE_MS) this.rebuild();
+  }
 }

@@ -9,6 +9,8 @@
 
 import { PD_DEPLOYABLE_PATH as DEPLOYABLE } from '../config/endpoints';
 import { PAGES_ROUTE_PREFIX } from '../config/routes';
+import { PD_CONFIG_NODES } from '../config/selectors';
+import { createLogger } from '../shared/logger';
 import type {
   ComponentConfig,
   ComponentGraph,
@@ -16,6 +18,8 @@ import type {
   PageContext,
   RawLayoutNode
 } from './types';
+
+const log = createLogger('pd-inspector');
 
 /** A deployed page as the deployable endpoint returns it. */
 interface DeployedPage {
@@ -60,9 +64,6 @@ export function isSymbolRef(n: RawLayoutNode | null | undefined): n is RawLayout
   );
 }
 
-/** The node an app shell uses to mark where the content page renders. */
-export const OUTLET_NODE_NAME = 'router-outlet';
-
 /**
  * Child references of a layout in document order — embedded components, and the
  * outlet where a content page is spliced in.
@@ -79,7 +80,7 @@ export function collectChildRefs(layoutRoot: RawLayoutNode | null): ChildRef[] {
       refs.push({ type: 'symbol', name: n.name });
       return; // a ref is a leaf; its content lives in its own config
     }
-    if (n.name === OUTLET_NODE_NAME) refs.push({ type: 'outlet' });
+    if (n.name === PD_CONFIG_NODES.outlet) refs.push({ type: 'outlet' });
     (n.children || []).forEach(walk);
   };
   walk(layoutRoot);
@@ -107,6 +108,7 @@ async function fetchJson(url: string): Promise<unknown> {
       return await res.json();
     } catch (err) {
       lastErr = err;
+      log.debug(`fetch attempt ${attempt + 1} failed:`, url, err);
     }
   }
   throw lastErr || new Error('fetch failed');
@@ -175,8 +177,9 @@ async function resolveDeployedPath(ctx: PageContext): Promise<string> {
     let raw: unknown = (json as { dynamicRoute?: unknown } | null)?.dynamicRoute;
     if (typeof raw === 'string') raw = JSON.parse(raw);
     if (Array.isArray(raw)) routes = raw;
-  } catch {
-    return ctx.path; // route table unavailable — fall back to the literal path
+  } catch (err) {
+    log.debug('route table unavailable, using the literal path:', err);
+    return ctx.path;
   }
 
   let best: string | null = null;
@@ -245,7 +248,8 @@ export async function fetchShellConfig(ctx: PageContext, pagePath: string): Prom
   let deployed;
   try {
     deployed = await fetchDeployable(ctx, 'PAGE', firstSegment);
-  } catch {
+  } catch (err) {
+    log.debug('no app shell (fetch failed):', err);
     return null; // a missing shell must never fail the whole build
   }
   if (!deployed) return null;
@@ -253,7 +257,8 @@ export async function fetchShellConfig(ctx: PageContext, pagePath: string): Prom
   let compiled: { layout?: RawLayoutNode };
   try {
     compiled = JSON.parse(deployed.compiledConfig);
-  } catch {
+  } catch (err) {
+    log.warn('app shell config is not valid JSON:', err);
     return null;
   }
   const layout = compiled.layout || null;
@@ -306,6 +311,7 @@ export async function fetchComponentGraph(
         if (!map.has(child)) queue.push(child);
       }
     } catch (err) {
+      log.warn(`component "${name}" could not be fetched:`, err);
       // One bad component cannot break the whole graph — record a stub.
       map.set(name, {
         name,

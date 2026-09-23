@@ -1,6 +1,7 @@
 // Data shapes of the AD Network panel.
 
 import type { Entry } from 'har-format';
+import type { StatusGroup } from './format';
 
 /**
  * A captured request: a HAR entry (the format DevTools records the network
@@ -36,4 +37,27 @@ export interface PendingEntry {
   url: string;
   method: string;
   startedDateTime: string;
+}
+
+/** One captured chain request: its data and its table row. */
+export interface Row {
+  id: number;
+  uuid: string;
+  kind: 'fetch' | 'execute';
+  version: 'v1' | 'v2';
+  httpMethod: string;
+  url: string;
+  status: number;
+  statusGroup: StatusGroup;
+  type: string;
+  /** Transfer size in bytes, or -1 when unknown. */
+  size: number;
+  /** Total time in ms, or -1 when unknown. */
+  time: number;
+  /** Start time, epoch ms. */
+  startedAt: number;
+  har: HarEntry;
+  rowEl: HTMLTableRowElement | null;
+  nameCell: HTMLTableCellElement | null;
+  categoryCell: HTMLTableCellElement | null;
 }
