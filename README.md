@@ -20,7 +20,7 @@ It runs on Chrome, Edge, Brave, Firefox and Zen. It only talks to the sites you 
 
 There are no published builds yet, so you build it from source. It takes about a minute.
 
-**You need:** [Git](https://git-scm.com/), [Bun](https://bun.sh/), and [Node.js](https://nodejs.org/) 18 or newer.
+**You need:** [Git](https://git-scm.com/), [Bun](https://bun.sh/), and [Node.js](https://nodejs.org/) 18 or newer to build (20 or newer for `bun run dev` on Linux, which needs recursive file watching; 22 or newer for the end-to-end tests, which use Node's built-in `WebSocket`).
 
 ```bash
 git clone https://github.com/ParthKapoor-dev/belz-extension.git
@@ -152,7 +152,7 @@ Click the **⚙** button next to the page title in AD or PD, or press `Alt+Shift
 | `bun run build:dist` | Bundle to `dist/` only, without the per-browser folders |
 | `bun run dev` | Rebuild `build/chrome` + `build/firefox` every time you save a file |
 | `bun run typecheck` | Check the TypeScript types of the source and the tests |
-| `bun test` | Run the unit tests (about a second) |
+| `bun test` | Run the unit tests (a few seconds). One of them runs the real build, so it rewrites `dist/` |
 | `bun run test:e2e` | Run the built extension in headless Chromium and Firefox, if installed |
 
 **The edit loop:** run `bun run dev` and leave it running. After each save, click the extension's **reload** icon (`chrome://extensions`, or **Reload** in `about:debugging`), then reload the page. Reloading keeps your sites and permissions, but removing and re-adding the extension clears them.
@@ -165,7 +165,7 @@ Click the **⚙** button next to the page title in AD or PD, or press `Alt+Shift
 
 On a fresh install they're restored automatically. You still need to click **Grant** once for each, because only you can approve a site permission. The file is gitignored so that your internal hostnames stay out of the repository.
 
-**How it works.** Start with [`AGENTS.md`](./AGENTS.md), the maintained map of the codebase. Each top-level folder of `src/` is one part of the extension, and they run separately from each other:
+**How it works.** Start with [`AGENTS.md`](./AGENTS.md), the maintained map of the codebase. Every folder also has its own `README.md` explaining what it holds and how it connects to the rest; [`src/README.md`](src/README.md) is the place to begin. Each top-level folder of `src/` is one part of the extension, and they run separately from each other:
 
 ```
 src/
