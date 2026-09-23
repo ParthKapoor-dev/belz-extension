@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderInputs } from '../../fixtures/ad-inputs';
 import { extractAllInputs } from '../../../src/designer/features/json-editor/extractor';
-import { syncJSONToInputs } from '../../../src/designer/features/json-editor/sync';
+import { pageCalendarTo, syncJSONToInputs } from '../../../src/designer/features/json-editor/sync';
 
 // Extracted inputs hold live DOM nodes (testValueElement, container). Never
 // pass one to expect(): if the assertion fails, bun prints the value, and
@@ -130,5 +130,47 @@ describe('syncJSONToInputs', () => {
     const result = await syncJSONToInputs('{"a":1}');
     expect(result.success).toBe(false);
     expect(result.errors?.[0]).toContain('No inputs found');
+  });
+});
+
+describe('pageCalendarTo', () => {
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  /** An AD calendar showing `label`; its arrows page the label when `working`. */
+  function calendar(label: string, working = true) {
+    document.body.innerHTML = `<div class="calendar">
+      <span class="calendar_header_month_label_text">${label}</span>
+      <span class="calendar_header_month_navigate_prev"><button></button></span>
+      <span class="calendar_header_month_navigate_next"><button></button></span>
+    </div>`;
+    const text = document.querySelector('.calendar_header_month_label_text')!;
+    const step = (by: number) => () => {
+      if (!working) return;
+      const [m, y] = text.textContent!.split(' ');
+      const index = Number(y) * 12 + MONTHS.indexOf(m!) + by;
+      text.textContent = `${MONTHS[index % 12]} ${Math.floor(index / 12)}`;
+    };
+    document.querySelector('.calendar_header_month_navigate_next button')!.addEventListener('click', step(1));
+    document.querySelector('.calendar_header_month_navigate_prev button')!.addEventListener('click', step(-1));
+    return document.querySelector('.calendar')!;
+  }
+  const shown = () => document.querySelector('.calendar_header_month_label_text')!.textContent;
+
+  test('pages forwards and back to the target month', async () => {
+    expect(await pageCalendarTo(calendar('Nov 2025'), 2026, 1)).toBe(true);
+    expect(shown()).toBe('Jan 2026');
+    expect(await pageCalendarTo(calendar('Mar 2026'), 2026, 2)).toBe(true);
+    expect(shown()).toBe('Feb 2026');
+  });
+
+  test('never reaching the month is a failure, so no day is clicked', async () => {
+    expect(await pageCalendarTo(calendar('Jan 2026', false), 2026, 3)).toBe(false);
+  });
+
+  test('a label it cannot read, or a missing arrow, fails at once', async () => {
+    expect(await pageCalendarTo(calendar('???'), 2026, 3)).toBe(false);
+    calendar('Jan 2026');
+    document.querySelector('.calendar_header_month_navigate_next')!.remove();
+    expect(await pageCalendarTo(document.querySelector('.calendar')!, 2026, 3)).toBe(false);
   });
 });

@@ -43,7 +43,7 @@ function hover(el, target) {
     clientX: box.left + 20, clientY: box.top + 20 }));
 }
 const overlayShown = () => {
-  const c = $('#sdExtensionTextareaControls');
+  const c = $('#belzTextareaControls');
   return c && c.style.display !== 'none' ? c : null;
 };
 
@@ -62,7 +62,7 @@ const overlayShown = () => {
     // Hover a textarea: the shared overlay appears.
     const ta = $('#ta');
     hover(ta);
-    const launcher = await waitFor(() => overlayShown() && $('.sdExtensionTextareaLauncher'), 2000);
+    const launcher = await waitFor(() => overlayShown() && $('.belzTextareaLauncher'), 2000);
     r.overlayShown = !!launcher;
 
     // First click loads the editor chunk and opens it with the text.
@@ -70,9 +70,9 @@ const overlayShown = () => {
     const editor = await waitFor(() => $('.cm-editor'), 5000);
     r.editorOpened = !!editor;
     r.contentMatches = editor ? $('.cm-content').textContent === ta.value : false;
-    r.detected = ($('#sdExtensionTextareaEditorLanguage') || {}).value || null;
+    r.detected = ($('#belzTextareaEditorLanguage') || {}).value || null;
     // The AD scanner ran on open; this textarea is outside any step.
-    r.variableStatus = ($('#sdExtensionTextareaEditorStatus') || {}).textContent || null;
+    r.variableStatus = ($('#belzTextareaEditorStatus') || {}).textContent || null;
 
     // The lazily loaded editor and the eagerly loaded shortcut must share ONE
     // modal lock: with the editor open, Run Test must not fire.
@@ -82,13 +82,13 @@ const overlayShown = () => {
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await sleep(200);
-    r.editorClosed = $('#sdExtensionTextareaEditorOverlay').style.display === 'none';
+    r.editorClosed = $('#belzTextareaEditorOverlay').style.display === 'none';
     chord(); await sleep(400);
     r.runTestAfterClose = runTestClicks - clicksBefore;
 
     // A disabled (published) textarea gets no pointer events of its own; the
     // browser retargets the hover to its parent. The overlay must still appear.
-    $('#sdExtensionTextareaControls').style.display = 'none';
+    $('#belzTextareaControls').style.display = 'none';
     hover($('#published'), document.body);
     r.publishedOverlay = !!(await waitFor(overlayShown, 2000));
   } catch (e) {

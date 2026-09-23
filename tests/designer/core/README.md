@@ -20,6 +20,7 @@ Unit tests for [`src/designer/core/`](../../../src/designer/core/): the page obs
 
 - Starts and stops each feature as its setting changes in `chrome.storage.local`, leaving the others alone. Features are `RecordingFeature` instances that log `start`/`stop`.
 - A feature whose `start()` throws is retried on the next settings change.
+- The teardown `bootstrap()` returns stops every running feature and the settings launcher (its `runtime.onMessage` listener goes), and later settings changes reach nothing. Every test calls it in `afterEach`, so no bootstrap outlives its test.
 
 **`SettingsStore`** ([`settings.ts`](../../../src/designer/core/settings.ts))
 
@@ -35,4 +36,4 @@ These tests pass a `memoryStorage()` helper as the store's `SettingsStorage`, so
 
 ## Conventions
 
-Tests that go through `chrome.storage` call `fakeChrome.reset()` first. The fake fires `storage.onChanged` synchronously on `set()`, so the effect of a settings write can be asserted on the next line; only the initial read needs an `await flush()`.
+Tests that go through `chrome.storage` call `fakeChrome.reset()` first. Like the browser, the fake fires `storage.onChanged` a task after `set()`, so a test awaits the write and then one more task (`writeSettings()` in `lifecycle.test.ts`, `nextTask()` from [`../../wait.ts`](../../wait.ts) in `settings.test.ts`) before asserting its effect.

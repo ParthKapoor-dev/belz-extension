@@ -172,6 +172,45 @@ function parseMonthLabel(text: string): { year: number; month: number } | null {
   return { year: Number(yearMatch[0]), month: monthIndex + 1 };
 }
 
+/** How many months the calendar may be paged to reach a date, either way. */
+const MAX_CALENDAR_PAGES = 60;
+/** Clicks in a row that may leave the month unchanged before paging gives up. */
+const MAX_CALENDAR_STALLS = 3;
+
+/**
+ * Page an open AD calendar to `year`/`month` (1-12). Resolves true once that
+ * month is showing, false when it cannot get there: an unreadable month, a
+ * missing arrow, arrows that stop moving the month, or a date too far away.
+ */
+export async function pageCalendarTo(calendar: Element, year: number, month: number): Promise<boolean> {
+  const targetIndex = year * 12 + month;
+  let previousIndex = -1;
+  let stalls = 0;
+  for (let page = 0; page <= MAX_CALENDAR_PAGES; page++) {
+    const label = calendar.querySelector(AD_WIDGETS.datePicker.monthLabel);
+    const current = label && parseMonthLabel(label.textContent || '');
+    if (!current) return false;
+
+    const currentIndex = current.year * 12 + current.month;
+    if (currentIndex === targetIndex) return true;
+    if (page === MAX_CALENDAR_PAGES) return false;
+    stalls = currentIndex === previousIndex ? stalls + 1 : 0;
+    if (stalls >= MAX_CALENDAR_STALLS) return false;
+    previousIndex = currentIndex;
+
+    const navButton = calendar.querySelector(
+      currentIndex < targetIndex
+        ? AD_WIDGETS.datePicker.nextMonth
+        : AD_WIDGETS.datePicker.prevMonth
+    );
+    if (!navButton) return false;
+    // The arrow's click handler lives on an inner <button>.
+    mouseClick(navButton.querySelector('button') || navButton);
+    await sleep(TIMINGS.afterCalendarPage);
+  }
+  return false;
+}
+
 // Opens AD's custom calendar for an <exp-date-picker> and returns its root.
 async function openAdCalendar(datePickerRoot: HTMLElement): Promise<Element | null> {
   const findCalendar = () =>
@@ -216,26 +255,10 @@ async function setDateValue(datePickerRoot: HTMLElement, isoDate: string): Promi
   const calendar = await openAdCalendar(datePickerRoot);
   if (!calendar) return false;
 
-  // Page month-by-month to the target.
-  for (let i = 0; i < 60; i++) {
-    const label = calendar.querySelector(AD_WIDGETS.datePicker.monthLabel);
-    const current = label && parseMonthLabel(label.textContent || '');
-    if (!current) break;
-
-    const currentIndex = current.year * 12 + current.month;
-    const targetIndex = year * 12 + month;
-    if (currentIndex === targetIndex) break;
-
-    const navButton = calendar.querySelector(
-      currentIndex < targetIndex
-        ? AD_WIDGETS.datePicker.nextMonth
-        : AD_WIDGETS.datePicker.prevMonth
-    );
-    if (!navButton) break;
-    // The arrow's click handler lives on an inner <button>.
-    mouseClick(navButton.querySelector('button') || navButton);
-    await sleep(TIMINGS.afterCalendarPage);
-  }
+  // Page month-by-month to the target. The day cells only mean the target
+  // date once the target month is showing: if it never is (a label that does
+  // not parse, a missing arrow, a date too far away), click nothing.
+  if (!(await pageCalendarTo(calendar, year, month))) return false;
 
   // Click the matching current-month day cell.
   const dayCell = await waitFor(() => {

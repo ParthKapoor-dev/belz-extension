@@ -154,9 +154,9 @@ export class DetailPane {
         ['Host', host || '—']
       ]),
       el('h4', null, 'Request headers'),
-      kvGrid(headerRows(har.request && har.request.headers)),
+      kvGrid(headerRows(har.request?.headers)),
       el('h4', null, 'Response headers'),
-      kvGrid(headerRows(har.response && har.response.headers))
+      kvGrid(headerRows(har.response?.headers))
     );
     this.copyText = JSON.stringify(
       {
@@ -170,8 +170,8 @@ export class DetailPane {
           status: row.status || null,
           host: host || null
         },
-        requestHeaders: headersToObj(har.request && har.request.headers),
-        responseHeaders: headersToObj(har.response && har.response.headers)
+        requestHeaders: headersToObj(har.request?.headers),
+        responseHeaders: headersToObj(har.response?.headers)
       },
       null,
       2
@@ -180,8 +180,8 @@ export class DetailPane {
 
   private renderPayload(har: HarEntry): void {
     const body = this.els.body;
-    const post = har.request && har.request.postData;
-    const query = har.request && har.request.queryString;
+    const post = har.request?.postData;
+    const query = har.request?.queryString;
     if (post && typeof post.text === 'string' && post.text) {
       body.append(el('h4', null, 'Request payload'), createJsonView(post.text).element);
       this.copyText = prettyMaybeJson(post.text);
@@ -215,7 +215,7 @@ export class DetailPane {
   private renderResponse(row: Row): void {
     const har = row.har;
     // 1. Inline body — no async, no chance of hanging.
-    const content = (har.response && har.response.content) || {};
+    const content = har.response?.content || {};
     if (typeof content.text === 'string' && content.text) {
       this.showResponseBody(content.text);
       return;

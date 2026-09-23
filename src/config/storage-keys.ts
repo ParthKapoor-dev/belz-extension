@@ -1,6 +1,10 @@
 // chrome.storage.local / chrome.storage.session keys. Every persisted piece
 // of state lives under one of these — new keys added here so name collisions
 // are easy to spot.
+//
+// The `sdExtension…V1` keys predate the extension's `belz` prefix (see
+// namespace.ts) and keep their names on purpose: renaming a key would lose
+// what every user already has stored under it.
 
 /** Feature toggles + textarea editor defaults. Written by src/designer/core/settings.ts. */
 export const SETTINGS_STORAGE_KEY = 'sdExtensionSettingsV1';
@@ -21,3 +25,10 @@ export const AD_CACHE_STORAGE_KEY = 'sdExtensionAdCacheV1';
  * scrolling / pulsing / refetching when the flag targets them.
  */
 export const FOCUS_STORAGE_KEY = 'sdExtensionPanelFocusV1';
+
+/**
+ * Prefix of an "Open in draft" handoff: the request body the AD Network panel
+ * leaves for the designer tab it opens, under `<prefix><random id>`. Session
+ * storage, read once, short-lived: see src/shared/autofill-handoff.ts.
+ */
+export const AUTOFILL_HANDOFF_KEY_PREFIX = 'belzAutofillHandoff:';

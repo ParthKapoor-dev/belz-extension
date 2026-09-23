@@ -19,35 +19,42 @@ export function restoreHeadings(styled: StyledHeadings): void {
   styled.clear();
 }
 
+/** The text of an Inputs heading: "Inputs", "Input", "2 Inputs". */
+const HEADING_TEXT = /^\d*\s*Inputs?$/i;
+/** Text nodes the heading search looks at before it gives up. */
+const MAX_TEXT_NODES = 20_000;
+/** Candidate elements (per selector) the fallback looks at before it gives up. */
+const MAX_CANDIDATES = 500;
+
+/** True for the extension's own markup, which is never the page's heading. */
+const isOwn = (el: Element): boolean => el.closest(`[${EXTENSION_OWNED_ATTR}]`) !== null;
+
 // Button injection
 export function findInputsSection(): HTMLElement | null {
   try {
-    // Strategy 1: Walk text nodes to find "Inputs" / "2 Inputs" etc.
-    const walker = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node: Node) {
-          const text = node.textContent?.trim() || '';
-          return /^\d*\s*Inputs?$/i.test(text) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
-        }
-      }
-    );
-
-    const textNode = walker.nextNode();
-    if (textNode) {
-      const el = textNode.parentElement;
-      if (el && el.children.length === 0) {
+    // Strategy 1: a text node that is exactly "Inputs" / "2 Inputs", in a
+    // leaf element. Bounded, so a page without one costs a fixed amount.
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let visited = 0;
+    for (let node = walker.nextNode(); node && visited < MAX_TEXT_NODES; node = walker.nextNode()) {
+      visited++;
+      if (!HEADING_TEXT.test(node.textContent?.trim() || '')) continue;
+      const el = node.parentElement;
+      if (el && el.children.length === 0 && !isOwn(el)) {
         log.debug('Found inputs section via text match');
         return el.parentElement;
       }
     }
 
-    // Strategy 2: Look for specific patterns
+    // Strategy 2: an element named like an inputs section whose whole text is
+    // the heading. A section merely mentioning "input" somewhere inside it is
+    // not enough: the button would land on an unrelated element.
     for (const selector of AD_INPUTS.sectionCandidates) {
       const elements = document.querySelectorAll<HTMLElement>(selector);
-      for (const el of elements) {
-        if (/inputs?/i.test(el.textContent ?? '')) {
+      const count = Math.min(elements.length, MAX_CANDIDATES);
+      for (let i = 0; i < count; i++) {
+        const el = elements[i]!;
+        if (!isOwn(el) && HEADING_TEXT.test(el.textContent?.trim() ?? '')) {
           log.debug('Found inputs section via selector match');
           return el;
         }

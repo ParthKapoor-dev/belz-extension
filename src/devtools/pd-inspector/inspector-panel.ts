@@ -7,15 +7,23 @@
 //
 // Firefox does not give DevTools panel scripts access to `chrome.tabs`, so
 // the panel cannot message the page or open tabs directly. Both go through
-// the background relay (src/background/index.ts) via `chrome.runtime`
+// the background relay (src/background/relay.ts) via `chrome.runtime`
 // messaging, which works in both Chromium and Firefox.
+//
+// Inspect mode lives in the page and swallows its clicks, so the panel keeps
+// it alive only while it is itself alive: a heartbeat every
+// TIMINGS.pdInspectHeartbeat while inspecting (the engine drops inspect mode
+// when the beats stop), an explicit "inspect off" before any reload, and
+// another from stop(), which also runs when the panel page is hidden.
 
 import { KIND_BADGE } from '../../pd-inspector-page/tree';
 import { pdPagePath, pdSymbolPath } from '../../config/endpoints';
+import { TIMINGS } from '../../config/timings';
 import { watchFocusFlag } from '../../shared/focus-flag';
 import { required } from '../../shared/dom';
 import { createLogger } from '../../shared/logger';
 import {
+  isFromExtension,
   isPdPick,
   isPdRouteChanged,
   type PdCommand,
@@ -35,6 +43,16 @@ const log = createLogger('pd-panel');
 /** How often, and how many times, to re-ask an engine that is still loading. */
 const LOADING_RETRY_MS = 400;
 const LOADING_MAX_ATTEMPTS = 12;
+
+/** The panel's elements, from panel.html. */
+function panelElements() {
+  return {
+    /** The panel's own root: everything it renders lives in here. */
+    body: required('#body'),
+    inspect: required<HTMLButtonElement>('#inspect'),
+    refresh: required<HTMLButtonElement>('#refresh')
+  };
+}
 
 /** Ids of the panel's own rendered elements. */
 const TREE_ID = 'tree';
@@ -93,14 +111,15 @@ function renderNode(n: SerializedTreeNode, container: HTMLElement): void {
 }
 
 export class PdInspectorPanel {
-  private readonly tabId = chrome.devtools.inspectedWindow.tabId;
-  /** The panel's own root: everything it renders lives in here. */
-  private readonly body = required('#body');
-  private readonly inspectBtn = required<HTMLButtonElement>('#inspect');
-  private readonly refreshBtn = required<HTMLButtonElement>('#refresh');
+  /** The inspected tab and the panel's elements: read by start(), not before. */
+  private tabId = -1;
+  private body!: HTMLElement;
+  private inspectBtn!: HTMLButtonElement;
+  private refreshBtn!: HTMLButtonElement;
 
   private started = false;
   private inspecting = false;
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
   private pageInfo: PageInfo | null = null;
   /** The detail pane of the current render; null before the first. */
   private detailPane: HTMLElement | null = null;
@@ -115,7 +134,13 @@ export class PdInspectorPanel {
   start(): void {
     if (this.started) return;
     this.started = true;
+    this.tabId = chrome.devtools.inspectedWindow.tabId;
+    const els = panelElements();
+    this.body = els.body;
+    this.inspectBtn = els.inspect;
+    this.refreshBtn = els.refresh;
     chrome.runtime.onMessage.addListener(this.onRuntimeMessage);
+    window.addEventListener('pagehide', this.onPageHide);
     this.inspectBtn.addEventListener('click', this.onInspectClick);
     this.refreshBtn.addEventListener('click', this.reload);
     chrome.devtools.network.onNavigated.addListener(this.reload);
@@ -125,8 +150,11 @@ export class PdInspectorPanel {
 
   stop(): void {
     if (!this.started) return;
+    // Before `started` goes false: leave inspect mode on the page too.
+    this.leaveInspect();
     this.started = false;
     chrome.runtime.onMessage.removeListener(this.onRuntimeMessage);
+    window.removeEventListener('pagehide', this.onPageHide);
     this.inspectBtn.removeEventListener('click', this.onInspectClick);
     this.refreshBtn.removeEventListener('click', this.reload);
     chrome.devtools.network.onNavigated.removeListener(this.reload);
@@ -141,35 +169,63 @@ export class PdInspectorPanel {
   // ---- handlers ------------------------------------------------------------
 
   private readonly onRuntimeMessage = (msg: unknown, sender: chrome.runtime.MessageSender): void => {
-    // Only the engine in the tab this DevTools window inspects.
-    if (sender.tab && sender.tab.id !== this.tabId) return;
+    // Only this extension's engine, in the tab this DevTools window inspects.
+    if (!isFromExtension(sender) || sender.tab?.id !== this.tabId) return;
     if (isPdPick(msg)) this.onPick(msg.chain);
     else if (isPdRouteChanged(msg)) this.reload();
   };
 
-  private readonly onInspectClick = (): void => {
-    this.setInspecting(!this.inspecting);
-    this.callEngine({ ns: 'pd', cmd: 'setInspect', on: this.inspecting });
+  // The button shows what the engine says, not what was asked: an engine
+  // that did not answer (no published page, reloaded) is not inspecting.
+  private readonly onInspectClick = async (): Promise<void> => {
+    const on = !this.inspecting;
+    this.setInspecting(on);
+    const resp = await this.callEngine<{ inspecting?: boolean }>({ ns: 'pd', cmd: 'setInspect', on });
+    if (!this.started) return;
+    this.setInspecting(resp?.inspecting === true);
   };
 
-  /** Refresh, navigation, or an SPA route change: the engine left inspect mode. */
+  /** Refresh, navigation, or an SPA route change: leave inspect mode, reload. */
   private readonly reload = (): void => {
-    this.setInspecting(false);
+    this.leaveInspect();
     this.load();
   };
 
   // Ctrl+Shift+P: re-fetch the tree (like a refresh click) and pulse the
   // panel so the user sees it react.
   private readonly onFocusShortcut = (): void => {
+    this.leaveInspect();
     this.load();
     this.flash.show(document.body);
   };
+
+  /** The panel is going away (DevTools closing, panel reloading). */
+  private readonly onPageHide = (): void => {
+    this.stop();
+  };
+
+  /** Tell the engine to leave inspect mode (if it was on here), and reset the button. */
+  private leaveInspect(): void {
+    if (this.inspecting) void this.callEngine({ ns: 'pd', cmd: 'setInspect', on: false });
+    this.setInspecting(false);
+  }
 
   private setInspecting(on: boolean): void {
     this.inspecting = on;
     this.inspectBtn.classList.toggle('on', on);
     this.inspectBtn.textContent = on ? 'Inspecting…' : 'Inspect';
+    if (on && !this.heartbeat) {
+      this.heartbeat = setInterval(this.beat, TIMINGS.pdInspectHeartbeat);
+    } else if (!on && this.heartbeat) {
+      clearInterval(this.heartbeat);
+      this.heartbeat = null;
+    }
   }
+
+  /** Inspect mode is still wanted: re-arms the engine's watchdog. */
+  private readonly beat = (): void => {
+    void this.callEngine({ ns: 'pd', cmd: 'setInspect', on: true });
+  };
 
   // ---- engine messaging ----------------------------------------------------
 

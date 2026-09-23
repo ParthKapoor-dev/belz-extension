@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fakeChrome } from '../fakes/chrome';
 import { OptionsPage } from '../../src/options/options-page';
-import { originPattern, readHosts, writeHosts } from '../../src/shared/hosts';
+import { hostPattern, readHosts, writeHosts } from '../../src/shared/hosts';
 
 // Drives the real OptionsPage over the real options.html markup, with the
 // fake chrome.permissions and chrome.storage. Assertions read text, class
@@ -64,7 +64,7 @@ describe('OptionsPage', () => {
 
   test('Add asks for the permission, then stores and lists the host', async () => {
     await submit('  HTTPS://Site.Test:8443/some/path ');
-    expect(fakeChrome.permissions.requested).toEqual([[originPattern('site.test')]]);
+    expect(fakeChrome.permissions.requested).toEqual([[hostPattern('site.test')]]);
     expect((await readHosts()).map((h) => [h.host, h.enabled])).toEqual([['site.test', true]]);
     expect(rows()).toEqual([{ host: 'site.test', granted: true, button: 'Revoke' }]);
     expect($<HTMLInputElement>('#add-input').value).toBe('');
@@ -109,7 +109,7 @@ describe('OptionsPage', () => {
   test('a permission removed outside the page repaints the row', async () => {
     await submit('site.test');
     fakeChrome.permissions.granted.clear();
-    fakeChrome.permissions.onRemoved.dispatch({ origins: [originPattern('site.test')] });
+    fakeChrome.permissions.onRemoved.dispatch({ origins: [hostPattern('site.test')] });
     await flush();
     expect(rows()).toEqual([{ host: 'site.test', granted: false, button: 'Grant' }]);
   });
@@ -118,7 +118,7 @@ describe('OptionsPage', () => {
     await submit('site.test');
     button('site.test').click();
     await flush();
-    expect(fakeChrome.permissions.granted.has(originPattern('site.test'))).toBe(false);
+    expect(fakeChrome.permissions.granted.has(hostPattern('site.test'))).toBe(false);
     expect(await readHosts()).toEqual([]);
     expect(items().length).toBe(0);
   });

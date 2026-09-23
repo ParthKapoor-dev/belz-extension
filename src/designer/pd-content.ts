@@ -1,7 +1,9 @@
 // Page Designer content script — loaded only on /ui-designer/*.
 //
 // PD pages get the route-agnostic features only; AD-only features (JSON editor,
-// curl autofill) are not even bundled here.
+// curl autofill, Run Test, the method link) are not even bundled here. Of the
+// keyboard shortcuts, PD has Esc Esc: Page Designer has no Run Test button, so
+// Ctrl+Shift+Enter is left to the page.
 
 import { TitleUpdater } from './features/title-updater/index';
 import { KeyboardShortcuts } from './features/keyboard/shortcuts';

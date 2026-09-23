@@ -6,6 +6,9 @@
 // page shortcuts (Run Test, say) must not fire. Every modal takes the lock
 // when it opens and releases it when it closes; the lock counts, so nested
 // modals (the settings modal over the editor) work.
+//
+// It also keeps the open modals in order, so only the topmost one answers
+// its keys: one Esc closes the settings modal, not the editor under it too.
 
 type SavedStyles = {
   body: Pick<CSSStyleDeclaration, 'overflow' | 'position' | 'top' | 'left' | 'right' | 'width'>;
@@ -16,20 +19,42 @@ type SavedStyles = {
 export class ModalLock {
   private count = 0;
   private saved: SavedStyles | null = null;
+  /** The modals holding the lock, the most recently opened last. */
+  private readonly stack: object[] = [];
 
   get isLocked(): boolean {
     return this.count > 0;
   }
 
-  lock(): void {
+  /** Take the lock; `owner`, a modal, goes on top of the stack. */
+  lock(owner?: object): void {
     this.count += 1;
+    if (owner) {
+      this.removeOwner(owner);
+      this.stack.push(owner);
+    }
     if (this.count === 1) this.freezePage();
   }
 
-  unlock(): void {
+  /** Release a hold taken by lock(); `owner` leaves the stack. */
+  unlock(owner?: object): void {
     if (this.count === 0) return;
+    if (owner) this.removeOwner(owner);
     this.count -= 1;
-    if (this.count === 0) this.releasePage();
+    if (this.count === 0) {
+      this.stack.length = 0;
+      this.releasePage();
+    }
+  }
+
+  /** True when `owner` is the most recently opened modal still open. */
+  isTopmost(owner: object): boolean {
+    return this.stack.length > 0 && this.stack[this.stack.length - 1] === owner;
+  }
+
+  private removeOwner(owner: object): void {
+    const i = this.stack.indexOf(owner);
+    if (i !== -1) this.stack.splice(i, 1);
   }
 
   private freezePage(): void {

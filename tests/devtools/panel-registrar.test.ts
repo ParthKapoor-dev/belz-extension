@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { fakeChrome } from '../fakes/chrome';
 import { PanelRegistrar } from '../../src/devtools/panel-registrar';
 import { writeHosts } from '../../src/shared/hosts';
+import { waitFor } from '../wait';
 
 // PanelRegistrar adds the two panels only when DevTools inspects an allowed,
 // granted site. The inspected page is simulated through evalHandler.
@@ -89,8 +90,7 @@ describe('PanelRegistrar', () => {
     await flush();
     expect(created()).toEqual([]);
     await writeHosts([{ host: 'site.test', enabled: true }]);
-    await flush();
-    expect(created().length).toBe(2);
+    await waitFor(() => created().length === 2, 'both panels');
   });
 
   test('start() twice adds one set of listeners; stop() removes them and stops creating', async () => {

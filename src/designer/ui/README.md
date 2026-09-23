@@ -7,7 +7,7 @@ UI building blocks shared by the designer features: the floating hover overlay, 
 | File | What it does |
 |---|---|
 | [`hover-overlay.ts`](hover-overlay.ts) | `HoverOverlay`: one floating button group, placed over whichever element the pointer or focus is on |
-| [`modal-lock.ts`](modal-lock.ts) | `ModalLock` and the `modalLock` singleton: freezes page scroll and blocks page shortcuts while any modal is open |
+| [`modal-lock.ts`](modal-lock.ts) | `ModalLock` and the `modalLock` singleton: freezes page scroll and blocks page shortcuts while any modal is open, and knows which open modal is on top |
 | [`toast.ts`](toast.ts) | `Toast` and the `toast` singleton: a short message in the bottom-right corner |
 | [`modal.ts`](modal.ts) | Shared inline-style objects for modal overlay, dialog, header, footer, title and icon button |
 | [`styles.ts`](styles.ts) | Icon and primary button styles, the `StyleMap` type, and `applyHoverEffect()` |
@@ -27,6 +27,8 @@ Because it uses delegation, elements added later need no registration and no res
 
 **`ModalLock`** counts `lock()` / `unlock()` calls, so nested modals work (the settings modal over the editor). On the first lock it saves the body styles and scroll position and fixes the body in place. On the last unlock it restores them. `KeyboardShortcuts` checks `modalLock.isLocked` and does nothing while it is set.
 
+It also keeps the open modals in order. A modal passes itself as the owner: `lock(owner)` puts it on top of the stack and `unlock(owner)` takes it off; the stack is emptied when the count reaches zero. `isTopmost(owner)` tells a modal whether it is the most recently opened one still open. Each modal answers its keys (Escape, and the editor's Ctrl+S / Ctrl+F) only while it is topmost, and marks a handled Escape (`preventDefault`, `stopPropagation`), so one press closes one modal.
+
 **`Toast`** reuses one element (marked `EXTENSION_OWNED_ATTR`) and fades it out after 1.2 s. If the host app wiped it from the page, the next `show()` builds a new one.
 
 ## How it connects
@@ -38,13 +40,13 @@ Because it uses delegation, elements added later need no registration and no res
 
 - Styling is inline: style objects applied with `Object.assign(el.style, ...)`. Take colours and fonts from `theme.ts` rather than new literals.
 - `modal-lock.ts` and `toast.ts` hold page-wide state and carry a `belz-singleton` marker. They must be bundled once, or the lazily loaded editor would lock a different copy than the one the shortcuts check (see [AGENTS.md](../../../AGENTS.md)).
-- Every modal calls `modalLock.lock()` when it opens and `unlock()` when it closes, exactly once each.
+- Every modal calls `modalLock.lock(this)` when it opens and `unlock(this)` when it closes, exactly once each, and checks `isTopmost(this)` (and `event.defaultPrevented`) before acting on a key.
 
 ## Testing
 
-[`tests/designer/ui/hover-overlay.test.ts`](../../../tests/designer/ui/hover-overlay.test.ts) covers showing and hiding, the single controls element, button clicks, skipping the extension's own UI, and `stop()`. [`tests/designer/ui/modal-lock.test.ts`](../../../tests/designer/ui/modal-lock.test.ts) covers the lock. The e2e run ([`tests/e2e/`](../../../tests/e2e/)) checks that the lazy editor and the eager shortcut share one lock. How to run them is in the Development section of the [root README](../../../README.md).
+[`tests/designer/ui/hover-overlay.test.ts`](../../../tests/designer/ui/hover-overlay.test.ts) covers showing and hiding, the single controls element, button clicks, skipping the extension's own UI, and `stop()`. [`tests/designer/ui/modal-lock.test.ts`](../../../tests/designer/ui/modal-lock.test.ts) covers the lock, and [`tests/designer/features/modal-escape.test.ts`](../../../tests/designer/features/modal-escape.test.ts) the topmost-modal rule with real modals. The e2e run ([`tests/e2e/`](../../../tests/e2e/)) checks that the lazy editor and the eager shortcut share one lock. How to run them is in the Development section of the [root README](../../../README.md).
 
 ## Adding or changing things
 
 - **A new hover button on some kind of element:** create a `HoverOverlay` in a feature class with a new `ns()` id and a `resolveTarget`, and call its `start()` / `stop()` from the feature's. Keep `resolveTarget` cheap: it runs on every `mouseover`.
-- **A new modal:** use the `MODAL_*` styles from `modal.ts`, mark the overlay with `EXTENSION_OWNED_ATTR`, and take and release `modalLock`.
+- **A new modal:** use the `MODAL_*` styles from `modal.ts`, mark the overlay with `EXTENSION_OWNED_ATTR`, take and release `modalLock` with the modal as owner, and act on keys only while `isTopmost()`.

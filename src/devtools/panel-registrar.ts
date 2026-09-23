@@ -5,9 +5,10 @@
 // pd-inspector/), which the browser loads when the user first opens each
 // panel tab.
 //
-// The panel pages (`panel.html`, `panel-pd.html`) sit at the root of the
-// packaged extension (scripts/pack.mjs puts them there, not under dist/): Chromium resolves these paths relative to the extension
-// root, but Firefox resolves them relative to the devtools page — a
+// The panel pages (PANEL_PAGES in config/extension-files.ts: `panel.html`,
+// `panel-pd.html`) sit at the root of the packaged extension (scripts/pack.mjs
+// puts them there, not under dist/): Chromium resolves these paths relative to
+// the extension root, but Firefox resolves them relative to the devtools page — a
 // `dist/panel.html` would become `dist/dist/panel.html` there and load blank.
 //
 // Panels are gated to the user's allowed-sites list. Without this check the
@@ -16,15 +17,16 @@
 // window, not per-host. We check on init and again on navigation so panels
 // appear the moment the user reaches an allowed site.
 
-import { isHostsChange, normalizeHost, readEnabledHosts } from '../shared/hosts';
+import { enabledHostSet, isHostsChange, normalizeHost } from '../shared/hosts';
+import { PANEL_PAGES } from '../config/extension-files';
 import { evalInPage } from './inspected';
 import { createLogger } from '../shared/logger';
 
 const log = createLogger('devtools');
 
 const PANELS = [
-  { title: 'AD Network', page: 'panel.html' },
-  { title: 'PD Inspector', page: 'panel-pd.html' }
+  { title: 'AD Network', page: PANEL_PAGES.adNetwork },
+  { title: 'PD Inspector', page: PANEL_PAGES.pdInspector }
 ];
 
 /**
@@ -37,10 +39,10 @@ async function currentHost(): Promise<string> {
   return typeof result === 'string' ? normalizeHost(result) ?? '' : '';
 }
 
-/** The granted hosts from the user's site list, lowercased. */
+/** The granted hosts from the user's site list, normalised. */
 async function allowedHosts(): Promise<Set<string>> {
   try {
-    return new Set((await readEnabledHosts()).map((h) => h.host.toLowerCase()));
+    return await enabledHostSet();
   } catch (err) {
     log.warn('cannot read the allowed sites:', err);
     return new Set();

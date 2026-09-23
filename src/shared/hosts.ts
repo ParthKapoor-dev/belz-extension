@@ -47,14 +47,26 @@ export function normalizeHost(input: string | null | undefined): string | null {
   return host;
 }
 
-/** A match pattern for `path` on `host`; the whole site by default. */
+/**
+ * A match pattern for `path` on `host`; the whole site by default, which is
+ * also the pattern a host's permission is requested and checked for. Always
+ * https: the extension never asks for plain-http access.
+ */
 export function hostPattern(host: string, path = '/*'): string {
   return `https://${host}${path}`;
 }
 
-/** The match pattern a host's permission is granted for. */
-export function originPattern(host: string): string {
-  return hostPattern(host);
+/**
+ * The host of an https URL, normalised like the stored list; null for any
+ * other scheme or an unparsable URL.
+ */
+export function httpsHostOf(url: string | null | undefined): string | null {
+  try {
+    const parsed = new URL(url || '');
+    return parsed.protocol === 'https:' ? normalizeHost(parsed.hostname) : null;
+  } catch {
+    return null;
+  }
 }
 
 function isHostEntry(value: unknown): value is HostEntry {
@@ -73,6 +85,16 @@ export async function readHosts(): Promise<HostEntry[]> {
 /** Entries the extension should act on: granted. */
 export async function readEnabledHosts(): Promise<HostEntry[]> {
   return (await readHosts()).filter((h) => h.enabled === true);
+}
+
+/** The granted hosts, normalised. */
+export async function enabledHostSet(): Promise<Set<string>> {
+  const set = new Set<string>();
+  for (const entry of await readEnabledHosts()) {
+    const host = normalizeHost(entry.host);
+    if (host) set.add(host);
+  }
+  return set;
 }
 
 export async function writeHosts(hosts: HostEntry[]): Promise<void> {

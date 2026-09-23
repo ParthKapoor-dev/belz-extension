@@ -48,3 +48,35 @@ describe('AD method cache', () => {
     expect(cache.size).toBe(0);
   });
 });
+
+describe('two DevTools windows sharing the stored cache', () => {
+  test('each window\'s entries survive the other\'s writes', async () => {
+    const a = new MethodCache();
+    const b = new MethodCache();
+    await Promise.all([a.hydrate(), b.hydrate()]);
+    a.write('o', 'from-a', { name: 'A' });
+    b.write('o', 'from-b', { name: 'B' });
+    await a.flush();
+    await b.flush(); // written after a: must not drop a's entry
+
+    const reopened = new MethodCache();
+    await reopened.hydrate();
+    expect([reopened.read('o', 'from-a')?.data.name, reopened.read('o', 'from-b')?.data.name]).toEqual(['A', 'B']);
+    // And b learned a's entry when it flushed.
+    expect(b.read('o', 'from-a')?.data.name).toBe('A');
+  });
+
+  test('the newer write of one entry wins', async () => {
+    const a = new MethodCache();
+    const b = new MethodCache();
+    await Promise.all([a.hydrate(), b.hydrate()]);
+    a.write('o', 'u', { name: 'old' });
+    later(HOUR);
+    b.write('o', 'u', { name: 'new' });
+    await b.flush();
+    await a.flush(); // a's entry is older: it does not overwrite b's
+    const reopened = new MethodCache();
+    await reopened.hydrate();
+    expect(reopened.read('o', 'u')?.data.name).toBe('new');
+  });
+});

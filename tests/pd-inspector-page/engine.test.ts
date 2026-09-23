@@ -4,6 +4,7 @@ import { PdEngine } from '../../src/pd-inspector-page/engine';
 import { Highlighter } from '../../src/pd-inspector-page/highlight';
 import { ns } from '../../src/config/namespace';
 import type { EngineState } from '../../src/pd-inspector-page/types';
+import { sleep, waitFor } from '../wait';
 
 // Lifecycle of the PD Inspector's page side: PdEngine and its Highlighter.
 // start()/stop() are idempotent and undo every listener; a build that a
@@ -51,7 +52,7 @@ function trackListeners(target: EventTarget) {
 /** Ask the engine for its state the way the panel's relay does. */
 function getState(): EngineState | undefined {
   let answer: EngineState | undefined;
-  fakeChrome.runtime.onMessage.dispatch({ ns: 'pd', cmd: 'getState' }, {}, (r: EngineState) => {
+  fakeChrome.runtime.onMessage.dispatch({ ns: 'pd', cmd: 'getState' }, { id: 'test-extension' }, (r: EngineState) => {
     answer = r;
   });
   return answer;
@@ -119,7 +120,7 @@ describe('PdEngine', () => {
     expect(windowListeners.count('scroll')).toBe(1);
 
     // Inspect mode adds document listeners; stop() must take them off too.
-    fakeChrome.runtime.onMessage.dispatch({ ns: 'pd', cmd: 'setInspect', on: true }, {}, () => {});
+    fakeChrome.runtime.onMessage.dispatch({ ns: 'pd', cmd: 'setInspect', on: true }, { id: 'test-extension' }, () => {});
     expect([documentListeners.count('mousemove'), documentListeners.count('click')]).toEqual([1, 1]);
 
     engine.stop();
@@ -190,5 +191,67 @@ describe('PdEngine', () => {
     } finally {
       globalThis.fetch = (async () => ({ ok: false, status: 500, json: async () => ({}) })) as unknown as typeof fetch;
     }
+  });
+});
+
+describe('PdEngine inspect mode', () => {
+  const EXTENSION = { id: 'test-extension' };
+  /** Send the engine a command the way the background relay does; returns its answer. */
+  function command(msg: unknown, sender: unknown = EXTENSION): unknown {
+    let answer: unknown;
+    const results = fakeChrome.runtime.onMessage.dispatch(msg, sender, (r: unknown) => { answer = r; });
+    return results.includes(true) ? answer : 'ignored';
+  }
+  /** A click on the page; true when inspect mode swallowed it. */
+  function click(): boolean {
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    document.body.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  let engine: PdEngine;
+  beforeEach(() => {
+    history.replaceState(null, '', '/pages/app/home');
+    engine = new PdEngine(150); // a short watchdog, so the tests need not wait long
+    engine.start();
+    // Every element resolves to one component, so a click is a pick.
+    (engine as unknown as { resolver: unknown }).resolver = {
+      resolve: () => ({
+        chain: ['app/home', 'Footer'], owner: 'Footer', exact: true,
+        node: { name: 'div', className: '' }, anchorEl: document.body
+      })
+    };
+  });
+  afterEach(() => engine.stop());
+
+  test('a click in inspect mode is a pick for the panel, and never reaches the page', () => {
+    expect(command({ ns: 'pd', cmd: 'setInspect', on: true })).toEqual({ ok: true, inspecting: true });
+    expect(click()).toBe(true);
+    expect(fakeChrome.runtime.sent).toEqual([{ ns: 'pd', type: 'pick', chain: ['app/home', 'Footer'], nodeName: 'div' }]);
+    command({ ns: 'pd', cmd: 'setInspect', on: false });
+    expect(click()).toBe(false);
+  });
+
+  test('without the panel\'s heartbeat, inspect mode ends by itself', async () => {
+    command({ ns: 'pd', cmd: 'setInspect', on: true });
+    await waitFor(() => !click(), 'the watchdog to leave inspect mode', 2000);
+    expect(documentListeners.count('click')).toBe(0);
+    expect(command({ ns: 'pd', cmd: 'getState' }) !== 'ignored').toBe(true);
+  });
+
+  test('each heartbeat keeps inspect mode on', async () => {
+    command({ ns: 'pd', cmd: 'setInspect', on: true });
+    for (let i = 0; i < 8; i++) { // 200 ms in all: longer than the watchdog
+      await sleep(25); // well inside the watchdog
+      command({ ns: 'pd', cmd: 'setInspect', on: true });
+    }
+    expect(click()).toBe(true);
+  });
+
+  test('commands from anyone but this extension, or malformed ones, are ignored', () => {
+    expect(command({ ns: 'pd', cmd: 'setInspect', on: true }, { id: 'another-extension' })).toBe('ignored');
+    expect(command({ ns: 'pd', cmd: 'setInspect', on: 'yes' })).toBe('ignored');
+    expect(command({ ns: 'pd', cmd: 'highlightComponent' })).toBe('ignored');
+    expect(click()).toBe(false);
   });
 });

@@ -37,10 +37,33 @@ export function firstString(...values: unknown[]): string | null {
   return null;
 }
 
-function nameFromDefinition(def: unknown): string | null {
-  if (!def || typeof def !== 'object') return null;
-  const d = def as { name?: unknown; methodName?: unknown; metadata?: { name?: unknown; methodName?: unknown } };
-  return firstString(d.name, d.methodName, d.metadata?.name, d.metadata?.methodName);
+/** `value` as an object, or null. */
+export function asObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * The method definition inside a V1 chain document: its `jsonDefinition`,
+ * which the platform sends as a JSON string (or, on some builds, an object).
+ */
+export function definitionOf(doc: unknown): Record<string, unknown> | null {
+  let def: unknown = asObject(doc)?.jsonDefinition;
+  if (typeof def === 'string') {
+    try {
+      def = JSON.parse(def);
+    } catch {
+      return null;
+    }
+  }
+  return asObject(def);
+}
+
+/** The method name a definition object carries, in any of the shapes seen. */
+export function nameFromDefinition(def: unknown): string | null {
+  const d = asObject(def);
+  if (!d) return null;
+  const metadata = asObject(d.metadata);
+  return firstString(d.name, d.methodName, metadata?.name, metadata?.methodName);
 }
 
 /**
@@ -58,18 +81,5 @@ export function extractMethodNameFromChainResponse(body: unknown): string | null
       return null;
     }
   }
-  if (!obj || typeof obj !== 'object') return null;
-
-  const direct = nameFromDefinition(obj);
-  if (direct) return direct;
-
-  let def: unknown = (obj as { jsonDefinition?: unknown }).jsonDefinition;
-  if (typeof def === 'string') {
-    try {
-      def = JSON.parse(def);
-    } catch {
-      def = null;
-    }
-  }
-  return nameFromDefinition(def);
+  return nameFromDefinition(obj) ?? nameFromDefinition(definitionOf(obj));
 }

@@ -1,19 +1,31 @@
-// Keyboard shortcuts on designer pages: Run Test, Esc Esc, copy link, JSON editor.
-import { triggerRunTest } from '../run-test/index';
+// Keyboard shortcuts on designer pages: Esc Esc everywhere, and the actions a
+// page passes in (Run Test, copy link, JSON editor: Automation Designer only).
 import { modalLock } from '../../ui/modal-lock';
-import { extractMethodName, extractServiceCategory } from '../../utils/dom';
 import { toast } from '../../ui/toast';
 import { Rearm } from '../../core/rearm';
 import { pageObserver } from '../../core/observer';
-import { AD_ROUTE_PREFIX } from '../../../config/routes';
 import { TIMINGS } from '../../../config/timings';
 import type { Feature } from '../../core/feature';
 
 // Window within which a second Escape press counts as an "Esc Esc".
 const DOUBLE_ESCAPE_WINDOW_MS = 500;
 
+/**
+ * What a page wires up. Each action is passed in by the content script of the
+ * page that has it, so a page without Run Test (Page Designer) neither
+ * bundles nor swallows its chord.
+ */
+export interface ShortcutActions {
+  /** Ctrl+Shift+Enter: `available()` finds the page's Run Test button; `run()` clicks it. */
+  runTest?: { available(): boolean; run(): void };
+  /** Shift+L: copy a link to the open method. */
+  copyLink?: () => void;
+  /** Shift+J: open the JSON input editor; false when it is switched off. */
+  openJsonEditor?: () => boolean;
+}
+
 // Fields whose edits the AD app only commits once focus leaves them.
-function isEditableElement(element: Element | null): element is HTMLElement {
+function isEditableElement(element: Element | null | undefined): element is HTMLElement {
   if (!element) return false;
   const tag = element.tagName;
   return (
@@ -24,11 +36,30 @@ function isEditableElement(element: Element | null): element is HTMLElement {
   );
 }
 
+/** The focused element, looking inside open shadow roots. */
+function deepActiveElement(): Element | null {
+  let element = document.activeElement;
+  while (element?.shadowRoot?.activeElement) element = element.shadowRoot.activeElement;
+  return element;
+}
+
+/**
+ * True while the user is typing: the key comes from an editable element
+ * (inside a shadow root too), or focus is in a field or in an iframe, whose
+ * own fields this document cannot see.
+ */
+function isTyping(event: KeyboardEvent): boolean {
+  const origin = event.composedPath?.()[0];
+  if (origin instanceof Element && isEditableElement(origin)) return true;
+  const active = deepActiveElement();
+  return isEditableElement(active) || active?.tagName === 'IFRAME';
+}
+
 // Move focus off the active field so its pending value is registered. AD test
 // inputs only commit an edit on blur, so an in-place edit is otherwise lost
 // when a shortcut acts on the page.
 function commitActiveElement(): boolean {
-  const element = document.activeElement;
+  const element = deepActiveElement();
   if (!isEditableElement(element)) return false;
 
   element.dispatchEvent(new Event('change', { bubbles: true }));
@@ -37,34 +68,9 @@ function commitActiveElement(): boolean {
   return true;
 }
 
-async function copyAdRichLink(): Promise<void> {
-  const category = extractServiceCategory();
-  const name = extractMethodName();
-  const url = window.location.href;
-
-  const label = [category, name].filter(Boolean).join('::');
-
-  const html = `<a href="${url}">${label}</a>`;
-  const plain = `[${label}](${url})`;
-
-  try {
-    await navigator.clipboard.write([
-      new ClipboardItem({
-        'text/html': new Blob([html], { type: 'text/html' }),
-        'text/plain': new Blob([plain], { type: 'text/plain' })
-      })
-    ]);
-    toast.show(`Copied: ${label}`);
-  } catch {
-    // fallback: plain URL
-    try {
-      await navigator.clipboard.writeText(plain);
-      toast.show('Copied link (plain)');
-    } catch {
-      toast.show('Failed to copy link');
-    }
-  }
-}
+/** A plain Shift+letter chord: no Ctrl, Alt or Meta. */
+const isShiftLetter = (event: KeyboardEvent, letter: string): boolean =>
+  event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && event.key === letter;
 
 export class KeyboardShortcuts implements Feature {
   private lastEscapeTime = 0;
@@ -74,12 +80,10 @@ export class KeyboardShortcuts implements Feature {
    */
   private readonly rearm = new Rearm(() => this.attach());
   private unsubscribe: (() => void) | null = null;
+  private runTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /**
-   * @param openJsonEditor What Shift+J opens. Only the AD content script
-   *   passes one, so the JSON editor is not bundled into PD pages.
-   */
-  constructor(private readonly openJsonEditor: (() => void) | null = null) {}
+  /** @param actions What this page wires up; see ShortcutActions. */
+  constructor(private readonly actions: ShortcutActions = {}) {}
 
   start(): void {
     this.attach();
@@ -95,6 +99,8 @@ export class KeyboardShortcuts implements Feature {
     this.rearm.stop();
     this.unsubscribe?.();
     this.unsubscribe = null;
+    if (this.runTimer) clearTimeout(this.runTimer);
+    this.runTimer = null;
     window.removeEventListener('keydown', this.onKeydown, true);
   }
 
@@ -106,20 +112,32 @@ export class KeyboardShortcuts implements Feature {
     window.addEventListener('keydown', this.onKeydown, true);
   };
 
+  /** Stop the page (and the browser) acting on a key we handled. */
+  private claim(event: KeyboardEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
   // An arrow property, so add/removeEventListener always see the same function.
   private readonly onKeydown = (event: KeyboardEvent): void => {
     if (modalLock.isLocked) return;
+    const { runTest, copyLink, openJsonEditor } = this.actions;
 
-    // Run Test — Ctrl+Shift+Enter. Commit any focused field first so the test
-    // runs against the edited value rather than a stale one.
-    if (event.ctrlKey && event.shiftKey && event.key === 'Enter') {
-      event.preventDefault();
-      event.stopPropagation();
+    // Run Test — Ctrl+Shift+Enter, even while typing. Only claimed when the
+    // page has a Run Test button to click. Commit any focused field first so
+    // the test runs against the edited value rather than a stale one.
+    if (runTest && event.ctrlKey && event.shiftKey && event.key === 'Enter') {
+      if (!runTest.available()) return;
+      this.claim(event);
       if (commitActiveElement()) {
         // Give the AD app a moment to register the blur before running.
-        setTimeout(triggerRunTest, TIMINGS.runTestCommitSettle);
+        if (this.runTimer) clearTimeout(this.runTimer);
+        this.runTimer = setTimeout(() => {
+          this.runTimer = null;
+          runTest.run();
+        }, TIMINGS.runTestCommitSettle);
       } else {
-        triggerRunTest();
+        runTest.run();
       }
       return;
     }
@@ -128,10 +146,9 @@ export class KeyboardShortcuts implements Feature {
     if (event.key === 'Escape') {
       const now = Date.now();
       const isDoubleEscape = now - this.lastEscapeTime <= DOUBLE_ESCAPE_WINDOW_MS;
-      if (isDoubleEscape && isEditableElement(document.activeElement)) {
+      if (isDoubleEscape && isEditableElement(deepActiveElement())) {
         this.lastEscapeTime = 0;
-        event.preventDefault();
-        event.stopPropagation();
+        this.claim(event);
         commitActiveElement();
         toast.show('Focus returned to page');
       } else {
@@ -140,25 +157,18 @@ export class KeyboardShortcuts implements Feature {
       return;
     }
 
-    // Copy AD rich link — Shift+L (ignored while typing in a field).
-    if (event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === 'L') {
-      if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
-      if (isEditableElement(document.activeElement)) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      copyAdRichLink();
+    // Plain letters are text while the user types: never act on them then.
+    if (copyLink && isShiftLetter(event, 'L')) {
+      if (isTyping(event)) return;
+      this.claim(event);
+      copyLink();
       return;
     }
 
-    // Open the JSON input editor — Shift+J (ignored while typing in a field).
-    if (this.openJsonEditor && event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === 'J') {
-      if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
-      if (isEditableElement(document.activeElement)) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      this.openJsonEditor();
+    if (openJsonEditor && isShiftLetter(event, 'J')) {
+      if (isTyping(event)) return;
+      // Switched off: leave the key to the page.
+      if (openJsonEditor()) this.claim(event);
     }
   };
 }

@@ -55,7 +55,7 @@ The output is one line per browser: passed with the number of checks, skipped, o
 ## Conventions
 
 - Match patterns in the patched manifest carry no port. Firefox rejects a pattern with one, and a port-less pattern matches every port.
-- The page reads the extension's own element ids (`#sdExtensionTextareaControls`, `.sdExtensionTextareaLauncher`, `#sdExtensionTextareaEditorLanguage`, `#sdExtensionTextareaEditorStatus`, `#sdExtensionTextareaEditorOverlay`). Renaming one in `src/` means updating `page.html`.
+- The page reads the extension's own element ids (`#belzTextareaControls`, `.belzTextareaLauncher`, `#belzTextareaEditorLanguage`, `#belzTextareaEditorStatus`, `#belzTextareaEditorOverlay`). Renaming one in `src/` means updating `page.html`.
 
 ## Adding or changing things
 

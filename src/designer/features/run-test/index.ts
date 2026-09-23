@@ -21,3 +21,12 @@ export function triggerRunTest(): void {
   button.click();
   toast.show('Run Test triggered');
 }
+
+/**
+ * The Run Test action of KeyboardShortcuts. Only the Automation Designer
+ * content script passes it: Page Designer has no Run Test button.
+ */
+export const runTestAction = {
+  available: (): boolean => findRunTestButton() !== null,
+  run: triggerRunTest
+};

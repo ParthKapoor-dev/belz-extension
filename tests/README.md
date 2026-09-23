@@ -9,10 +9,11 @@ The extension's tests. Unit tests run under `bun test` against the source in `sr
 | [`setup.ts`](setup.ts) | Preloaded before every test file: starts the memory guard, installs happy-dom and the fake `chrome`. |
 | [`memory-guard-worker.ts`](memory-guard-worker.ts) | Worker thread that kills the test process if its memory passes a limit. |
 | [`tsconfig.json`](tsconfig.json) | Type-check config for the tests: extends the root one, adds Bun and `chrome` types. |
+| [`wait.ts`](wait.ts) | Waiting helpers: `nextTask()`, `sleep()` and `waitFor(condition, what, timeoutMs)`. |
 | [`fakes/`](fakes/) | The in-memory `chrome` API. |
 | [`fixtures/`](fixtures/) | Minimal Automation Designer markup for DOM-reading tests. |
-| [`background/`](background/) | Tests for `src/background/`: content-script registration and seeding. |
-| [`build/`](build/) | Runs the real build and checks its output. |
+| [`background/`](background/) | Tests for `src/background/`: content-script registration and seeding, the message relay and the browser commands. |
+| [`build/`](build/) | Checks the build: the real bundle output, and the per-browser manifests. |
 | [`config/`](config/) | Tests for `src/config/`: the settings schema. |
 | [`designer/`](designer/) | Tests for `src/designer/`: core, features and UI. |
 | [`devtools/`](devtools/) | Tests for `src/devtools/`: both panels, their helpers, and `PanelRegistrar`. |
@@ -20,7 +21,7 @@ The extension's tests. Unit tests run under `bun test` against the source in `sr
 | [`e2e/`](e2e/) | End-to-end run of the packaged extension in Chromium and Firefox. Not part of `bun test`. |
 | [`options/`](options/) | Tests for `src/options/`: the options page over its real markup. |
 | [`pd-inspector-page/`](pd-inspector-page/) | Tests for `src/pd-inspector-page/`: config fetching, trees, the resolver, and the `PdEngine` / `Highlighter` lifecycle. |
-| [`shared/`](shared/) | Tests for `src/shared/`: host list and logger. |
+| [`shared/`](shared/) | Tests for `src/shared/`: host list, logger and rich links. |
 
 ## How it works
 
@@ -38,7 +39,8 @@ The extension's tests. Unit tests run under `bun test` against the source in `sr
 - **Layout mirrors `src/`.** A test for `src/<area>/<file>.ts` goes in `tests/<area>/`. Tests import source with relative paths (`../../src/...`).
 - **Never pass a value that holds DOM nodes to `expect()`.** When such an assertion fails, bun's failure printer walks the whole happy-dom object graph and allocates without limit. It has reached about 10 GB and been killed by the kernel's out-of-memory killer, taking the terminal with it. Compare plain fields, or compare identities with `expect(a === b).toBe(true)`. Several files map DOM-holding results to plain summaries first (see `summary()` in [`designer/features/json-editor.test.ts`](designer/features/json-editor.test.ts)).
 - **The memory guard is a backstop, not a fix.** `memory-guard-worker.ts` checks the process RSS every 200 ms and sends `SIGKILL` once it passes 1024 MB, printing the likely cause. It runs on its own thread because the runaway printing is synchronous: the main thread never returns to its event loop, so a timer there would never fire. Set `BELZ_TEST_MEMORY_LIMIT_MB` to change the limit.
-- **Stop what you start.** A test that starts a class with timers or listeners calls `stop()` in `afterEach`/`afterAll`, so nothing outlives the file.
+- **Stop what you start.** A test that starts a class with timers or listeners calls `stop()` in `afterEach`/`afterAll`, so nothing outlives the file. `bootstrap()` returns a teardown for the same purpose.
+- **Wait on a condition, not a guess.** Use `waitFor()` from [`wait.ts`](wait.ts) until the expected state holds; it returns as soon as it does and has a generous timeout. `nextTask()` lets queued timers run, which includes the fake's `storage.onChanged`. A fixed `sleep()` is only for showing that something does *not* happen, with a wide margin. bun's fake timers cannot advance time in the Bun version used, so they are not used.
 - **Restore globals you replace.** Tests that stub `globalThis.fetch` keep the real one and put it back in `afterEach`/`afterAll`.
 - Repo-wide testing rules are in [AGENTS.md](../AGENTS.md) ("Testing").
 
@@ -60,3 +62,4 @@ See the root [README.md](../README.md) Development section for how to run them.
 2. Name it `<topic>.test.ts` and import from `bun:test`.
 3. Use `fakeChrome` from [`fakes/chrome.ts`](fakes/chrome.ts) for extension APIs. If the code needs a `chrome.*` API the fake lacks, add it there.
 4. Assert on plain values only.
+5. Wait with `waitFor()` from [`wait.ts`](wait.ts), not a fixed sleep.

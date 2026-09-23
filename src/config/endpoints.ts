@@ -44,11 +44,3 @@ export function pdPagePath(referencePageId: string): string {
 export function pdSymbolPath(name: string): string {
   return `${PD_ROUTE_PREFIX}symbol/${encodeURIComponent(name)}`;
 }
-
-/**
- * URL parameter that carries a base64 request body from the AD Network
- * panel's "open in draft" action to the designer page, where the
- * curl-autofill content script consumes it and fills the method's inputs.
- * Produced and consumed entirely within this extension.
- */
-export const AUTOFILL_PARAM = '_sdx_autofill';

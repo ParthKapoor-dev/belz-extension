@@ -1,45 +1,78 @@
+// "Open in draft" autofill: fills the method's test inputs with the request
+// body the AD Network panel handed over when it opened this tab.
+//
+// The URL only carries a one-time id in its fragment (`#belz-autofill=<id>`);
+// the body itself waits in extension storage, and the background hands it to
+// this page once (see shared/autofill-handoff.ts and background/relay.ts). A
+// link without a stored body behind it (copied, reopened, forged) fills
+// nothing. This script only runs on Automation Designer pages of allowed
+// sites, and the background checks that again before answering.
 import { syncJSONToInputs } from '../json-editor/sync';
 import { extractAllInputs } from '../json-editor/extractor';
 import { toast } from '../../ui/toast';
-import { AUTOFILL_PARAM } from '../../../config/endpoints';
+import { AUTOFILL_FRAGMENT_PARAM, AUTOFILL_MESSAGE_KEY } from '../../../config/namespace';
 import { AD_ROUTE_PREFIX } from '../../../config/routes';
 import { AD_INPUTS } from '../../../config/selectors';
 import { TIMINGS } from '../../../config/timings';
 import { createLogger } from '../../../shared/logger';
+import type { TakeAutofillMessage } from '../../../shared/messages';
 
 const log = createLogger('curl-autofill');
 
-
 /**
- * The JSON request body carried by the autofill URL parameter, or null when
- * the parameter is absent or does not decode to valid JSON.
+ * The handoff id in a URL fragment such as `#belz-autofill=<id>` or
+ * `#tab=2&belz-autofill=<id>`, and the fragment without that one parameter
+ * (everything else kept as it was; '' when nothing is left).
  */
-export function decodeAutofillParam(search: string): string | null {
-  const encoded = new URLSearchParams(search).get(AUTOFILL_PARAM);
-  if (!encoded) return null;
+export function parseAutofillFragment(hash: string): { id: string | null; rest: string } {
+  const parts = hash.replace(/^#/, '').split('&').filter((part) => part !== '');
+  const prefix = `${AUTOFILL_FRAGMENT_PARAM}=`;
+  const mine = parts.find((part) => part.startsWith(prefix));
+  if (!mine) return { id: null, rest: hash };
+  const others = parts.filter((part) => part !== mine);
+  return { id: mine.slice(prefix.length) || null, rest: others.length ? `#${others.join('&')}` : '' };
+}
+
+/** Ask the background for the body stored under `id`; null when there is none. */
+async function takeBody(id: string): Promise<string | null> {
+  const message: TakeAutofillMessage = { [AUTOFILL_MESSAGE_KEY]: 'take', id };
   try {
-    const jsonString = atob(encoded);
-    JSON.parse(jsonString);
-    return jsonString;
+    const body: unknown = await chrome.runtime.sendMessage(message);
+    return typeof body === 'string' ? body : null;
   } catch (err) {
-    log.warn('failed to decode/parse param:', err);
+    log.warn('cannot reach the extension for the autofill body:', err);
     return null;
   }
 }
 
-export function startCurlAutofillFeature(): void {
+/**
+ * Consume this page's autofill handoff, if its URL has one: remove the marker
+ * from the URL (and only the marker: the query and the rest of the fragment
+ * stay), fetch the body, and fill the inputs once they render. Resolves once
+ * the body is known; the fill itself goes on after that.
+ */
+export async function startCurlAutofillFeature(): Promise<void> {
   if (!window.location.pathname.startsWith(AD_ROUTE_PREFIX)) return;
-  if (!new URLSearchParams(window.location.search).has(AUTOFILL_PARAM)) return;
+  const { id, rest } = parseAutofillFragment(window.location.hash);
+  if (!id) return;
 
-  // The parameter is consumed once: strip it before anything else, so a
-  // reload does not autofill a second time.
-  log.debug('param detected, removing from URL');
-  const jsonString = decodeAutofillParam(window.location.search);
-  history.replaceState(null, '', window.location.pathname);
-  if (!jsonString) return;
+  // Consumed once: strip the marker before anything else, so a reload does
+  // not ask again. The history state is kept: the app's router keeps its own there.
+  const { pathname, search } = window.location;
+  history.replaceState(history.state, '', pathname + search + rest);
 
-  log.debug('decoded JSON successfully, keys:', Object.keys(JSON.parse(jsonString)));
-  waitForPageTitleThenSync(jsonString);
+  const jsonString = await takeBody(id);
+  if (!jsonString) {
+    log.debug('no autofill body for this link (already used, expired, or not from this browser)');
+    return;
+  }
+  try {
+    log.debug('autofill body received, keys:', Object.keys(JSON.parse(jsonString) as object));
+  } catch (err) {
+    log.warn('the autofill body is not JSON:', err);
+    return;
+  }
+  void waitForPageTitleThenSync(jsonString);
 }
 
 /** Resolves true once `ready()` holds, or false after `timeoutMs`, checking every `intervalMs`. */

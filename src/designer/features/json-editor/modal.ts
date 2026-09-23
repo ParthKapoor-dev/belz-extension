@@ -221,9 +221,8 @@ export class JsonEditorModal {
       if (e.target === overlay) this.close();
     });
 
-    // One Escape listener for the modal's lifetime (until dispose()). It used
-    // to be added on every open and removed only by an Escape press, so each
-    // open closed with Cancel left one more listener behind.
+    // One Escape listener for the modal's lifetime (until dispose()), not one
+    // per open.
     document.addEventListener('keydown', this.onEscape);
 
     document.body.appendChild(overlay);
@@ -291,7 +290,7 @@ export class JsonEditorModal {
 
     const wasOpen = this.isOpen;
     overlay.style.display = 'flex';
-    if (!wasOpen) modalLock.lock();
+    if (!wasOpen) modalLock.lock(this);
 
     // Focus the textarea once it is shown.
     setTimeout(() => textarea.focus(), 200);
@@ -300,7 +299,7 @@ export class JsonEditorModal {
   close(): void {
     if (!this.isOpen || !this.parts) return;
     this.parts.overlay.style.display = 'none';
-    modalLock.unlock();
+    modalLock.unlock(this);
   }
 
   /** Close, and remove the modal's DOM and listeners. The next open rebuilds it. */
@@ -311,8 +310,14 @@ export class JsonEditorModal {
     this.parts = null;
   }
 
+  // Only when this is the topmost modal (the settings modal can open over
+  // it), and only once: the event is marked handled.
   private readonly onEscape = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape' && this.isOpen) this.close();
+    if (e.key !== 'Escape' || !this.isOpen) return;
+    if (e.defaultPrevented || !modalLock.isTopmost(this)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.close();
   };
 
   /** Write the editor's JSON into the page's inputs. */

@@ -9,6 +9,12 @@
 // Messaging: the panel calls in via chrome.tabs.sendMessage; the engine pushes
 // pick events back out via chrome.runtime.sendMessage. All messages are tagged
 // `ns: 'pd'`.
+//
+// Inspect mode must never outlive the panel: it swallows the page's clicks.
+// While it is on, the panel re-sends "inspect on" every
+// TIMINGS.pdInspectHeartbeat; when the engine has heard nothing for
+// TIMINGS.pdInspectTimeout (DevTools closed, the panel reloaded) it leaves
+// inspect mode by itself.
 
 import {
   getPageContext,
@@ -19,8 +25,9 @@ import {
 import { buildComponentTree, componentNames } from './component-tree';
 import { buildConfigIndex, Resolver } from './resolve';
 import { Highlighter } from './highlight';
-import { isPdCommand, type PdCommand, type PdPushMessage } from '../shared/messages';
+import { isFromExtension, isPdCommand, type PdCommand, type PdPushMessage } from '../shared/messages';
 import { TIMINGS } from '../config/timings';
+import { errorText } from '../shared/errors';
 import { createLogger } from '../shared/logger';
 import type {
   ComponentTreeNode,
@@ -32,8 +39,6 @@ import type {
 } from './types';
 
 const log = createLogger('pd-inspector');
-
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** Tell the DevTools panel something; it may not be open, which is fine. */
 function pushToPanel(message: PdPushMessage): void {
@@ -78,6 +83,8 @@ function serializeComponentTree(node: ComponentTreeNode): SerializedComponentNod
 
 export class PdEngine {
   private state: EngineState = { status: 'loading' };
+  /** Leaves inspect mode when the panel's heartbeat stops; see the top. */
+  private inspectWatchdog: ReturnType<typeof setTimeout> | null = null;
   private resolver: Resolver | null = null;
   private readonly highlighter = new Highlighter();
   private inspecting = false;
@@ -85,6 +92,9 @@ export class PdEngine {
   private generation = 0;
   private lastPath = '';
   private routeTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** @param inspectTimeout See the top; TIMINGS.pdInspectTimeout unless a test passes its own. */
+  constructor(private readonly inspectTimeout: number = TIMINGS.pdInspectTimeout) {}
 
   /** Build for the current page, answer the panel, and follow route changes. */
   start(): void {
@@ -185,6 +195,8 @@ export class PdEngine {
   // ---- inspect mode --------------------------------------------------------
 
   private setInspect(on: boolean): void {
+    if (this.inspectWatchdog) clearTimeout(this.inspectWatchdog);
+    this.inspectWatchdog = on ? setTimeout(() => this.setInspect(false), this.inspectTimeout) : null;
     if (on === this.inspecting) return;
     this.inspecting = on;
     if (on) {
@@ -228,10 +240,11 @@ export class PdEngine {
 
   private readonly onMessage = (
     msg: unknown,
-    _sender: chrome.runtime.MessageSender,
+    sender: chrome.runtime.MessageSender,
     sendResponse: (response: unknown) => void
   ): boolean => {
-    if (!isPdCommand(msg)) return false;
+    // Only this extension (the background relay) may drive the engine.
+    if (!isFromExtension(sender) || !isPdCommand(msg)) return false;
     this.handleCommand(msg, sendResponse);
     return true; // responses may be produced synchronously, but keep the port open
   };
@@ -242,7 +255,8 @@ export class PdEngine {
         sendResponse(this.state);
         return;
       case 'setInspect':
-        this.setInspect(!!msg.on);
+        // Also the heartbeat: "on" again re-arms the watchdog.
+        this.setInspect(msg.on);
         sendResponse({ ok: true, inspecting: this.inspecting });
         return;
       case 'highlightComponent': {

@@ -247,7 +247,7 @@ export class SettingsModal {
     this.overlay.style.display = 'none';
     this.unsubscribe?.();
     this.unsubscribe = null;
-    modalLock.unlock();
+    modalLock.unlock(this);
   }
 
   /** Close, and remove the modal's DOM and listener. The next open rebuilds it. */
@@ -258,9 +258,13 @@ export class SettingsModal {
     this.overlay = null;
   }
 
+  // Only the topmost modal answers Esc (it may be open over the large editor
+  // or the JSON editor), and only once: the event is marked handled.
   private readonly onEscape = (event: KeyboardEvent): void => {
     if (!this.isOpen || event.key !== 'Escape') return;
+    if (event.defaultPrevented || !modalLock.isTopmost(this)) return;
     event.preventDefault();
+    event.stopPropagation();
     this.close();
   };
 
@@ -369,7 +373,7 @@ export class SettingsModal {
     overlay.style.display = 'flex';
     // subscribe() calls back at once, which paints the current settings.
     this.unsubscribe ??= settings.subscribe(() => this.refresh());
-    if (!wasOpen) modalLock.lock();
+    if (!wasOpen) modalLock.lock(this);
   }
 }
 

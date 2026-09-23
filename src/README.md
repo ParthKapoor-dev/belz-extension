@@ -9,10 +9,10 @@ All the extension's TypeScript and HTML source. Bun bundles it into `dist/`, and
 | [`designer/`](designer/) | Content scripts on Automation Designer (`/automation-designer/*`) and Page Designer (`/ui-designer/*`) pages: the editor overlay, JSON input editor, shortcuts, settings modal |
 | [`pd-inspector-page/`](pd-inspector-page/) | Content script on published pages (`/pages/*`): the engine that answers the PD Inspector panel |
 | [`devtools/`](devtools/) | The DevTools page and its two panels, **AD Network** and **PD Inspector** |
-| [`background/`](background/) | Background service worker: registers content scripts per allowed site, relays PD Inspector messages, handles browser-level shortcuts |
-| [`options/`](options/) | The options page, where the user manages the allowed sites |
-| [`config/`](config/) | Constants only: settings schema, host-page selectors and timings, routes, endpoints, storage keys, DOM name prefix |
-| [`shared/`](shared/) | Small helpers used by several worlds: logger, allowed-sites list, message shapes, focus flag |
+| [`background/`](background/) | Background service worker: registers content scripts per allowed site, relays PD Inspector messages, hands over "Open in draft" request bodies, handles browser-level shortcuts |
+| [`options/`](options/) | The options page, where the user manages the allowed sites (feature settings are in the in-page Settings modal, in `designer/`) |
+| [`config/`](config/) | Constants only: settings schema, host-page selectors and timings, routes, endpoints, the extension's own file paths, storage keys, the `belz` naming prefix |
+| [`shared/`](shared/) | Small helpers used by several worlds: logger, allowed-sites list, message shapes and sender checks, autofill handoff, rich links, error text, focus flag |
 
 There are no loose files in `src/` itself.
 
@@ -34,14 +34,14 @@ Content scripts are not in the manifest. The background registers them at runtim
 
 ## How it connects
 
-- **Worlds talk only through extension channels:** `chrome.runtime` messages (shapes in `shared/messages.ts`) and `chrome.storage` (keys in `config/storage-keys.ts`). For example, the settings modal in `designer/` writes settings to `chrome.storage.local`, and every world's logger follows the **Debug Logging** setting through storage.
+- **Worlds talk only through extension channels:** `chrome.runtime` messages (shapes in `shared/messages.ts`) and `chrome.storage` (keys in `config/storage-keys.ts`). A receiver checks both the whole shape of a message and who sent it. For example, the settings modal in `designer/` writes settings to `chrome.storage.local`, and every world's logger follows the **Debug Logging** setting through storage.
 - **Entry points** are listed in `scripts/build.mjs` (`splitEntries` for the two designer scripts, `standalone` for the rest) and in `manifest.json`. HTML pages live next to their script and are copied to the extension root by `scripts/pack.mjs`.
 
 ## Conventions
 
 - One folder per world. Code that would run in two worlds goes in `shared/` (helpers) or `config/` (constants).
 - A new content script that shares code with the designer scripts joins the split build (`splitEntries`), not a standalone bundle, so page-wide singletons stay single.
-- Selectors, timings, routes, storage keys and URL paths belong in `config/`, not inline.
+- Selectors, timings, routes, storage keys, URL paths and the extension's own file paths belong in `config/`, not inline. Names the extension adds to shared worlds (DOM ids, page globals, message keys) are built with the `belz` prefix from `config/namespace.ts`.
 - All console output goes through `createLogger()` from `shared/logger.ts`.
 
 See [AGENTS.md](../AGENTS.md) for the full rules, the module-graph rule and the safe-change checklist.

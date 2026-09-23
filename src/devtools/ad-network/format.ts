@@ -1,6 +1,7 @@
 // Pure helpers of the AD Network panel: reading and formatting HAR entries.
 // No DOM, no state.
 
+import { errorText } from '../../shared/errors';
 import type { HarEntry } from './types';
 
 export type StatusGroup = 'ok' | 'redir' | 'clienterr' | 'srverr' | 'error';
@@ -15,7 +16,7 @@ export function formatBytes(n: number): string {
 /** The resource type DevTools reports, else the response MIME type. */
 export function typeOf(har: HarEntry): string {
   if (har._resourceType) return har._resourceType;
-  const mime = har.response && har.response.content && har.response.content.mimeType;
+  const mime = har.response?.content?.mimeType;
   if (typeof mime === 'string' && mime) return mime.split(';')[0]!;
   return '—';
 }
@@ -48,14 +49,13 @@ export function buildCurl(har: HarEntry): string {
   const req = har.request;
   const q = (s: unknown) => "'" + String(s).replace(/'/g, "'\\''") + "'";
   const parts = ['curl ' + q(req.url || '')];
-  if (req.method && req.method.toUpperCase() !== 'GET') {
-    parts.push('-X ' + req.method.toUpperCase());
-  }
+  const method = req.method?.toUpperCase();
+  if (method && method !== 'GET') parts.push('-X ' + method);
   for (const h of req.headers || []) {
     if (!h || !h.name || h.name.charAt(0) === ':') continue;
     parts.push('-H ' + q(h.name + ': ' + (h.value || '')));
   }
-  const bodyText = req.postData && req.postData.text;
+  const bodyText = req.postData?.text;
   if (bodyText) parts.push('--data-raw ' + q(bodyText));
   return parts.join(' \\\n  ');
 }
@@ -67,7 +67,7 @@ export function buildCurl(har: HarEntry): string {
 // `17:04:56+05:30` despite being a second later. Parsing normalises every
 // source (getHAR replay, live onRequestFinished, either browser) to one scale.
 export function startedAt(har: HarEntry): number {
-  const raw = har && har.startedDateTime;
+  const raw = har?.startedDateTime;
   if (typeof raw === 'string' && raw) {
     const t = Date.parse(raw);
     if (!Number.isNaN(t)) return t;
@@ -82,7 +82,7 @@ export function startedAt(har: HarEntry): number {
 // precision) a raw-string key treats them as two distinct requests, which
 // shows up as a duplicated row sitting in the wrong place.
 export function harKey(har: HarEntry): string {
-  const url = (har && har.request && har.request.url) || '';
+  const url = har?.request?.url || '';
   return url + '|' + startedAt(har);
 }
 
@@ -115,9 +115,6 @@ export function shortUuidFromUrl(url: string): string | null {
   const m = String(url || '').match(/[0-9a-f]{32}/i);
   return m ? m[0].slice(0, 12) + '…' : null;
 }
-
-export const errorText = (err: unknown): string =>
-  err instanceof Error ? err.message : err ? String(err) : '';
 
 /** Why a method lookup failed, for a toast: never empty. */
 export const lookupFailure = (err: unknown): string => errorText(err) || 'lookup failed';

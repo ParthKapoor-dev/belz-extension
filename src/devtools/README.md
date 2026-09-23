@@ -23,20 +23,25 @@ page with its own bundle. For how this folder fits with the rest of `src/`, see
    window, on every site.
 2. `PanelRegistrar.start()` reads the inspected host with `evalInPage('location.hostname')`,
    normalised by `normalizeHost()` (lowercase, no port) like the stored list, and the
-   granted hosts with `readEnabledHosts()`. If the host is allowed, it calls
-   `chrome.devtools.panels.create` for "AD Network" (`panel.html`) and "PD Inspector"
-   (`panel-pd.html`). It tries again on `devtools.network.onNavigated` and whenever the host list
+   granted hosts with `enabledHostSet()`. If the host is allowed, it calls
+   `chrome.devtools.panels.create` for "AD Network" and "PD Inspector", with the pages named in
+   `PANEL_PAGES` ([`config/extension-files.ts`](../config/extension-files.ts): `panel.html`,
+   `panel-pd.html`). It tries again on `devtools.network.onNavigated` and whenever the host list
    changes, so the panels appear as soon as the user reaches an allowed site. DevTools cannot remove
    a panel, so `stop()` only stops watching.
 3. The browser loads a panel's page the first time the user opens its tab. Each panel entry
    (`panel.ts`) only constructs and starts its class.
+4. DevTools stays open when the inspected tab navigates to another site. The panels therefore check
+   again on every navigation: the AD Network panel looks nothing up and patches nothing unless the
+   inspected page is on an allowed site (see [`ad-network/`](ad-network/)).
 
 ## How it connects
 
 - **Used by:** the browser, through `devtools_page` in `manifest.json`.
 - **Depends on:** [`shared/hosts.ts`](../shared/hosts.ts) (panel gating),
   [`shared/logger.ts`](../shared/logger.ts), [`config/timings.ts`](../config/timings.ts)
-  (`panelFocusFlash`), and the `chrome.devtools.*` APIs.
+  (`panelFocusFlash`), [`config/extension-files.ts`](../config/extension-files.ts) (`PANEL_PAGES`),
+  and the `chrome.devtools.*` APIs.
 
 ## Conventions
 
@@ -60,6 +65,6 @@ modules, the PD Inspector panel, and `PanelRegistrar`). To run the tests, see th
 
 ## Adding or changing things
 
-- **A third panel:** add a folder with `panel.html`, `panel.ts` and its class; add it to `PANELS` in
-  `panel-registrar.ts`; add the bundle to `standalone` in `scripts/build.mjs` and the HTML page to
+- **A third panel:** add a folder with `panel.html`, `panel.ts` and its class; add its page to
+  `PANEL_PAGES` in `config/extension-files.ts` and to `PANELS` in `panel-registrar.ts`; add the bundle to `standalone` in `scripts/build.mjs` and the HTML page to
   `SHARED` in `scripts/pack.mjs`. Follow the entry-point checklist in [AGENTS.md](../../AGENTS.md).

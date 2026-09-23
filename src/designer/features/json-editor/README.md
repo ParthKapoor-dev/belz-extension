@@ -18,7 +18,7 @@ This is the most fragile part of the extension: it reads and drives AD's own wid
 
 ## How it works
 
-**Button.** `JsonEditor.start()` tries `injectJSONButton()` after `TIMINGS.jsonButtonFirstTry` and on every `pageObserver` change, because AD renders the Inputs heading late and re-renders it. `findInputsSection()` looks for a text node like `Inputs` or `2 Inputs`, then falls back to `AD_INPUTS.sectionCandidates`. The button is marked `EXTENSION_OWNED_ATTR`. To hold it, the heading gets an inline flex layout; `injectJSONButton()` records the heading's previous inline values, and `JsonEditor.stop()` puts them back (`restoreHeadings()`) along with removing the button.
+**Button.** `JsonEditor.start()` tries `injectJSONButton()` after `TIMINGS.jsonButtonFirstTry` and on page changes (`pageObserver`), because AD renders the Inputs heading late and re-renders it. A page change does nothing while the button is on the page; otherwise the search runs at most once per `TIMINGS.jsonButtonThrottle`, with one deferred look after a burst, so a busy page (or a method without an Inputs step) does not search on every mutation. `findInputsSection()` looks for a leaf element whose text is exactly `Inputs` / `2 Inputs`, visiting at most `MAX_TEXT_NODES` text nodes, then falls back to the first `MAX_CANDIDATES` elements of each `AD_INPUTS.sectionCandidates` selector whose whole text is such a heading (a section merely mentioning "input" is not enough). The extension's own markup is never taken for the heading. The button is marked `EXTENSION_OWNED_ATTR`. To hold it, the heading gets an inline flex layout; `injectJSONButton()` records the heading's previous inline values, and `JsonEditor.stop()` puts them back (`restoreHeadings()`) along with removing the button.
 
 **Load (page to JSON).** `jsonEditorModal.open()` calls `load()`, which runs `extractAllInputs()`:
 
@@ -32,15 +32,15 @@ This is the most fragile part of the extension: it reads and drives AD's own wid
 - `normalizeValueForType()` validates the value first, so a bad value is reported without touching the page.
 - Text-like fields: the prototype's `value` setter, then `input`/`change`/`blur` events, then a read-back.
 - Boolean `exp-select`: open the dropdown and click the matching option.
-- Date `exp-date-picker`: open the calendar, page month by month, click the day.
+- Date `exp-date-picker`: open the calendar, page month by month to the target (`pageCalendarTo()`), click the day. Paging gives up on a month label it cannot read, a missing arrow, arrows that leave the month unchanged `MAX_CALENDAR_STALLS` times in a row, or more than `MAX_CALENDAR_PAGES` months; then no day is clicked and the key fails.
 - DateTime: the date as above, then the time picker's hour, minute and AM/PM.
 - File inputs are skipped with a warning.
 
-The result is a `SyncResult`: `success`, `message`, `errors`, `warnings`, `filledCount`, `skippedMissingKeys`, `failedKeys`. The modal closes on full success and stays open to show warnings.
+The result is a `SyncResult`: `success`, `message`, `errors`, `warnings`, `filledCount`, `skippedMissingKeys`, `failedKeys`. The modal closes on full success and stays open to show warnings. It takes `modalLock` with itself as owner, and Escape closes it only while it is the topmost modal (the Settings modal can open over it).
 
 ## How it connects
 
-- **Used by:** `ad-content.ts` (`JsonEditor`, and `jsonEditorModal.open` passed to `KeyboardShortcuts` for Shift+J), and `curl-autofill/` (`extractAllInputs`, `syncJSONToInputs`).
+- **Used by:** `ad-content.ts` (`JsonEditor`, and an opener around `jsonEditorModal.open()` passed to `KeyboardShortcuts` for Shift+J), and `curl-autofill/` (`extractAllInputs`, `syncJSONToInputs`).
 - **Depends on:** `AD_INPUTS` and `AD_WIDGETS` in `config/selectors.ts`, the widget waits in `config/timings.ts`, `core/observer.ts`, `ui/modal-lock.ts`, `ui/toast.ts`, `ui/modal.ts`, `ui/styles.ts`, `ui/theme.ts`, `utils/dom.ts` (`firstMatch`).
 
 ## Conventions
@@ -52,11 +52,12 @@ The result is a `SyncResult`: `success`, `message`, `errors`, `warnings`, `fille
 
 ## Testing
 
-- [`tests/designer/features/json-editor.test.ts`](../../../../tests/designer/features/json-editor.test.ts): `extractAllInputs()` and `syncJSONToInputs()` against the fixture in [`tests/fixtures/ad-inputs.ts`](../../../../tests/fixtures/ad-inputs.ts) (text, number, boolean, missing keys, file inputs, invalid values).
-- [`tests/designer/features/json-button.test.ts`](../../../../tests/designer/features/json-button.test.ts): `injectJSONButton()` and `restoreHeadings()`.
+- [`tests/designer/features/json-editor.test.ts`](../../../../tests/designer/features/json-editor.test.ts): `extractAllInputs()` and `syncJSONToInputs()` against the fixture in [`tests/fixtures/ad-inputs.ts`](../../../../tests/fixtures/ad-inputs.ts) (text, number, boolean, missing keys, file inputs, invalid values), and `pageCalendarTo()` (paging both ways, giving up when the month never comes).
+- [`tests/designer/features/json-button.test.ts`](../../../../tests/designer/features/json-button.test.ts): `injectJSONButton()`, `restoreHeadings()` and `findInputsSection()`.
+- [`tests/designer/features/modal-escape.test.ts`](../../../../tests/designer/features/modal-escape.test.ts): Escape with the Settings modal over the JSON editor.
 - [`tests/designer/features/json-values.test.ts`](../../../../tests/designer/features/json-values.test.ts): `normalizeDataType()`, `normalizeValueForType()`, `parseDateValue()`, `generateInputJSON()`.
 
-The calendar and time-picker paths are not unit-tested; check them by hand on a real AD page after any change to `sync.ts`. How to run the tests is in the Development section of the [root README](../../../../README.md).
+Opening the calendar, clicking a day and the time picker are not unit-tested; check them by hand on a real AD page after any change to `sync.ts`. How to run the tests is in the Development section of the [root README](../../../../README.md).
 
 ## Adding or changing things
 

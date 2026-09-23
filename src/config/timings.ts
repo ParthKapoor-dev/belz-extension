@@ -7,7 +7,9 @@
 //
 // Timings of the extension's own UI (hover grace periods, the Esc Esc
 // window, toast duration) are not here: they stay next to their code. The
-// one exception is `panelFocusFlash`, which two DevTools panels share.
+// exceptions are numbers two parts of the extension must agree on
+// (`panelFocusFlash`, the PD Inspector heartbeat) and the AD Network name
+// lookup's retry schedule.
 
 export const TIMINGS = {
   /** First try at adding the settings button, and the debounce after page changes. */
@@ -15,6 +17,11 @@ export const TIMINGS = {
   settingsButtonDebounce: 250,
   /** First try at adding the JSON button. */
   jsonButtonFirstTry: 1000,
+  /**
+   * After that, at most one look for the Inputs heading per this many ms,
+   * however often the page changes: the search walks the page's text.
+   */
+  jsonButtonThrottle: 500,
 
   /** After the Run Test shortcut commits the focused field, before clicking Run Test. */
   runTestCommitSettle: 150,
@@ -53,6 +60,21 @@ export const TIMINGS = {
 
   /** PD Inspector: how often to check a published page for a route change. */
   pdRoutePoll: 1500,
+  /**
+   * PD Inspector inspect mode: the panel re-sends "inspect on" this often
+   * while it is on, and the page engine leaves inspect mode by itself when
+   * it has heard nothing for `pdInspectTimeout` (DevTools was closed, say).
+   */
+  pdInspectHeartbeat: 2000,
+  pdInspectTimeout: 7000,
+
+  /**
+   * AD Network: retrying a method-name lookup that failed in a way that may
+   * clear by itself (not signed in yet, server busy). The first retry waits
+   * `first` ms, each later one twice as long up to `max`, and a uuid is given
+   * up after `attempts` failed lookups.
+   */
+  resolveRetry: { first: 4000, max: 60_000, attempts: 5 },
 
   /**
    * DevTools panels: how long the focus shortcut (Ctrl+Shift+A / P) pulses

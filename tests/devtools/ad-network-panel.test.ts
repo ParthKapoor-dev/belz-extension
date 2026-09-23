@@ -3,7 +3,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fakeChrome } from '../fakes/chrome';
 import { AdNetworkPanel } from '../../src/devtools/ad-network/network-panel';
+import { UNINSTALL_SCRIPT, WRAPPER_SCRIPT } from '../../src/devtools/ad-network/pending-capture';
+import { AUTOFILL_FRAGMENT_PARAM } from '../../src/config/namespace';
+import { AUTOFILL_HANDOFF_KEY_PREFIX } from '../../src/config/storage-keys';
+import { writeHosts } from '../../src/shared/hosts';
 import type { HarEntry } from '../../src/devtools/ad-network/types';
+import { sleep, waitFor } from '../wait';
 
 // Drives the real AD Network panel over its real markup (panel.html), feeding
 // it HAR entries the way chrome.devtools.network does. Assertions read text
@@ -11,19 +16,24 @@ import type { HarEntry } from '../../src/devtools/ad-network/types';
 
 const ORIGIN = 'https://nsm.test';
 const realFetch = globalThis.fetch;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** The origin the inspected page is on; tests navigate it. */
+let inspected = ORIGIN;
+let fetches: string[] = [];
 
 const UUID_A = 'a'.repeat(32);
 const UUID_B = 'b'.repeat(32);
 
-function har(uuid: string, opts: { at?: string; execute?: boolean; body?: string; content?: string } = {}): HarEntry {
+function har(
+  uuid: string,
+  opts: { at?: string; execute?: boolean; body?: string; content?: string; origin?: string } = {}
+): HarEntry {
   const path = opts.execute ? `chain/execute/${uuid}` : `chain/v2/${uuid}`;
   const entry = {
     startedDateTime: opts.at ?? '2026-01-01T10:00:00.000Z',
     time: 42,
     request: {
       method: opts.execute ? 'POST' : 'GET',
-      url: `${ORIGIN}/rest/api/automation/${path}`,
+      url: `${opts.origin ?? ORIGIN}/rest/api/automation/${path}`,
       headers: [{ name: 'Authorization', value: 'Bearer t' }],
       queryString: [],
       postData: opts.body ? { mimeType: 'application/json', text: opts.body } : undefined
@@ -53,20 +63,37 @@ const listenerCounts = () => [
   fakeChrome.storage.onChanged.listeners.length
 ];
 
-beforeAll(() => {
+/** The panel's promise that origin, site list and cache are loaded. */
+const ready = () => (panel as unknown as { ready: Promise<void> }).ready;
+const evaluated = () => fakeChrome.devtools.inspectedWindow.evaluated;
+
+/** The inspected tab navigates to `origin`; resolves once the panel has taken it in. */
+async function navigate(origin: string) {
+  inspected = origin;
+  fakeChrome.devtools.network.onNavigated.dispatch(`${origin}/automation-designer/`);
+  await ready();
+}
+
+beforeAll(async () => {
   const html = readFileSync(join(import.meta.dir, '../../src/devtools/ad-network/panel.html'), 'utf8');
   const body = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>')).replace(/<script[^>]*><\/script>/g, '');
   document.body.innerHTML = body;
-  fakeChrome.devtools.inspectedWindow.evalHandler = (expr) => (expr === 'location.origin' ? ORIGIN : null);
+  fakeChrome.reset();
+  await writeHosts([{ host: 'nsm.test', enabled: true }]);
+  fakeChrome.devtools.inspectedWindow.evalHandler = (expr) => (expr === 'location.origin' ? inspected : null);
   // The platform knows every method as "Resolved" in "Cat".
-  globalThis.fetch = (async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({ name: 'Resolved', metadata: { service: { name: 'Cat' }, state: 'DRAFT' } })
-  })) as unknown as typeof fetch;
+  globalThis.fetch = (async (url: string) => {
+    fetches.push(url);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ name: 'Resolved', metadata: { service: { name: 'Cat' }, state: 'DRAFT' } })
+    };
+  }) as unknown as typeof fetch;
   panel = new AdNetworkPanel();
   baseline = listenerCounts();
   panel.start();
+  await ready();
 });
 afterAll(() => {
   // Removes every listener and timer the panel started, so none outlives the file.
@@ -108,8 +135,7 @@ describe('AD Network panel', () => {
   test('names and categories are resolved from the platform', async () => {
     send(har(UUID_A, { execute: true }));
     expect(cellText(rows()[0]!, 1)).toContain('…'); // still resolving
-    await sleep(400); // resolve debounce + request
-    expect(cellText(rows()[0]!, 1)).toBe('Resolved');
+    await waitFor(() => cellText(rows()[0]!, 1) === 'Resolved', 'the resolved name');
     expect(cellText(rows()[0]!, 2)).toBe('Cat');
   });
 
@@ -152,8 +178,49 @@ describe('AD Network panel', () => {
     expect($('#count').textContent).toBe('0');
   });
 
+  test('on an allowed site the page\'s fetch/XHR is wrapped for in-flight rows', () => {
+    expect(evaluated().includes(WRAPPER_SCRIPT)).toBe(true);
+  });
+
+  test('"Open in draft" hands the body over through extension storage, never in the URL', async () => {
+    const body = '{"name":"Zoë ✓ 日本"}'; // not Latin-1: btoa() would have refused it
+    send(har(UUID_A, { execute: true, body }));
+    const open = rows()[0]!.querySelectorAll<HTMLButtonElement>('td.actions button')[2]!;
+    open.click();
+    await waitFor(() => fakeChrome.tabs.created.length === 1, 'the tab to open');
+    const { url, active } = fakeChrome.tabs.created[0] as { url: string; active: boolean };
+    const prefix = `${ORIGIN}/automation-designer/Cat/${UUID_A}#${AUTOFILL_FRAGMENT_PARAM}=`;
+    expect(url.startsWith(prefix)).toBe(true);
+    expect(active).toBe(false); // a background tab
+    const id = url.slice(prefix.length);
+    expect(/^[0-9a-f]{32}$/.test(id)).toBe(true);
+    const stored = fakeChrome.storage.session.data.get(AUTOFILL_HANDOFF_KEY_PREFIX + id) as { body: string };
+    expect(stored.body).toBe(body);
+  });
+
+  test('on a site that is not allowed: no lookups, no fetch wrapper, and the old site\'s auth is gone', async () => {
+    send(har(UUID_A, { execute: true })); // on nsm.test: its Authorization header is learned
+    await navigate('https://evil.test');
+    expect(evaluated().includes(UNINSTALL_SCRIPT)).toBe(true);
+    const harvested = (panel as unknown as { resolver: { harvested: Map<string, unknown> } }).resolver.harvested;
+    expect(harvested.size).toBe(0);
+
+    fetches = [];
+    evaluated().length = 0;
+    send(har(UUID_B, { execute: true, origin: 'https://evil.test' }));
+    await sleep(600); // more than twice the resolve debounce: nothing may be asked
+    expect(fetches).toEqual([]);
+    expect(evaluated().includes(WRAPPER_SCRIPT)).toBe(false);
+    expect(evaluated().some((e) => e.includes('authToken'))).toBe(false);
+    expect($('#offline').textContent).toContain('not on an allowed site');
+
+    await navigate(ORIGIN);
+    expect(evaluated().includes(WRAPPER_SCRIPT)).toBe(true);
+    expect($('#offline').classList.contains('hidden')).toBe(true);
+  });
+
   test('start() is idempotent; stop() removes what it added; it restarts', async () => {
-    await sleep(20); // the site-list watcher is added once loading settles
+    await ready(); // the site-list watcher is added once loading settles
     const running = listenerCounts();
     panel.start(); // already started: adds nothing
     expect(listenerCounts()).toEqual(running);

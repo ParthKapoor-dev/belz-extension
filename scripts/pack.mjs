@@ -23,6 +23,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { browserManifest } from './manifests.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const buildDir = path.join(root, 'build');
@@ -73,29 +74,12 @@ function stage(target) {
   return dest;
 }
 
-// 3. Chromium tree — service_worker background, no gecko settings.
-{
-  const dest = stage('chrome');
-  const m = structuredClone(manifest);
-  m.version = version;
-  if (m.background) delete m.background.scripts;
-  delete m.browser_specific_settings;
-  writeFileSync(path.join(dest, 'manifest.json'), JSON.stringify(m, null, 2));
-}
-
-// 4. Firefox tree — scripts background, gecko id + update_url for auto-update.
-{
-  const dest = stage('firefox');
-  const m = structuredClone(manifest);
-  m.version = version;
-  if (m.background) delete m.background.service_worker;
-  m.browser_specific_settings = {
-    gecko: {
-      id: release.firefoxId,
-      strict_min_version: '128.0',
-      update_url: release.firefoxUpdatesJsonUrl
-    }
-  };
+// 3. One tree per browser family, each with its own manifest (manifests.mjs):
+// Chromium gets a service_worker background and no gecko settings; Firefox a
+// scripts background plus the gecko id and update_url for auto-update.
+for (const target of ['chrome', 'firefox']) {
+  const dest = stage(target);
+  const m = browserManifest(manifest, target, { version, release });
   writeFileSync(path.join(dest, 'manifest.json'), JSON.stringify(m, null, 2));
 }
 

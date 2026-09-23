@@ -17,28 +17,30 @@ The content scripts that run inside Automation Designer (`/automation-designer/*
 
 1. The background registers `dist/ad-content.js` and `dist/pd-content.js` on each allowed site (see [`../background/`](../background/)). Both are small generated loaders that `import()` the real entry from `dist/modules/`.
 2. The entry creates its feature objects and calls `bootstrap()` from [`core/bootstrap.ts`](core/bootstrap.ts), keyed by the setting that switches each one on.
-3. `bootstrap()` waits for `DOMContentLoaded` if needed, then subscribes to the settings store and starts or stops each feature as its setting changes. It also starts `SettingsLauncher`, which is always on.
+3. `bootstrap()` waits for `DOMContentLoaded` if needed, then subscribes to the settings store and starts or stops each feature as its setting changes. It also starts `SettingsLauncher`, which is always on. It returns a teardown function; the entries ignore it (a content script lives as long as its page), tests call it.
 
 What each entry passes in:
 
 | Setting key | AD | PD |
 |---|---|---|
 | `titleUpdater` | `TitleUpdater` | `TitleUpdater` |
-| `runTestShortcut` | `KeyboardShortcuts` with the JSON editor's `open` | `KeyboardShortcuts` without it |
+| `runTestShortcut` | `KeyboardShortcuts` with the Run Test, copy-link and JSON editor actions | `KeyboardShortcuts` with no actions (Esc Esc only) |
 | `jsonEditor` | `JsonEditor` | not bundled |
 | `outputCopy` | `OutputCopy` | `OutputCopy` |
 | `textareaEditor` | `TextareaEditor` with `scanScope` as its scope provider | `TextareaEditor` without one |
 
 `ad-content.ts` also calls `startCurlAutofillFeature()` directly. It is not a toggleable feature.
 
+Shift+J follows the `jsonEditor` setting: the action `ad-content.ts` passes returns `false` (and leaves the key to the page) while the JSON editor is switched off.
+
 ## How it connects
 
 - **Used by:** the background registers the loaders per allowed host. `scripts/build.mjs` builds both entries in one code-split build (`splitEntries`).
-- **Depends on:** [`../config/`](../config/) (settings schema, selectors, timings, routes, `ns()`), [`../shared/`](../shared/) (logger, message guards), `chrome.storage.local` for settings, `chrome.runtime.onMessage` for the open-settings command, and the AD/PD page markup.
+- **Depends on:** [`../config/`](../config/) (settings schema, selectors, timings, routes, `ns()`), [`../shared/`](../shared/) (logger, message guards, rich links), `chrome.storage.local` for settings, `chrome.runtime.onMessage` for the open-settings command, `chrome.runtime.sendMessage` for the autofill handoff, and the AD/PD page markup.
 
 ## Conventions
 
-- **Pass dependencies in to keep PD small.** AD-only code (the JSON editor, the `#{variable}` scanner) is reached only from `ad-content.ts`, as constructor arguments. `pd-content.ts` must not import it. `tests/build/bundle.test.ts` checks this.
+- **Pass dependencies in to keep PD small.** AD-only code (Run Test, the method link, the JSON editor, the `#{variable}` scanner) is reached only from `ad-content.ts`, as constructor arguments. `pd-content.ts` must not import it. `tests/build/bundle.test.ts` checks this.
 - **The editor is lazy.** `features/textarea-editor/modal.ts` (CodeMirror) is reached only through `import('./modal')`. Anything reached by a static import loads on every page.
 - **Singletons are bundled once.** Modules with page-wide state (`settings`, `pageObserver`, `modalLock`, `toast`, the three modals) start with a `/*! belz-singleton: ... */` marker, and `scripts/check-singletons.mjs` fails the build if one is bundled twice. A new stateful module here needs the marker.
 - The extension's own DOM ids and classes use `ns()`, and injected nodes carry `EXTENSION_OWNED_ATTR` (both from `config/namespace.ts`), so the overlays skip them.

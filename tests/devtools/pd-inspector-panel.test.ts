@@ -49,16 +49,25 @@ const READY: EngineState = {
 let engineState: EngineState | undefined;
 let commands: PdCommand[] = [];
 
+/** Whether the fake engine answers setInspect (a real one reports its state). */
+let engineAnswersInspect = true;
+
 function installEngine() {
   commands = [];
+  engineAnswersInspect = true;
   fakeChrome.runtime.respond = (message) => {
     const m = message as PdRelayMessage;
     if (m.__pdRelay !== 'cmd') return undefined;
     commands.push(m.payload);
     if (m.payload.cmd === 'getState') return engineState;
+    if (m.payload.cmd === 'setInspect') return engineAnswersInspect ? { ok: true, inspecting: m.payload.on } : undefined;
     return { ok: true };
   };
 }
+
+/** A message from this extension's engine in tab `tabId`. */
+const fromTab = (tabId: number) => ({ id: 'test-extension', tab: { id: tabId } });
+const inspectCommands = () => commands.filter((c) => c.cmd === 'setInspect');
 
 let panel: PdInspectorPanel;
 let baseline: number[] = [];
@@ -102,23 +111,56 @@ describe('PdInspectorPanel', () => {
     expect(commands).toEqual([{ ns: 'pd', cmd: 'highlightComponent', name: 'Header' }]);
   });
 
-  test('Inspect toggles inspect mode on the engine', async () => {
+  test('Inspect toggles inspect mode on the engine, with a heartbeat while on', async () => {
+    const heartbeat = () => (panel as unknown as { heartbeat: unknown }).heartbeat !== null;
     $('#inspect').click();
     await flush();
     expect(text('#inspect')).toBe('Inspecting…');
+    expect(heartbeat()).toBe(true);
     $('#inspect').click();
     await flush();
     expect(text('#inspect')).toBe('Inspect');
+    expect(heartbeat()).toBe(false);
     expect(commands).toEqual([
       { ns: 'pd', cmd: 'setInspect', on: true },
       { ns: 'pd', cmd: 'setInspect', on: false }
     ]);
   });
 
-  test('a pick from the inspected tab selects the component; other tabs are ignored', async () => {
-    fakeChrome.runtime.onMessage.dispatch({ ns: 'pd', type: 'pick', chain: ['app/home', 'Footer'] }, { tab: { id: 99 } });
+  test('the button follows the engine: no answer means not inspecting', async () => {
+    engineAnswersInspect = false;
+    $('#inspect').click();
+    await flush();
+    expect(text('#inspect')).toBe('Inspect');
+  });
+
+  test('Refresh while inspecting turns inspect mode off on the page first', async () => {
+    $('#inspect').click();
+    await flush();
+    commands = [];
+    $('#refresh').click();
+    await flush();
+    expect(commands.map((c) => c.cmd)).toEqual(['setInspect', 'getState']);
+    expect(inspectCommands()).toEqual([{ ns: 'pd', cmd: 'setInspect', on: false }]);
+    expect(text('#inspect')).toBe('Inspect');
+  });
+
+  test('the focus shortcut also turns inspect mode off before reloading', async () => {
+    $('#inspect').click();
+    await flush();
+    commands = [];
+    await writeFocusFlag('pd');
+    await flush();
+    expect(inspectCommands()).toEqual([{ ns: 'pd', cmd: 'setInspect', on: false }]);
+    expect(text('#inspect')).toBe('Inspect');
+  });
+
+  test('a pick from the inspected tab selects the component; other tabs and senders are ignored', async () => {
+    const pick = { ns: 'pd', type: 'pick', chain: ['app/home', 'Footer'] };
+    fakeChrome.runtime.onMessage.dispatch(pick, fromTab(99));
+    fakeChrome.runtime.onMessage.dispatch(pick, { id: 'another-extension', tab: { id: 1 } });
     expect(text('#picked-row .v')).toBe('');
-    fakeChrome.runtime.onMessage.dispatch({ ns: 'pd', type: 'pick', chain: ['app/home', 'Footer'] }, { tab: { id: 1 } });
+    fakeChrome.runtime.onMessage.dispatch(pick, fromTab(1));
     await flush();
     expect(text('#picked-row .v')).toBe('app/home  ›  Footer');
     expect(text('#detail .detail-head .nm')).toBe('Footer');
@@ -142,7 +184,8 @@ describe('PdInspectorPanel', () => {
   test('a route change reloads and resets inspect mode', async () => {
     engineState = READY;
     $('#inspect').click();
-    fakeChrome.runtime.onMessage.dispatch({ ns: 'pd', type: 'routeChanged' }, { tab: { id: 1 } });
+    await flush();
+    fakeChrome.runtime.onMessage.dispatch({ ns: 'pd', type: 'routeChanged' }, fromTab(1));
     await flush();
     expect(text('#inspect')).toBe('Inspect');
     expect(compNames()).toEqual(['app/home', 'Header', 'Footer']);
@@ -150,11 +193,23 @@ describe('PdInspectorPanel', () => {
 
   test('the focus shortcut reloads and pulses the panel for TIMINGS.panelFocusFlash', async () => {
     engineState = READY;
-    writeFocusFlag('pd');
+    await writeFocusFlag('pd');
     await flush();
     expect(document.body.classList.contains('focus-flash')).toBe(true);
     expect(document.body.style.getPropertyValue('--focus-flash-ms')).toBe(`${TIMINGS.panelFocusFlash}ms`);
     expect(commands.some((c) => c.cmd === 'getState')).toBe(true);
+  });
+
+  test('closing the panel (pagehide) stops it and turns inspect mode off on the page', async () => {
+    $('#inspect').click();
+    await flush();
+    commands = [];
+    window.dispatchEvent(new Event('pagehide'));
+    await flush();
+    expect(inspectCommands()).toEqual([{ ns: 'pd', cmd: 'setInspect', on: false }]);
+    expect((panel as unknown as { heartbeat: unknown }).heartbeat === null).toBe(true);
+    panel.start();
+    await flush();
   });
 
   test('start() is idempotent and stop() removes every listener and the pulse', async () => {

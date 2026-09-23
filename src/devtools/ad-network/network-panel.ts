@@ -26,7 +26,6 @@ import { MethodNames, ResolveQueue } from './names';
 import { DetailPane } from './detail';
 import {
   buildCurl,
-  errorText,
   formatBytes,
   harKey,
   lookupFailure,
@@ -39,10 +38,13 @@ import {
 } from './format';
 import { flashOk, flashText, iconButton, ICON_COPY, ICON_LINK, ICON_OPEN } from './view';
 import { el, FocusFlash } from '../view';
-import { AUTOFILL_PARAM } from '../../config/endpoints';
+import { AUTOFILL_FRAGMENT_PARAM } from '../../config/namespace';
+import { storeHandoff } from '../../shared/autofill-handoff';
 import { required } from '../../shared/dom';
+import { errorText } from '../../shared/errors';
 import { watchFocusFlag } from '../../shared/focus-flag';
 import { createLogger } from '../../shared/logger';
+import { copyRichLink } from '../../shared/rich-link';
 import type { HarEntry, MethodSummary, PendingEntry, Row } from './types';
 
 const MAX_ROWS = 300;
@@ -124,7 +126,9 @@ export class AdNetworkPanel {
     const runId = ++this.runId;
     this.ready = (async () => {
       await Promise.all([this.site.detect(), this.site.loadSiteConfig(), this.cache.hydrate()]);
-      if (runId === this.runId) this.unwatchSite = this.site.watchSiteConfig();
+      if (runId !== this.runId) return;
+      this.unwatchSite = this.site.watchSiteConfig(this.applySiteAccess);
+      this.applySiteAccess();
     })();
 
     const { record, clear, preserve, filter } = this.els;
@@ -133,10 +137,12 @@ export class AdNetworkPanel {
     preserve.addEventListener('change', this.onPreserveChange);
     filter.addEventListener('input', this.onFilterInput);
     document.addEventListener('keydown', this.onArrowKey);
+    // DevTools closing: put the page's fetch/XHR back while we still can (the
+    // page also retires the wrapper by itself; see pending-capture.ts).
+    window.addEventListener('pagehide', this.onPageHide);
     chrome.devtools.network.onRequestFinished.addListener(this.onRequestFinished);
     chrome.devtools.network.onNavigated.addListener(this.onNavigated);
     this.detail.start();
-    this.pending.start();
     // Ctrl+Shift+A: scroll to the newest row, pulse it, and focus the filter.
     this.unwatchFocus = watchFocusFlag('ad', this.focusNewest);
     // Origin, site list and cache must be in place before the first resolve,
@@ -159,6 +165,7 @@ export class AdNetworkPanel {
     preserve.removeEventListener('change', this.onPreserveChange);
     filter.removeEventListener('input', this.onFilterInput);
     document.removeEventListener('keydown', this.onArrowKey);
+    window.removeEventListener('pagehide', this.onPageHide);
     chrome.devtools.network.onRequestFinished.removeListener(this.onRequestFinished);
     chrome.devtools.network.onNavigated.removeListener(this.onNavigated);
     this.detail.stop();
@@ -186,6 +193,10 @@ export class AdNetworkPanel {
     if (label) label.textContent = this.recording ? ' Recording' : ' Paused';
   };
 
+  private readonly onPageHide = (): void => {
+    this.stop();
+  };
+
   private readonly onPreserveChange = (): void => {
     this.preserveLog = this.els.preserve.checked;
   };
@@ -199,9 +210,39 @@ export class AdNetworkPanel {
     this.onRequest(req as unknown as HarEntry);
   };
 
+  // A navigation may have taken the tab to another site: forget every header
+  // and token learned on the old page at once, before anything else can use
+  // them, then decide afresh what the panel may do on the new one.
   private readonly onNavigated = (): void => {
-    void this.site.detect();
+    const runId = this.runId;
+    this.resolver.forgetAuth();
     if (!this.preserveLog) this.clearAll();
+    this.ready = this.ready.then(async () => {
+      await this.site.detect();
+      if (runId !== this.runId) return;
+      this.applySiteAccess();
+      // A new document has the page's own fetch again.
+      this.pending.install();
+    });
+  };
+
+  /**
+   * Act on the inspected page only while it is on an allowed site: patch its
+   * fetch/XHR for in-flight rows, and look names up. Anywhere else, put the
+   * page's fetch back and say why names are missing.
+   */
+  private readonly applySiteAccess = (): void => {
+    if (!this.started) return;
+    if (this.site.isAllowed) {
+      this.pending.start();
+      this.setOffline(false);
+      for (const row of this.rows) this.queue.add(row.uuid);
+    } else {
+      this.pending.stop();
+      this.queue.stop();
+      this.resolver.forgetAuth();
+      if (this.site.apiOrigin) this.setOffline(true, 'this page is not on an allowed site');
+    }
   };
 
   // ---- capture -------------------------------------------------------------
@@ -226,7 +267,7 @@ export class AdNetworkPanel {
 
   onRequest(har: HarEntry): void {
     if (!this.recording) return;
-    const req = har && har.request;
+    const req = har?.request;
     const info = req ? classifyChainUrl(req.url) : null;
     if (!info) return;
 
@@ -236,9 +277,11 @@ export class AdNetworkPanel {
 
     // Every observed chain request is a chance to learn the app's auth
     // headers, which is what lets us query the platform for names ourselves.
+    // The resolver keeps them for that request's origin, on allowed sites only.
     this.resolver.rememberAuth(har);
+    const allowed = this.site.isAllowed;
 
-    const status = (har.response && har.response.status) || 0;
+    const status = har.response?.status || 0;
     const row: Row = {
       id: this.nextId++,
       uuid: info.uuid,
@@ -273,7 +316,7 @@ export class AdNetworkPanel {
     // Name: definition fetches carry it in their body — read it instantly.
     // HAR entries from getHAR() lack a working getContent(); the resolver
     // fills in.
-    if (info.kind === 'fetch' && typeof har.getContent === 'function') {
+    if (allowed && info.kind === 'fetch' && typeof har.getContent === 'function') {
       try {
         har.getContent((body: string) => {
           const name = extractMethodNameFromChainResponse(body || '');
@@ -286,8 +329,9 @@ export class AdNetworkPanel {
         /* backfill entries: no content available */
       }
     }
-    // Name (for execute) + category for every row come from the platform.
-    this.queue.add(info.uuid);
+    // Name (for execute) + category for every row come from the platform,
+    // asked only on an allowed site.
+    if (allowed) this.queue.add(info.uuid);
 
     // Cap the table — drop the oldest rows.
     while (this.rows.length > MAX_ROWS) {
@@ -523,18 +567,7 @@ export class AdNetworkPanel {
       const name = summary?.name || this.names.name(row.uuid) || shortUuid(row.uuid);
       const category = summary?.category || this.names.category(row.uuid) || '';
       const label = [category, name].filter(Boolean).join('::');
-      const html = '<a href="' + url + '">' + label + '</a>';
-      const plain = '[' + label + '](' + url + ')';
-      try {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            'text/html': new Blob([html], { type: 'text/html' }),
-            'text/plain': new Blob([plain], { type: 'text/plain' })
-          })
-        ]);
-      } catch {
-        await navigator.clipboard.writeText(plain);
-      }
+      await copyRichLink(label, url);
       flashOk(btn);
       this.showToast('copied link · ' + label);
     } catch (err) {
@@ -561,7 +594,7 @@ export class AdNetworkPanel {
     this.openProcessing = true;
     try {
       const { summary, url } = await this.summaryFor(row);
-      openInBackgroundTab(withAutofill(url, row.har));
+      openInBackgroundTab(await withAutofill(url, row.har));
       const remaining = this.openQueue.length;
       this.showToast(
         'opening ' + (summary?.name || shortUuid(row.uuid)) + ' in draft mode' +
@@ -612,14 +645,20 @@ export class AdNetworkPanel {
   }
 }
 
-/** A designer URL that autofills the method's inputs with this request's body. */
-function withAutofill(url: string, har: HarEntry): string {
+/**
+ * A designer URL that autofills the method's inputs with this request's body.
+ * The body is left in extension storage under a one-time id, and only the id
+ * goes in the URL's fragment (see shared/autofill-handoff.ts).
+ */
+export async function withAutofill(url: string, har: HarEntry): Promise<string> {
   const body = har.request?.postData?.text || '';
   if (!body) return url;
   try {
-    return url + (url.includes('?') ? '&' : '?') + AUTOFILL_PARAM + '=' + encodeURIComponent(btoa(body));
-  } catch {
-    return url; // body not Latin1 — open without autofill
+    const id = await storeHandoff(body);
+    return `${url.split('#')[0]}#${AUTOFILL_FRAGMENT_PARAM}=${id}`;
+  } catch (err) {
+    log.warn('cannot hand the request body over; opening without autofill:', err);
+    return url;
   }
 }
 

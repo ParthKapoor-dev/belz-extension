@@ -4,12 +4,11 @@
   "version": "1.0.1",
   "description": "AD Network DevTools panel plus Automation/Page Designer helpers",
   "permissions": [
-    "activeTab",
     "scripting",
     "storage"
   ],
   "optional_host_permissions": [
-    "*://*/*"
+    "https://*/*"
   ],
   "web_accessible_resources": [
     {

@@ -1,19 +1,26 @@
 import { describe, expect, test } from 'bun:test';
-import { decodeAutofillParam } from '../../../src/designer/features/curl-autofill/index';
-import { AUTOFILL_PARAM } from '../../../src/config/endpoints';
+import { parseAutofillFragment } from '../../../src/designer/features/curl-autofill/index';
+import { AUTOFILL_FRAGMENT_PARAM } from '../../../src/config/namespace';
 import { extractMethodName, extractPageName, extractServiceCategory } from '../../../src/designer/utils/dom';
 
-describe('decodeAutofillParam', () => {
-  const encode = (s: string) => `?${AUTOFILL_PARAM}=${encodeURIComponent(btoa(s))}`;
+describe('parseAutofillFragment', () => {
+  const P = AUTOFILL_FRAGMENT_PARAM;
 
-  test('returns the JSON body carried in the URL', () => {
-    expect(decodeAutofillParam(encode('{"a":1}'))).toBe('{"a":1}');
+  test('finds the handoff id and leaves nothing behind when it was alone', () => {
+    expect(parseAutofillFragment(`#${P}=abc`)).toEqual({ id: 'abc', rest: '' });
   });
 
-  test('absent, not base64, or not JSON -> null', () => {
-    expect(decodeAutofillParam('?other=1')).toBeNull();
-    expect(decodeAutofillParam(`?${AUTOFILL_PARAM}=%%%`)).toBeNull();
-    expect(decodeAutofillParam(encode('not json'))).toBeNull();
+  test('removes only its own parameter, keeping the rest of the fragment in order', () => {
+    expect(parseAutofillFragment(`#tab=2&${P}=abc&x=1`)).toEqual({ id: 'abc', rest: '#tab=2&x=1' });
+  });
+
+  test('no marker: no id, and the fragment untouched', () => {
+    expect(parseAutofillFragment('#tab=2')).toEqual({ id: null, rest: '#tab=2' });
+    expect(parseAutofillFragment('')).toEqual({ id: null, rest: '' });
+  });
+
+  test('an empty id is no id', () => {
+    expect(parseAutofillFragment(`#${P}=`).id).toBeNull();
   });
 });
 

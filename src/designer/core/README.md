@@ -6,7 +6,7 @@ The lifecycle machinery of the designer content scripts: how features are starte
 
 | File | What it does |
 |---|---|
-| [`bootstrap.ts`](bootstrap.ts) | `bootstrap(features)`: waits for the DOM, then starts and stops each feature as its setting changes (`FeatureSwitchboard`), and starts `SettingsLauncher` |
+| [`bootstrap.ts`](bootstrap.ts) | `bootstrap(features)`: waits for the DOM, then starts and stops each feature as its setting changes (`FeatureSwitchboard`), and starts `SettingsLauncher`. Returns a teardown |
 | [`feature.ts`](feature.ts) | The `Feature` interface: `start()` and `stop()` |
 | [`settings.ts`](settings.ts) | `SettingsStore` and the `settings` singleton: the page's live copy of the settings, kept in step with `chrome.storage.local` |
 | [`observer.ts`](observer.ts) | `PageObserver` and the `pageObserver` singleton: one `MutationObserver` shared by every feature |
@@ -17,6 +17,7 @@ The lifecycle machinery of the designer content scripts: how features are starte
 1. An entry (`ad-content.ts` or `pd-content.ts`) calls `bootstrap()` with a map of setting key to `Feature`.
 2. `bootstrap()` creates a `FeatureSwitchboard` and subscribes it to `settings`. The first call gets the current snapshot (the defaults until storage has been read). The next comes when `chrome.storage` has been read, and then one on every change.
 3. For each key, the switchboard calls `start()` when the setting is on and `stop()` when it is off. A feature whose `start()` throws is logged and not marked running, so the next settings change retries it.
+4. `bootstrap()` returns a teardown function: it removes the `DOMContentLoaded` listener, unsubscribes from `settings`, stops every running feature (`FeatureSwitchboard.stopAll()`) and calls `SettingsLauncher.stop()`. The entries never call it; tests do, so no bootstrap outlives its test.
 
 **`SettingsStore`** takes a `SettingsStorage` (`read`, `write`, `watch`). In the extension this is `chromeSettingsStorage()`; tests pass an in-memory one. Every value goes through `sanitizeSetting` / `sanitizeSettings` from `config/settings.ts`, so a stale or invalid stored value falls back to its default. `subscribe()` calls the listener at once and then on every change.
 
@@ -37,7 +38,7 @@ The lifecycle machinery of the designer content scripts: how features are starte
 
 ## Testing
 
-[`tests/designer/core/lifecycle.test.ts`](../../../tests/designer/core/lifecycle.test.ts) covers `PageObserver` and `bootstrap` (start/stop per setting, retry after a failed start). [`tests/designer/core/settings.test.ts`](../../../tests/designer/core/settings.test.ts) covers `SettingsStore` and `chromeSettingsStorage`. How to run them is in the Development section of the [root README](../../../README.md).
+[`tests/designer/core/lifecycle.test.ts`](../../../tests/designer/core/lifecycle.test.ts) covers `PageObserver` and `bootstrap` (start/stop per setting, retry after a failed start, the teardown). [`tests/designer/core/settings.test.ts`](../../../tests/designer/core/settings.test.ts) covers `SettingsStore` and `chromeSettingsStorage`. How to run them is in the Development section of the [root README](../../../README.md).
 
 ## Adding or changing things
 

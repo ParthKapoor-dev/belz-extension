@@ -34,6 +34,11 @@ class FeatureSwitchboard {
     }
   }
 
+  /** Stop every running feature. */
+  stopAll(): void {
+    for (const key of [...this.running]) this.stop(key);
+  }
+
   private start(key: SettingKey): void {
     const feature = this.features[key];
     if (!feature || this.running.has(key)) return;
@@ -66,22 +71,30 @@ class FeatureSwitchboard {
   }
 }
 
-/** Wire up a designer content script. */
-export function bootstrap(features: Features): void {
+/**
+ * Wire up a designer content script. Returns the teardown: it stops every
+ * feature and the settings launcher and removes every listener. A page never
+ * calls it (the content script lives as long as the page); tests do, so no
+ * bootstrap outlives its test.
+ */
+export function bootstrap(features: Features): () => void {
+  const switchboard = new FeatureSwitchboard(features);
+  const launcher = new SettingsLauncher();
+  let unsubscribe: (() => void) | null = null;
+
   function init(): void {
     log.debug('Extension initializing...');
 
-    const switchboard = new FeatureSwitchboard(features);
     // Fires immediately with the current snapshot, then again once
     // chrome.storage has been read (and on every later change).
     let first = true;
-    settings.subscribe((current) => {
+    unsubscribe = settings.subscribe((current) => {
       switchboard.apply(current, first ? 'init' : 'storage');
       first = false;
     });
 
     // Always on: the way back to turning features on.
-    new SettingsLauncher().start();
+    launcher.start();
 
     log.debug('Extension initialized successfully');
   }
@@ -91,4 +104,12 @@ export function bootstrap(features: Features): void {
   } else {
     init();
   }
+
+  return () => {
+    document.removeEventListener('DOMContentLoaded', init);
+    unsubscribe?.();
+    unsubscribe = null;
+    switchboard.stopAll();
+    launcher.stop();
+  };
 }

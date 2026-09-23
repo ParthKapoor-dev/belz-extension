@@ -25,7 +25,15 @@ This folder is performance-critical. Read "Textarea overlay", "`#{variable}` int
 2. `scopeFor()` calls the `ScopeProvider`, if one was passed and `textareaVariableIntellisense` is on. Errors fall back to no scope.
 3. `textareaEditorModal.open(textarea, scope)` builds the modal on first use, shows the source's label (with "(read only)" when it is read-only or disabled), and creates an `EditorView` with the text.
 
-**Editor.** The language is detected on every open and again as the text changes, until the user picks one in the header for this session. It is not a setting. Wrap and font size come from `settings` and are written back when changed in the header. Keys while open (capture phase): Escape closes, Ctrl/Cmd+S saves, Ctrl/Cmd+F opens search. **Save** writes the text into the source textarea and fires `input` and `change`. For a read-only source Save is disabled and Ctrl+S only shows a toast.
+**Editor.** The language is detected on every open and again as the text changes, until the user picks one in the header's language dropdown, which overrides it for this open only. It is not a setting. The wrap and font-size dropdowns in the header read `settings` and write back to it, so they change the global Editor Wrap and Editor Font Size settings for every editor on every site. The header's ⚙ button opens the Settings modal over the editor; **Copy** copies the editor's text.
+
+Keys while open are handled in the capture phase, and only while the editor is the topmost modal (`modalLock.isTopmost(this)`), so with the Settings modal over it they belong to that modal:
+
+- Ctrl/Cmd+S saves (and closes); Ctrl/Cmd+F opens search.
+- Escape first leaves CodeMirror's own popups to CodeMirror: while the completion list (`completionStatus`) or the search panel (`searchPanelOpen`) is open, the modal does not act, and CodeMirror's Escape closes the popup.
+- Otherwise Escape closes the editor, unless there are unsaved changes (`hasUnsavedChanges`: the text differs from what was opened). Then the first Escape only shows `DISCARD_PROMPT` in the footer, and a second Escape within `DISCARD_WINDOW_MS` discards the changes and closes. Typing after the prompt takes it back. This never uses a browser dialog.
+
+**Save** writes the text into the source textarea and fires `input` and `change`. For a read-only source Save is disabled and Ctrl+S only shows a toast. Cancel, × and a click on the backdrop close without asking.
 
 **Variables** (only when a scope was passed):
 
@@ -53,6 +61,7 @@ This folder is performance-critical. Read "Textarea overlay", "`#{variable}` int
 - [`tests/designer/features/language.test.ts`](../../../../tests/designer/features/language.test.ts): `detectLanguage()`.
 - [`tests/designer/features/variables.test.ts`](../../../../tests/designer/features/variables.test.ts): completion, expression finding, lint, hover lookup and footer status.
 - [`tests/designer/ui/hover-overlay.test.ts`](../../../../tests/designer/ui/hover-overlay.test.ts): the overlay.
+- [`tests/designer/features/modal-escape.test.ts`](../../../../tests/designer/features/modal-escape.test.ts): Escape (unchanged text, the discard prompt, the search panel, the Settings modal on top) and Ctrl+S under the Settings modal.
 - [`tests/build/bundle.test.ts`](../../../../tests/build/bundle.test.ts): the editor stays out of the page-load bundle.
 - [`tests/e2e/`](../../../../tests/e2e/): in real browsers, the overlay (also on a disabled textarea), lazy loading, SQL detection, the footer status, and the shared modal lock.
 

@@ -7,6 +7,9 @@
 
 import { FOCUS_STORAGE_KEY } from '../config/storage-keys';
 import type { FocusFlag } from './messages';
+import { createLogger } from './logger';
+
+const log = createLogger('focus-flag');
 
 /** A flag older than this is ignored: the shortcut was for an earlier moment. */
 const FOCUS_MAX_AGE_MS = 60_000;
@@ -21,10 +24,14 @@ function flagArea(): { name: 'session' | 'local'; store: chrome.storage.StorageA
     : { name: 'local', store: chrome.storage.local };
 }
 
-/** Background side: ask the `target` panel to focus itself. */
-export function writeFocusFlag(target: FocusFlag['target']): void {
+/** Background side: ask the `target` panel to focus itself. Never rejects. */
+export async function writeFocusFlag(target: FocusFlag['target']): Promise<void> {
   const value: FocusFlag = { target, ts: Date.now() };
-  flagArea().store.set({ [FOCUS_STORAGE_KEY]: value });
+  try {
+    await flagArea().store.set({ [FOCUS_STORAGE_KEY]: value });
+  } catch (err) {
+    log.warn('cannot write the panel focus flag:', err);
+  }
 }
 
 /**

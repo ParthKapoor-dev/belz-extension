@@ -4,7 +4,7 @@ import { HOSTS_STORAGE_KEY } from '../../src/config/storage-keys';
 import {
   isHostsChange,
   normalizeHost,
-  originPattern,
+  hostPattern,
   readEnabledHosts,
   readHosts,
   writeHosts
@@ -68,6 +68,6 @@ describe('host storage', () => {
   });
 
   test('origin pattern is https-only', () => {
-    expect(originPattern('a.test')).toBe('https://a.test/*');
+    expect(hostPattern('a.test')).toBe('https://a.test/*');
   });
 });

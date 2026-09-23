@@ -6,13 +6,14 @@ Unit tests for helpers in [`src/shared/`](../../src/shared/) that every JavaScri
 
 | File | Source under test | What it covers |
 |---|---|---|
-| [`hosts.test.ts`](hosts.test.ts) | [`hosts.ts`](../../src/shared/hosts.ts) | `normalizeHost()` accepts hostnames and URLs (strips scheme, port, path, case) and rejects invalid names. `readHosts()` returns nothing from empty or malformed storage and drops entries without a string `host` and a boolean `enabled`, keeping order. `readEnabledHosts()`, `isHostsChange()` (host key in `local` only), and `originPattern()` (https only). |
+| [`hosts.test.ts`](hosts.test.ts) | [`hosts.ts`](../../src/shared/hosts.ts) | `normalizeHost()` accepts hostnames and URLs (strips scheme, port, path, case) and rejects invalid names. `readHosts()` returns nothing from empty or malformed storage and drops entries without a string `host` and a boolean `enabled`, keeping order. `readEnabledHosts()`, `isHostsChange()` (host key in `local` only), and `hostPattern()` (https only). |
 | [`logger.test.ts`](logger.test.ts) | [`logger.ts`](../../src/shared/logger.ts) | `createLogger()`: `warn` and `error` always print with the `[belz:<scope>]` prefix; `debug` and `info` print only while the `debugLogging` setting is on. Also a repo-wide rule: no file in `src/` other than `shared/logger.ts` may call `console.*`. |
+| [`rich-link.test.ts`](rich-link.test.ts) | [`rich-link.ts`](../../src/shared/rich-link.ts) | `richLink()` gives an HTML link and a Markdown link to the same URL; a label or URL with markup is escaped, never injected; a URL that is not http(s) is not made a link. `escapeHtml()` escapes the five significant characters. |
 
 ## How it works
 
 - `hosts.test.ts` writes to `fakeChrome.storage.local` directly (see [`../fakes/`](../fakes/)) and calls `fakeChrome.reset()` before each test.
-- `logger.test.ts` spies on the `console` methods and toggles Debug Logging by writing the settings key to storage. The logger follows that setting through `storage.onChanged`, which the fake fires synchronously.
+- `logger.test.ts` spies on the `console` methods and toggles Debug Logging by writing the settings key to storage. The logger follows that setting through `storage.onChanged`, which the fake fires a task after the write, so `setDebug()` awaits the write and `nextTask()` from [`../wait.ts`](../wait.ts).
 - The `console` rule scans every `.ts` file under `src/` for `console.<method>(`.
 
 ## Conventions

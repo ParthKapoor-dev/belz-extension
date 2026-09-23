@@ -14,10 +14,10 @@ Unit tests for the shared UI pieces in [`src/designer/ui/`](../../../src/designe
 
 **`HoverOverlay`**
 
-- The controls appear (`display: flex`) over an element that `resolveTarget` accepts, and hide after the grace period when the pointer moves off.
+- The controls appear (`display: flex`) over an element that `resolveTarget` accepts, and hide after the grace period when the pointer moves off (awaited with `waitFor()` from [`../../wait.ts`](../../wait.ts)).
 - One controls element serves the whole page, however many targets are hovered.
 - A button's `onClick` receives the current target.
-- Elements inside the extension's own UI (`data-sd-extension-owned="true"`) are never decorated.
+- Elements inside the extension's own UI (marked with `EXTENSION_OWNED_ATTR`, `data-belz-owned="true"`) are never decorated.
 - `stop()` removes the controls and the listeners.
 
 **`ModalLock`**

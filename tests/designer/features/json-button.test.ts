@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   JSON_BUTTON_ID,
   createJSONButton,
+  findInputsSection,
   injectJSONButton,
   restoreHeadings,
   type StyledHeadings
@@ -47,5 +48,24 @@ describe('JSON button injection', () => {
     injectJSONButton(createJSONButton(() => {}), styled);
     expect(styled.size).toBe(1);
     restoreHeadings(styled);
+  });
+});
+
+describe('finding the Inputs heading', () => {
+  test('a section that only mentions inputs somewhere inside gets no button', () => {
+    document.body.innerHTML =
+      '<div class="input-panel"><p>Configure the inputs of this step below.</p><input></div>';
+    expect(findInputsSection() === null).toBe(true);
+    expect(injectJSONButton(createJSONButton(() => {}))).toBe(false);
+  });
+
+  test('an element named like an inputs section whose text is the heading is used', () => {
+    document.body.innerHTML = '<div class="inputs-title"><b>Inputs</b><i></i></div>';
+    expect(findInputsSection()?.className).toBe('inputs-title');
+  });
+
+  test('the extension\'s own markup is never taken for the heading', () => {
+    document.body.innerHTML = `<div ${EXTENSION_OWNED_ATTR}="true"><span>Inputs</span></div>`;
+    expect(findInputsSection() === null).toBe(true);
   });
 });

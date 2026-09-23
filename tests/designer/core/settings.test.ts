@@ -7,6 +7,7 @@ import {
   type SettingsStorage
 } from '../../../src/designer/core/settings';
 import { DEFAULT_SETTINGS, type Settings } from '../../../src/config/settings';
+import { nextTask } from '../../wait';
 
 /** An in-memory SettingsStorage whose "other tab" changes the test drives. */
 function memoryStorage(initial?: unknown) {
@@ -135,6 +136,7 @@ describe('chromeSettingsStorage', () => {
     storage.write({ ...DEFAULT_SETTINGS, jsonEditor: false });
     expect((fakeChrome.storage.local.data.get(SETTINGS_STORAGE_KEY) as Settings).jsonEditor).toBe(false);
     expect((await storage.read() as Settings).jsonEditor).toBe(false);
+    await nextTask(); // storage.onChanged fires after the write, as in the browser
     expect((seen.at(-1) as Settings).jsonEditor).toBe(false);
   });
 });

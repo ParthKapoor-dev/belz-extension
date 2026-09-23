@@ -15,7 +15,9 @@ Names the browser tab after the open method or page, as `AD: <method>` or `PD: <
 - path starts with `AD_ROUTE_PREFIX`: `extractMethodName()`, prefix `AD`;
 - path starts with `PD_ROUTE_PREFIX`: `extractPageName()`, prefix `PD`.
 
-It writes `document.title` only when the name is found and differs from the last one written. `stop()` unsubscribes. It does not restore the original title.
+It writes `document.title` only when the name is found and differs from the last one written. Before its first write it records the page's own title (and records it again if the app has set a title of its own since).
+
+`stop()` unsubscribes and puts the page's own title back, but only if the tab still shows the title `TitleUpdater` wrote: a title the app set after it is the app's and is left alone. Started again, it writes the title again.
 
 ## How it connects
 
@@ -24,4 +26,4 @@ It writes `document.title` only when the name is found and differs from the last
 
 ## Testing
 
-The name helpers are covered by [`tests/designer/features/page-helpers.test.ts`](../../../../tests/designer/features/page-helpers.test.ts). How to run it is in the Development section of the [root README](../../../../README.md).
+[`tests/designer/features/title-updater.test.ts`](../../../../tests/designer/features/title-updater.test.ts) covers the title and its restoring. The name helpers are covered by [`tests/designer/features/page-helpers.test.ts`](../../../../tests/designer/features/page-helpers.test.ts). How to run it is in the Development section of the [root README](../../../../README.md).

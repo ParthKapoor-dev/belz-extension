@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>belz-extension settings</title>
+    <title>belz DevTools: allowed sites</title>
     <style>
       /* Ioskeley Mono — OFL-licensed Berkeley-Mono-style monospace (fonts/). */
       @font-face {
@@ -258,14 +258,14 @@
   <body>
     <div class="page">
       <header>
-        <h1>belz-extension settings</h1>
-        <div class="subtitle">Sites</div>
+        <h1>belz DevTools options</h1>
+        <div class="subtitle">Feature settings are in the ⚙ Settings modal on AD and PD pages</div>
       </header>
       <section class="sites">
         <h2>Allowed sites</h2>
         <p class="hint">
-          Add hostnames where the extension is allowed to inject its content
-          scripts. Each grant is scoped to <code>https://&lt;host&gt;/*</code>
+          Add hostnames where the extension is allowed to run. Only https
+          sites: each grant is scoped to <code>https://&lt;host&gt;/*</code>
           and asks for permission at Add time. Revoke gives the permission
           back to the browser, then removes the site from this list; the
           extension then unregisters its scripts for that site.
@@ -274,7 +274,8 @@
           If a site serves the Automation Designer UI on a different host than
           the one you browse (a split public / staff portal), set that host as
           the <em>designer host</em> — the AD Network panel opens methods there.
-          Leave it blank when both live on the same host.
+          For "Open in draft" to fill in the inputs, add the designer host as a
+          site of its own too. Leave it blank when both live on the same host.
         </p>
         <form class="add-row" id="add-form">
           <input

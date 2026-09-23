@@ -5,13 +5,41 @@
 // checked against the same definition, so renaming a field breaks the build
 // instead of silently breaking the feature.
 //
+// The guards check the whole shape, not just a tag: a receiver acts only on a
+// message that is exactly what it expects. Who may send it (the sender check)
+// is up to the receiver; see isFromExtension() and isFromExtensionPage().
+//
 // Types only: nothing here exists at runtime except the small guards.
+
+import { AUTOFILL_MESSAGE_KEY, COMMAND_MESSAGE_KEY } from '../config/namespace';
+
+type Json = Record<string, unknown>;
+const asRecord = (value: unknown): Json | null =>
+  value !== null && typeof value === 'object' ? (value as Json) : null;
+
+// ---- senders ------------------------------------------------------------------
+
+/** Sent by this extension (any of its pages or content scripts), not another one. */
+export function isFromExtension(sender: chrome.runtime.MessageSender | null | undefined): boolean {
+  return Boolean(sender) && sender!.id === chrome.runtime.id;
+}
+
+/**
+ * Sent by one of this extension's own pages (a DevTools panel, the options
+ * page), not by a content script: those always carry `sender.tab`.
+ */
+export function isFromExtensionPage(sender: chrome.runtime.MessageSender | null | undefined): boolean {
+  if (!isFromExtension(sender) || sender!.tab) return false;
+  const url = sender!.url;
+  return !url || url.startsWith(chrome.runtime.getURL(''));
+}
 
 // ---- PD Inspector: panel <-> page engine -----------------------------------
 
 /** A command from the PD Inspector panel to the page engine. */
 export type PdCommand =
   | { ns: 'pd'; cmd: 'getState' }
+  /** Also the panel's heartbeat: re-sent with `on: true` while inspecting. */
   | { ns: 'pd'; cmd: 'setInspect'; on: boolean }
   | { ns: 'pd'; cmd: 'highlightComponent'; name: string }
   | { ns: 'pd'; cmd: 'clearHighlight' };
@@ -39,41 +67,59 @@ export type PdPushMessage = PdPickMessage | PdRouteChangedMessage;
 
 /**
  * Sent to the background relay, because Firefox gives DevTools panels no
- * chrome.tabs: `cmd` forwards a command to the inspected tab, `open` opens a
- * URL in a new tab.
+ * chrome.tabs: `cmd` forwards a command to the inspected tab, `open` opens an
+ * https URL on an allowed site in a new tab.
  */
 export type PdRelayMessage =
   | { __pdRelay: 'cmd'; tabId: number; payload: PdCommand }
   | { __pdRelay: 'open'; url: string };
 
 export function isPdCommand(msg: unknown): msg is PdCommand {
-  const m = msg as Partial<PdCommand> | null;
-  return Boolean(m) && m!.ns === 'pd' && typeof (m as { cmd?: unknown }).cmd === 'string';
+  const m = asRecord(msg);
+  if (!m || m.ns !== 'pd') return false;
+  switch (m.cmd) {
+    case 'getState':
+    case 'clearHighlight':
+      return true;
+    case 'setInspect':
+      return typeof m.on === 'boolean';
+    case 'highlightComponent':
+      return typeof m.name === 'string';
+    default:
+      return false;
+  }
 }
 
 export function isPdPick(msg: unknown): msg is PdPickMessage {
-  const m = msg as Partial<PdPickMessage> | null;
-  return Boolean(m) && m!.ns === 'pd' && m!.type === 'pick' && Array.isArray(m!.chain);
+  const m = asRecord(msg);
+  return (
+    Boolean(m) && m!.ns === 'pd' && m!.type === 'pick' &&
+    Array.isArray(m!.chain) && (m!.chain as unknown[]).every((c) => typeof c === 'string')
+  );
 }
 
 export function isPdRouteChanged(msg: unknown): msg is PdRouteChangedMessage {
-  const m = msg as Partial<PdRouteChangedMessage> | null;
+  const m = asRecord(msg);
   return Boolean(m) && m!.ns === 'pd' && m!.type === 'routeChanged';
 }
 
 export function isPdRelay(msg: unknown): msg is PdRelayMessage {
-  return Boolean(msg) && typeof (msg as { __pdRelay?: unknown }).__pdRelay === 'string';
+  const m = asRecord(msg);
+  if (!m) return false;
+  if (m.__pdRelay === 'cmd') return Number.isInteger(m.tabId) && isPdCommand(m.payload);
+  if (m.__pdRelay === 'open') return typeof m.url === 'string';
+  return false;
 }
 
 // ---- browser commands ----------------------------------------------------------
 
-/** Background -> designer content script: open the settings modal. */
+/** Background -> designer content script: open the in-page Settings modal. */
 export interface OpenSettingsMessage {
-  __sdxCommand: 'open-settings';
+  [COMMAND_MESSAGE_KEY]: 'open-settings';
 }
 
 export function isOpenSettings(msg: unknown): msg is OpenSettingsMessage {
-  return Boolean(msg) && (msg as OpenSettingsMessage).__sdxCommand === 'open-settings';
+  return asRecord(msg)?.[COMMAND_MESSAGE_KEY] === 'open-settings';
 }
 
 /**
@@ -84,4 +130,20 @@ export interface FocusFlag {
   target: 'ad' | 'pd';
   /** When the shortcut fired (epoch ms); stale flags are ignored. */
   ts: number;
+}
+
+// ---- "Open in draft" autofill ----------------------------------------------------
+
+/**
+ * Designer content script -> background: hand over (and forget) the request
+ * body stored for this handoff id. Answered with the body, or null.
+ */
+export interface TakeAutofillMessage {
+  [AUTOFILL_MESSAGE_KEY]: 'take';
+  id: string;
+}
+
+export function isTakeAutofill(msg: unknown): msg is TakeAutofillMessage {
+  const m = asRecord(msg);
+  return Boolean(m) && m![AUTOFILL_MESSAGE_KEY] === 'take' && typeof m!.id === 'string';
 }

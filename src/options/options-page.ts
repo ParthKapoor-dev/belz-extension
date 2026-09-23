@@ -7,14 +7,15 @@
 // src/background/content-scripts.ts for the reconcile loop.
 
 import {
+  hostPattern,
   isHostsChange,
   normalizeHost,
-  originPattern,
   readHosts,
   writeHosts,
   type HostEntry
 } from '../shared/hosts';
 import { required } from '../shared/dom';
+import { errorText } from '../shared/errors';
 import { createLogger } from '../shared/logger';
 
 const log = createLogger('options');
@@ -24,8 +25,6 @@ const SAVED_HINT_MS = 1200;
 
 /** A stored host plus what the browser says about its permission right now. */
 type HostWithGrant = HostEntry & { granted: boolean };
-
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /**
  * The browser — not storage — is the authority on whether we hold a host
@@ -38,7 +37,7 @@ async function withGrantState(hosts: HostEntry[]): Promise<HostWithGrant[]> {
     hosts.map(async (entry) => {
       let granted = false;
       try {
-        granted = await chrome.permissions.contains({ origins: [originPattern(entry.host)] });
+        granted = await chrome.permissions.contains({ origins: [hostPattern(entry.host)] });
       } catch (err) {
         log.debug(`cannot check the permission for ${entry.host}:`, err);
       }
@@ -66,12 +65,13 @@ async function syncEnabledFlags(marked: HostWithGrant[]): Promise<void> {
  * and the storage/permission listeners and paints; stop() removes them all.
  */
 export class OptionsPage {
-  private readonly listEl = required<HTMLUListElement>('#host-list');
-  private readonly emptyEl = required('#empty');
-  private readonly errorEl = required('#error');
-  private readonly formEl = required<HTMLFormElement>('#add-form');
-  private readonly inputEl = required<HTMLInputElement>('#add-input');
-  private readonly addBtn = required<HTMLButtonElement>('#add-btn');
+  /** The page's elements: read by start(), not before. */
+  private listEl!: HTMLUListElement;
+  private emptyEl!: HTMLElement;
+  private errorEl!: HTMLElement;
+  private formEl!: HTMLFormElement;
+  private inputEl!: HTMLInputElement;
+  private addBtn!: HTMLButtonElement;
 
   private started = false;
   /** Bumped per refresh and by stop(), so a slower, older refresh never paints. */
@@ -82,6 +82,12 @@ export class OptionsPage {
   start(): void {
     if (this.started) return;
     this.started = true;
+    this.listEl = required<HTMLUListElement>('#host-list');
+    this.emptyEl = required('#empty');
+    this.errorEl = required('#error');
+    this.formEl = required<HTMLFormElement>('#add-form');
+    this.inputEl = required<HTMLInputElement>('#add-input');
+    this.addBtn = required<HTMLButtonElement>('#add-btn');
     this.formEl.addEventListener('submit', this.onSubmit);
     chrome.storage.onChanged.addListener(this.onStorageChanged);
     // Permissions also change outside this page — the browser's own add-on
@@ -151,7 +157,7 @@ export class OptionsPage {
     try {
       // chrome.permissions.request must run inside a user-gesture handler —
       // the submit event chain is one, provided nothing else is awaited first.
-      const granted = await chrome.permissions.request({ origins: [originPattern(host)] });
+      const granted = await chrome.permissions.request({ origins: [hostPattern(host)] });
       if (!granted) {
         this.setError(`Permission for ${host} was denied.`);
         return;
@@ -181,7 +187,7 @@ export class OptionsPage {
     this.setError('');
     button.disabled = true;
     try {
-      const granted = await chrome.permissions.request({ origins: [originPattern(host)] });
+      const granted = await chrome.permissions.request({ origins: [hostPattern(host)] });
       if (!granted) {
         this.setError(`Permission for ${host} was denied.`);
         return;
@@ -204,7 +210,7 @@ export class OptionsPage {
     this.setError('');
     button.disabled = true;
     try {
-      const removed = await chrome.permissions.remove({ origins: [originPattern(host)] });
+      const removed = await chrome.permissions.remove({ origins: [hostPattern(host)] });
       if (!removed) {
         this.setError(`Could not revoke ${host}.`);
         return;

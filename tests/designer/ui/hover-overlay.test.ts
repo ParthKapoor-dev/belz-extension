@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { HoverOverlay } from '../../../src/designer/ui/hover-overlay';
+import { EXTENSION_OWNED_ATTR } from '../../../src/config/namespace';
+import { waitFor } from '../../wait';
 
 // Overlay targets are DOM elements: compare identities with `===` inside
 // expect(), never the elements themselves (see tests/memory-guard-worker.ts).
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function visibleBox(el: Element) {
   (el as any).getBoundingClientRect = () =>
@@ -42,8 +42,8 @@ describe('hover overlay', () => {
     expect(overlay!.active === t).toBe(true);
 
     hover(document.getElementById('p')!);
-    await sleep(200); // past the hide grace period
-    expect(controls.style.display).toBe('none');
+    // Hidden once the hide grace period is over.
+    await waitFor(() => controls.style.display === 'none', 'the overlay to hide');
   });
 
   test('injects one controls element for the whole page', () => {
@@ -68,7 +68,7 @@ describe('hover overlay', () => {
   });
 
   test('never decorates the extension\'s own UI', () => {
-    document.body.innerHTML = '<div data-sd-extension-owned="true"><textarea id="t"></textarea></div>';
+    document.body.innerHTML = `<div ${EXTENSION_OWNED_ATTR}="true"><textarea id="t"></textarea></div>`;
     const t = document.getElementById('t')!;
     visibleBox(t);
     make().start();

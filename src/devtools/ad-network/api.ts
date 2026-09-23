@@ -6,24 +6,33 @@
 // endpoint on the inspected host itself — the same endpoint the page's own
 // designer calls.
 //
-// Auth, in order of preference:
+// Only ever on an allowed site: every lookup first checks that the inspected
+// page is https on a granted host (InspectedSite.isAllowed), because DevTools
+// stays open when the tab navigates elsewhere.
 //
-//   1. The Authorization header lifted off a real chain request we already
-//      observed in DevTools. This is exact: whatever the app sends, we send.
-//   2. A JWT found in the page's localStorage/sessionStorage. Generic scan —
-//      no storage key names are assumed.
+// Auth, in order of preference, and always for the origin it came from:
+//
+//   1. The Authorization / Expertly-Auth-Token header lifted off a real chain
+//      request we observed on that origin. Exact: whatever the app sends, we
+//      send, and only back to the origin it was sent to.
+//   2. The page's own sign-in token, read from the inspected page's storage:
+//      the AD key (`localStorage.authToken`) first, else the first JWT found.
+//      The scan reports the origin it ran on, and the token is only sent to
+//      that origin. A failed scan is not remembered, and a 401/403 drops the
+//      token and scans once more.
 //   3. Cookies alone (`credentials: 'include'`). Works on cookie-session
-//      deployments. Requires the host grant from the options page, which the
-//      panel already depends on to exist.
+//      deployments. Requires the host grant from the options page.
 //
-// Results are memoised in MethodCache (cache.ts), so a repeat visit resolves
-// names with no network at all.
+// forgetAuth() drops everything learned; the panel calls it whenever the
+// inspected page navigates. Results are memoised in MethodCache (cache.ts),
+// so a repeat visit resolves names with no network at all.
 
 import { chainV1Path, chainV2Path, designerPath } from '../../config/endpoints';
 import type { InspectedSite } from './origin';
 import type { MethodCache } from './cache';
-import { firstString } from './extract';
+import { asObject, definitionOf, firstString, nameFromDefinition } from './extract';
 import { evalInPage } from '../inspected';
+import { errorText } from '../../shared/errors';
 import { createLogger } from '../../shared/logger';
 import type { MethodSummary } from './types';
 
@@ -32,22 +41,33 @@ const log = createLogger('ad-network');
 /** Header names worth replaying, lowercased. */
 const AUTH_HEADERS = ['authorization', 'expertly-auth-token'];
 
-/** Scans page storage for a JWT without assuming any key name. */
+/**
+ * Runs in the inspected page. Returns `{ origin, token }`: the page's own
+ * origin, and its sign-in token or null. The Automation Designer keeps it
+ * under `authToken` (possibly JSON-quoted); failing that, the first JWT in
+ * local or session storage.
+ */
 const TOKEN_SCAN = `(function () {
+  var JWT = /eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]+/;
+  var token = null;
   try {
+    var known = window.localStorage && window.localStorage.getItem('authToken');
+    if (typeof known === 'string' && known) {
+      try { var parsed = JSON.parse(known); if (typeof parsed === 'string') known = parsed; } catch (e) {}
+      if (/^[A-Za-z0-9._~+/=-]+$/.test(known)) token = known;
+    }
     var stores = [window.localStorage, window.sessionStorage];
-    for (var s = 0; s < stores.length; s++) {
+    for (var s = 0; !token && s < stores.length; s++) {
       var st = stores[s];
       if (!st) continue;
       for (var i = 0; i < st.length; i++) {
         var v = st.getItem(st.key(i));
-        if (typeof v !== 'string') continue;
-        var m = v.match(/eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]+/);
-        if (m) return m[0];
+        var m = typeof v === 'string' ? v.match(JWT) : null;
+        if (m) { token = m[0]; break; }
       }
     }
   } catch (e) {}
-  return null;
+  return { origin: location.origin, token: token };
 })()`;
 
 /** A failed API call: an HTTP error (`status`) or an unreachable host (`transport`). */
@@ -55,7 +75,9 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status?: number,
-    readonly transport = false
+    readonly transport = false,
+    /** A failure that will not clear by itself (not an allowed site, say). */
+    readonly final = false
   ) {
     super(message);
     this.name = 'ApiError';
@@ -68,35 +90,36 @@ export class ApiError extends Error {
  * the server was busy or broken (408, 429, 5xx), or the failure carried no
  * HTTP status (inspected origin not known yet, a non-JSON answer such as a
  * login page). Any other HTTP status (404 on both endpoints, 400, ...) is a
- * definite answer about that uuid and is not retried.
+ * definite answer about that uuid and is not retried, and neither is a
+ * `final` error.
  */
 export function isRetryableError(err: unknown): boolean {
   if (!(err instanceof ApiError)) return true;
+  if (err.final) return false;
   if (err.transport || err.status === undefined) return true;
   const s = err.status;
   return s === 401 || s === 403 || s === 408 || s === 429 || s >= 500;
 }
 
-type Headers = Record<string, string>;
+const isAuthFailure = (err: unknown): boolean =>
+  err instanceof ApiError && (err.status === 401 || err.status === 403);
 
-type Json = Record<string, unknown>;
-const asObject = (value: unknown): Json | null =>
-  value && typeof value === 'object' ? (value as Json) : null;
+type Headers = Record<string, string>;
 
 /** Normalise a V2 chain document down to the fields the panel needs. */
 function summaryFromV2(raw: unknown): MethodSummary | null {
   const doc = asObject(raw);
   if (!doc) return null;
-  const metadata = asObject(doc.metadata) || {};
-  const service = asObject(metadata.service) || {};
-  const name = firstString(doc.name, doc.aliasName, metadata.name);
-  const category = firstString(service.name, metadata.categoryName);
+  const metadata = asObject(doc.metadata);
+  const service = asObject(metadata?.service);
+  const name = firstString(doc.name, doc.aliasName, metadata?.name);
+  const category = firstString(service?.name, metadata?.categoryName);
   if (!name && !category) return null;
   return {
     name,
     category,
-    state: firstString(metadata.state) || 'DRAFT',
-    referenceId: firstString(metadata.referenceId)
+    state: firstString(metadata?.state) || 'DRAFT',
+    referenceId: firstString(metadata?.referenceId)
   };
 }
 
@@ -104,16 +127,7 @@ function summaryFromV2(raw: unknown): MethodSummary | null {
 function summaryFromV1(raw: unknown): MethodSummary | null {
   const doc = asObject(raw);
   if (!doc) return null;
-  let def: unknown = doc.jsonDefinition;
-  if (typeof def === 'string') {
-    try {
-      def = JSON.parse(def);
-    } catch {
-      def = null;
-    }
-  }
-  const definition = asObject(def);
-  const name = firstString(definition?.name, definition?.methodName, doc.aliasName, doc.name);
+  const name = firstString(nameFromDefinition(definitionOf(doc)), doc.aliasName, doc.name);
   const category = firstString(asObject(doc.category)?.name);
   if (!name && !category) return null;
   return {
@@ -123,8 +137,6 @@ function summaryFromV1(raw: unknown): MethodSummary | null {
     referenceId: firstString(doc.referenceId)
   };
 }
-
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 async function getJson(origin: string, path: string, headers: Headers): Promise<unknown> {
   if (!origin) {
@@ -161,14 +173,24 @@ async function getJson(origin: string, path: string, headers: Headers): Promise<
   }
 }
 
+/** The origin of a URL, or '' when it has none. */
+function originOf(url: unknown): string {
+  try {
+    return typeof url === 'string' ? new URL(url).origin : '';
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Resolves AD method uuids to their name, category and designer URL, for the
  * page DevTools is inspecting. Results are memoised in the method cache.
  */
 export class MethodResolver {
-  /** Headers harvested from an observed request. */
-  private harvested: Headers | null = null;
-  private scannedToken: Promise<string | null> | null = null;
+  /** Headers harvested from observed requests, per request origin. */
+  private readonly harvested = new Map<string, Headers>();
+  /** The last successful token scan, and the origin it was read on. */
+  private scanned: { origin: string; token: string } | null = null;
   /** In-flight resolves, so a burst of rows for one uuid makes one request. */
   private readonly inFlight = new Map<string, Promise<MethodSummary | null>>();
 
@@ -178,32 +200,45 @@ export class MethodResolver {
   ) {}
 
   /**
-   * Lift auth headers off an observed AD chain request. Called for every entry
-   * the panel captures; the last one wins so a refreshed token replaces a
-   * stale one.
+   * Lift auth headers off an observed AD chain request, for that request's
+   * origin only, and only on an allowed site. Called for every entry the panel
+   * captures; the last one wins so a refreshed token replaces a stale one.
    */
   rememberAuth(
-    har: { request?: { headers?: ReadonlyArray<{ name: string; value: string }> } } | null | undefined
+    har: {
+      request?: { url?: string; headers?: ReadonlyArray<{ name: string; value: string }> };
+    } | null | undefined
   ): void {
     const headers = har?.request?.headers;
-    if (!Array.isArray(headers)) return;
+    const origin = originOf(har?.request?.url);
+    if (!Array.isArray(headers) || !origin || !this.site.isAllowedOrigin(origin)) return;
     const found: Headers = {};
     for (const h of headers) {
       if (!h || typeof h.name !== 'string' || typeof h.value !== 'string') continue;
       if (AUTH_HEADERS.includes(h.name.toLowerCase()) && h.value) found[h.name] = h.value;
     }
-    if (Object.keys(found).length) this.harvested = found;
+    if (Object.keys(found).length) this.harvested.set(origin, found);
+  }
+
+  /** Forget every header and token learned: the inspected page navigated. */
+  forgetAuth(): void {
+    this.harvested.clear();
+    this.scanned = null;
   }
 
   /**
    * Resolve a uuid to its summary, cache-first. Null when the uuid resolves to
    * nothing. `onRevalidated` is called if a stale entry was served first and
-   * the background refresh produced data.
+   * the background refresh produced data. Rejects, without asking anyone,
+   * when the inspected page is not on an allowed site.
    */
   async resolveSummary(
     uuid: string,
     onRevalidated?: (summary: MethodSummary) => void
   ): Promise<MethodSummary | null> {
+    if (!this.site.isAllowed) {
+      throw new ApiError('this page is not on an allowed site', undefined, false, true);
+    }
     const origin = this.site.apiOrigin;
     const cached = this.cache.read(origin, uuid);
 
@@ -215,7 +250,8 @@ export class MethodResolver {
       return cached.data;
     }
 
-    const pending = this.inFlight.get(uuid);
+    const key = `${origin}|${uuid}`;
+    const pending = this.inFlight.get(key);
     if (pending) return pending;
 
     const task = (async () => {
@@ -224,10 +260,10 @@ export class MethodResolver {
         if (summary) this.cache.write(origin, uuid, summary);
         return summary;
       } finally {
-        this.inFlight.delete(uuid);
+        this.inFlight.delete(key);
       }
     })();
-    this.inFlight.set(uuid, task);
+    this.inFlight.set(key, task);
     return task;
   }
 
@@ -238,9 +274,8 @@ export class MethodResolver {
    * a cached category is not dropped.
    */
   rememberName(uuid: string, name: string): void {
-    if (!uuid || !name) return;
+    if (!uuid || !name || !this.site.isAllowed) return;
     const origin = this.site.apiOrigin;
-    if (!origin) return;
     const prev: Partial<MethodSummary> = this.cache.read(origin, uuid)?.data || {};
     if (prev.name === name) return;
     this.cache.write(origin, uuid, { ...prev, name });
@@ -264,7 +299,8 @@ export class MethodResolver {
     origin: string,
     onRevalidated?: (summary: MethodSummary) => void
   ): void {
-    if (this.inFlight.has(uuid)) return;
+    const key = `${origin}|${uuid}`;
+    if (this.inFlight.has(key)) return;
     const task = (async () => {
       try {
         const summary = await this.fetchSummary(origin, uuid);
@@ -278,27 +314,61 @@ export class MethodResolver {
         log.debug(`revalidating ${uuid} failed:`, err);
         return null;
       } finally {
-        this.inFlight.delete(uuid);
+        this.inFlight.delete(key);
       }
     })();
-    this.inFlight.set(uuid, task);
+    this.inFlight.set(key, task);
   }
 
-  private async authHeaders(): Promise<Headers> {
-    if (this.harvested) return { ...this.harvested };
-    this.scannedToken ??= evalInPage(TOKEN_SCAN).then((result) =>
-      typeof result === 'string' && result ? result : null
-    );
-    const token = await this.scannedToken;
-    return token ? { Authorization: `Bearer ${token}` } : {};
+  /** The page's token for `origin`: remembered, or scanned now. Null when none. */
+  private async tokenFor(origin: string): Promise<string | null> {
+    if (this.scanned?.origin === origin) return this.scanned.token;
+    const result = asObject(await evalInPage(TOKEN_SCAN));
+    const token = typeof result?.token === 'string' && result.token ? result.token : null;
+    // Only a token read on the very origin we are about to call is usable:
+    // the page may have navigated between the request and the scan.
+    if (!token || result?.origin !== origin) return null;
+    this.scanned = { origin, token };
+    return token;
+  }
+
+  /** What to authenticate a request to `origin` with. */
+  private async authHeaders(origin: string): Promise<{ headers: Headers; source: 'har' | 'scan' | 'none' }> {
+    const harvested = this.harvested.get(origin);
+    if (harvested) return { headers: { ...harvested }, source: 'har' };
+    const token = await this.tokenFor(origin);
+    return token
+      ? { headers: { Authorization: `Bearer ${token}` }, source: 'scan' }
+      : { headers: {}, source: 'none' };
+  }
+
+  /** Forget the credentials of `source` for `origin`: the server refused them. */
+  private dropAuth(origin: string, source: 'har' | 'scan' | 'none'): void {
+    if (source === 'har') this.harvested.delete(origin);
+    if (source === 'scan' && this.scanned?.origin === origin) this.scanned = null;
   }
 
   /**
-   * Fetch a method summary from the platform, V2 first with a V1 fallback.
-   * Throws on transport/auth failure so the caller can surface offline state.
+   * Fetch a method summary. A 401/403 with remembered credentials drops them
+   * and tries once more with fresh ones (a new scan, or cookies alone).
    */
   private async fetchSummary(origin: string, uuid: string): Promise<MethodSummary | null> {
-    const headers = await this.authHeaders();
+    const auth = await this.authHeaders(origin);
+    try {
+      return await this.fetchWith(origin, uuid, auth.headers);
+    } catch (err) {
+      if (!isAuthFailure(err) || auth.source === 'none') throw err;
+      this.dropAuth(origin, auth.source);
+      log.debug(`HTTP ${(err as ApiError).status} with the ${auth.source} token; retrying with fresh auth`);
+      return this.fetchWith(origin, uuid, (await this.authHeaders(origin)).headers);
+    }
+  }
+
+  /**
+   * One lookup, V2 first with a V1 fallback. Throws on transport/auth
+   * failure so the caller can surface offline state.
+   */
+  private async fetchWith(origin: string, uuid: string, headers: Headers): Promise<MethodSummary | null> {
     let v2Error: unknown;
     try {
       const summary = summaryFromV2(await getJson(origin, chainV2Path(uuid), headers));
@@ -307,7 +377,7 @@ export class MethodResolver {
     } catch (err) {
       // 401/403 will fail identically on V1, and a blocked origin will too —
       // surface those immediately instead of doubling the failed requests.
-      if (err instanceof ApiError && (err.status === 401 || err.status === 403 || err.transport)) {
+      if (err instanceof ApiError && (isAuthFailure(err) || err.transport)) {
         throw new ApiError(
           err.status ? `not signed in to this site (HTTP ${err.status})` : err.message,
           err.status,

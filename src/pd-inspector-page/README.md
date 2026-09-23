@@ -35,9 +35,16 @@ sends it commands.
    several of each are paired in document order only when the counts agree, and refused otherwise.
    `Resolver.resolve()` climbs from an element to its nearest anchored ancestor.
 5. The engine stores the result as `EngineState` and answers the panel's `PdCommand`s: `getState`,
-   `setInspect`, `highlightComponent`, `clearHighlight`.
+   `setInspect`, `highlightComponent`, `clearHighlight`. It answers only this extension
+   (`isFromExtension()`, the background relay) and only a command that passes the full-shape
+   `isPdCommand()` guard.
 6. In inspect mode, pointer moves outline the owning node with the `Highlighter`, and a click pushes
-   a `pick` message to the panel. Every `TIMINGS.pdRoutePoll` the engine checks the path; on a change
+   a `pick` message to the panel and never reaches the page. Inspect mode swallows the page's clicks,
+   so it has a watchdog: each `setInspect` with `on: true` (the panel re-sends it as a heartbeat)
+   re-arms a timer, and when `TIMINGS.pdInspectTimeout` passes without one (DevTools was closed, the
+   panel reloaded) the engine leaves inspect mode by itself. The constructor's `inspectTimeout`
+   parameter overrides the timeout, for tests.
+7. Every `TIMINGS.pdRoutePoll` the engine checks the path; on a change
    it leaves inspect mode, rebuilds (a generation counter drops the older build) and pushes
    `routeChanged`.
 
@@ -54,8 +61,8 @@ anchored rather than guessed.
   [`shared/messages.ts`](../shared/messages.ts).
 - **Depends on:** `PD_DEPLOYABLE_PATH` ([`config/endpoints.ts`](../config/endpoints.ts)),
   `PAGES_ROUTE_PREFIX` ([`config/routes.ts`](../config/routes.ts)), `PD_CONFIG_NODES`
-  ([`config/selectors.ts`](../config/selectors.ts)), `TIMINGS.pdRoutePoll`, `ns()` and
-  `EXTENSION_OWNED_ATTR` ([`config/namespace.ts`](../config/namespace.ts)), the page's own session
+  ([`config/selectors.ts`](../config/selectors.ts)), `TIMINGS.pdRoutePoll` and
+  `TIMINGS.pdInspectTimeout`, `ns()` and `EXTENSION_OWNED_ATTR` ([`config/namespace.ts`](../config/namespace.ts)), the page's own session
   (fetches use `credentials: 'include'`), and the live DOM.
 
 ## Conventions
@@ -73,13 +80,14 @@ anchored rather than guessed.
 Tests live in [`tests/pd-inspector-page/`](../../tests/pd-inspector-page/): `config-fetch.test.ts`
 (page, shell and component fetches), `model.test.ts` (config tree, references, component tree) and
 `resolve.test.ts` (`buildConfigIndex` and `Resolver`) and `engine.test.ts` (the `PdEngine` and
-`Highlighter` lifecycle and the build generation guard). To run the tests, see the root
+`Highlighter` lifecycle, the build generation guard, inspect-mode clicks, the watchdog, and the
+sender and command checks). To run the tests, see the root
 [README](../../README.md#development)'s Development section.
 
 ## Adding or changing things
 
-- **A new panel command:** add it to `PdCommand` in [`shared/messages.ts`](../shared/messages.ts),
-  handle it in `PdEngine.handleCommand()`, and call it from `PdInspectorPanel`.
+- **A new panel command:** add it to `PdCommand` and the `isPdCommand()` guard in
+  [`shared/messages.ts`](../shared/messages.ts), handle it in `PdEngine.handleCommand()`, and call it from `PdInspectorPanel`.
 - **A new node kind in the tree:** add it to `NodeKind` in `types.ts`, to `KIND` and `KIND_BADGE`
   and `detectKind()` in `tree.ts`, and any names it matches to `PD_CONFIG_NODES`. Add a
   `.nbadge.k-<KIND>` style in the panel's `panel.html` if it needs a colour.

@@ -4,14 +4,14 @@
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
 import { defaultKeymap, indentWithTab, history } from '@codemirror/commands';
-import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
+import { search, searchKeymap, openSearchPanel, searchPanelOpen } from '@codemirror/search';
 import { sql, keywordCompletionSource, StandardSQL } from '@codemirror/lang-sql';
 import { javascript, scopeCompletionSource, localCompletionSource } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
 import { java } from '@codemirror/lang-java';
 import { python } from '@codemirror/lang-python';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/autocomplete';
+import { autocompletion, closeBrackets, completionKeymap, completionStatus } from '@codemirror/autocomplete';
 import { settings } from '../../core/settings';
 import {
   SETTINGS,
@@ -53,6 +53,9 @@ const EDITOR_SETTINGS_BUTTON_ID = ns('TextareaEditorSettingsButton');
 const STATUS_ID = ns('TextareaEditorStatus');
 
 const DEFAULT_STATUS = 'Syntax highlighting and optional line wrapping.';
+/** Shown after Esc with unsaved changes; a second Esc within the window discards them. */
+const DISCARD_PROMPT = 'Unsaved changes: press Esc again to discard them, or Ctrl+S to save.';
+const DISCARD_WINDOW_MS = 3000;
 
 const EDITOR_VERTICAL_PADDING_PX = 14;
 const EDITOR_HORIZONTAL_PADDING_PX = 16;
@@ -452,6 +455,12 @@ export class TextareaEditorModal {
   /** Completion over `scope`, built once per open and reused on mode changes. */
   private variableSource: CompletionSource | null = null;
   private unsubscribeSettings: (() => void) | null = null;
+  /** The text as opened: anything else is an unsaved change. */
+  private openedText = '';
+  /** The footer's text for this open, put back after the discard prompt. */
+  private statusText = DEFAULT_STATUS;
+  /** Until when a second Esc discards unsaved changes (epoch ms); 0 when not asked. */
+  private discardArmedUntil = 0;
 
   private destroyView(): void {
     if (!this.view) return;
@@ -522,6 +531,8 @@ export class TextareaEditorModal {
       this.wrapCompartment.of(getWrapExtensionForMode(selectedWrapMode)),
       EditorView.updateListener.of((update) => {
         if (!update.docChanged || !this.view) return;
+        // An edit after the discard prompt takes the prompt back.
+        if (this.discardArmedUntil) this.disarmDiscard();
         if (this.languageOverridden) return;
 
         const nextMode = detectLanguage(update.state.doc.toString());
@@ -531,6 +542,8 @@ export class TextareaEditorModal {
     ];
 
     this.destroyView();
+    this.openedText = textValue;
+    this.discardArmedUntil = 0;
     this.view = new EditorView({
       state: EditorState.create({
         doc: textValue,
@@ -593,8 +606,40 @@ export class TextareaEditorModal {
     this.source = null;
     this.scope = null;
     this.variableSource = null;
+    this.discardArmedUntil = 0;
     this.destroyView();
-    modalLock.unlock();
+    modalLock.unlock(this);
+  }
+
+  /** True while the editor holds text that differs from what was opened. */
+  get hasUnsavedChanges(): boolean {
+    return this.view !== null && this.text() !== this.openedText;
+  }
+
+  /**
+   * Esc: close, but not straight over unsaved changes. The first Esc then
+   * only says so in the footer; a second one within DISCARD_WINDOW_MS
+   * discards them. Typing in between takes the prompt back.
+   */
+  private closeOrAskFirst(): void {
+    if (!this.hasUnsavedChanges || Date.now() <= this.discardArmedUntil) {
+      this.close();
+      return;
+    }
+    this.discardArmedUntil = Date.now() + DISCARD_WINDOW_MS;
+    this.setStatus(DISCARD_PROMPT, true);
+  }
+
+  private disarmDiscard(): void {
+    this.discardArmedUntil = 0;
+    this.setStatus(this.statusText, false);
+  }
+
+  private setStatus(text: string, warning: boolean): void {
+    const status = byId<HTMLElement>(STATUS_ID);
+    if (!status) return;
+    status.textContent = text;
+    status.style.color = warning ? T.warning : T.fgFaint;
   }
 
   /** Close, and remove the modal's DOM, listeners and settings subscription. */
@@ -658,23 +703,31 @@ export class TextareaEditorModal {
     saveBtn.style.opacity = readOnly ? '0.45' : '1';
     saveBtn.style.cursor = readOnly ? 'not-allowed' : 'pointer';
 
-    const status = byId<HTMLElement>(STATUS_ID);
-    if (status) status.textContent = this.scope ? scopeStatus(this.scope) : DEFAULT_STATUS;
+    this.statusText = this.scope ? scopeStatus(this.scope) : DEFAULT_STATUS;
+    this.setStatus(this.statusText, false);
 
     syncEditorControlValuesFromSettings();
     this.createView(sourceEl);
   }
 
-  // Escape, Ctrl+S and Ctrl+F while the editor is open. Capture phase, so
-  // the host page's own shortcuts never see them.
+  // Escape, Ctrl+S and Ctrl+F while the editor is open and on top (the
+  // settings modal can open over it). Capture phase, so the host page's own
+  // shortcuts never see them.
   private readonly onKeydown = (event: KeyboardEvent): void => {
     if (!this.overlay || this.overlay.style.display !== 'flex') {
       return;
     }
+    if (event.defaultPrevented || !modalLock.isTopmost(this)) return;
 
     if (event.key === 'Escape') {
+      // CodeMirror's own popups close first, with its own Esc: the
+      // completion list and the search panel. This listener runs before
+      // CodeMirror's, so it steps aside while one is open.
+      const view = this.view;
+      if (view && (completionStatus(view.state) !== null || searchPanelOpen(view.state))) return;
       event.preventDefault();
-      this.close();
+      event.stopPropagation();
+      this.closeOrAskFirst();
       return;
     }
 
@@ -970,7 +1023,7 @@ export class TextareaEditorModal {
     this.showSource(sourceEl);
     modal.style.display = 'flex';
     if (!wasOpen) {
-      modalLock.lock();
+      modalLock.lock(this);
     }
 
     if (this.view) {

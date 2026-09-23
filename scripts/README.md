@@ -8,6 +8,7 @@ Build tooling. These Node scripts turn `src/` into loadable extensions: bundle t
 |---|---|---|
 | [`build.mjs`](build.mjs) | Bundles every entry point into `dist/` with `bun build`, escapes non-ASCII, writes the content-script loaders, then runs the singleton check. | `bun run build:dist`; also called by `pack.mjs` and `tests/build/bundle.test.ts` |
 | [`pack.mjs`](pack.mjs) | Runs `build.mjs`, then writes `build/chrome/` and `build/firefox/`, each with its own manifest. | `bun run build`; also called by `dev.mjs`, `tests/e2e/run.mjs` and the release workflow |
+| [`manifests.mjs`](manifests.mjs) | `browserManifest(manifest, target, { version, release })`: the Chromium or Firefox manifest derived from `manifest.json`. Pure. | `pack.mjs`; `tests/build/manifest.test.ts` |
 | [`dev.mjs`](dev.mjs) | Watches `src/`, `fonts/`, `manifest.json`, `release.config.json` and `sites.default.json`, and re-runs `pack.mjs` on every change. | `bun run dev` |
 | [`escape-non-ascii.mjs`](escape-non-ascii.mjs) | Rewrites one file in place, replacing every non-ASCII character with a `\uXXXX` escape (surrogate pairs above U+FFFF). | `build.mjs`, once per output file |
 | [`check-singletons.mjs`](check-singletons.mjs) | Fails the build if a stateful module is bundled more than once into the designer content scripts. | `build.mjs`, as its last step |
@@ -24,7 +25,7 @@ Build tooling. These Node scripts turn `src/` into loadable extensions: bundle t
    - runs `escape-non-ascii.mjs` over every output file;
    - runs `check-singletons.mjs`.
 3. **`check-singletons.mjs`** collects every `/*! belz-singleton: <name> */` marker in `src/`, and checks each appears in exactly one `dist/` file of the designer world. Files in its `OTHER_WORLDS` list (background, options, DevTools pages, `pd-inspector.js`) are skipped because they run with their own memory. It also fails on any module under `src/designer/`, `src/config/` or `src/shared/` that has top-level state (`let`/`var`, or a non-SCREAMING_CASE `const` built with `new`) but no marker, and prints the marker line to add.
-4. **`pack.mjs`** copies the `SHARED` list (`dist/`, `fonts/`, the four HTML pages, and `sites.default.json` if present) into each tree. The HTML pages move from `src/` to the tree root. It then writes a per-browser manifest:
+4. **`pack.mjs`** copies the `SHARED` list (`dist/`, `fonts/`, the four HTML pages, and `sites.default.json` if present) into each tree. The HTML pages move from `src/` to the tree root. It then writes a per-browser manifest, built by `browserManifest()` in `manifests.mjs`:
    - `build/chrome/`: `background.scripts` and `browser_specific_settings` removed.
    - `build/firefox/`: `background.service_worker` removed; `browser_specific_settings.gecko` added with `id` and `update_url` from `release.config.json` and `strict_min_version: '128.0'`.
    - `--version X.Y.Z` overrides the manifest version in both (the release workflow passes the tag).
@@ -41,7 +42,7 @@ The reasons behind the split graph and the singleton rule are in [AGENTS.md](../
 
 ## Testing
 
-[`tests/build/bundle.test.ts`](../tests/build/bundle.test.ts) runs `build.mjs` and checks its output. CI runs the full build in [`.github/workflows/test.yml`](../.github/workflows/test.yml). For commands, see the root [README.md](../README.md) Development section.
+[`tests/build/bundle.test.ts`](../tests/build/bundle.test.ts) runs `build.mjs` and checks its output. [`tests/build/manifest.test.ts`](../tests/build/manifest.test.ts) checks the manifests `browserManifest()` produces for both browsers (permissions, https-only optional host permissions, web-accessible resources, background, gecko settings) without building. CI runs the full build in [`.github/workflows/test.yml`](../.github/workflows/test.yml). For commands, see the root [README.md](../README.md) Development section.
 
 ## Adding or changing things
 
@@ -49,6 +50,6 @@ The reasons behind the split graph and the singleton rule are in [AGENTS.md](../
 
 1. Add it to `standalone` in `build.mjs`. A content script that shares code with the AD/PD content scripts goes in `splitEntries` instead.
 2. If it has an HTML page, add the page to `SHARED` in `pack.mjs`.
-3. Add it to `manifest.json`.
+3. Add it to `manifest.json`. A change to what differs per browser goes in `manifests.mjs`.
 4. If it runs in its own JavaScript world, add its output to `OTHER_WORLDS` in `check-singletons.mjs` with the reason.
 5. Update the layout in [AGENTS.md](../AGENTS.md).
