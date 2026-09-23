@@ -24,6 +24,12 @@
 # shredded by an always() step even if signing fails. The AMO credentials are
 # given to the one step that uses them, as environment variables.
 #
+# Least privilege: the workflow's token can only read by default. The release
+# job may write repository contents (to create the GitHub Release), and only
+# deploy-pages may publish to Pages. The checkout keeps no credentials on
+# disk, and no workflow expression is expanded inside a script: values reach
+# `run:` blocks as environment variables.
+#
 # Required repository secrets:
 #   CHROME_CRX_KEY    PEM private key for CRX signing. Generate ONCE and never
 #                     rotate — the key determines the stable Chrome extension
@@ -43,9 +49,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write   # create/update the GitHub Release
-  pages: write      # publish update manifests
-  id-token: write
+  contents: read
 
 concurrency:
   group: release
@@ -56,8 +60,12 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
+    permissions:
+      contents: write   # create/update the GitHub Release
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -77,12 +85,15 @@ jobs:
         run: bun test
 
       - name: Build per-browser extension trees
-        run: node scripts/pack.mjs --version "${{ steps.ver.outputs.version }}"
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: node scripts/pack.mjs --version "$VERSION"
 
       - name: Pack signed Chromium CRX
         id: crx
         env:
           CHROME_CRX_KEY: ${{ secrets.CHROME_CRX_KEY }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           umask 077
           printf '%s' "$CHROME_CRX_KEY" > key.pem
@@ -90,7 +101,7 @@ jobs:
           # -p is crx3's key option; with any other flag it signs with a new,
           # random key and the extension ID changes.
           ./node_modules/.bin/crx3 -p key.pem \
-            -o "dist-pack/belz-extension-${{ steps.ver.outputs.version }}.crx" \
+            -o "dist-pack/belz-extension-$VERSION.crx" \
             build/chrome < /dev/null
           # Derive the deterministic Chrome extension ID from the public key.
           ID=$(node -e '
@@ -129,12 +140,14 @@ jobs:
           echo "xpi=$XPI" >> "$GITHUB_OUTPUT"
 
       - name: Generate update manifests
+        env:
+          V: ${{ steps.ver.outputs.version }}
+          XPI: ${{ steps.xpi.outputs.xpi }}
+          CRX_ID: ${{ steps.crx.outputs.id }}
         run: |
-          V="${{ steps.ver.outputs.version }}"
-          BASE="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
+          BASE="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
           FF_ID=$(node -e 'console.log(require("./release.config.json").firefoxId)')
           CRX="dist-pack/belz-extension-$V.crx"
-          XPI="${{ steps.xpi.outputs.xpi }}"
           XPI_NAME=$(basename "$XPI")
           if [ -z "$XPI_NAME" ] || [ ! -f "$XPI" ]; then echo "::error::no signed XPI to publish"; exit 1; fi
           if [ ! -f "$CRX" ]; then echo "::error::no CRX to publish"; exit 1; fi
@@ -146,7 +159,7 @@ jobs:
           cat > pages/updates.xml <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
-            <app appid="${{ steps.crx.outputs.id }}">
+            <app appid="$CRX_ID">
               <updatecheck codebase="$BASE/belz-extension-$V.crx" version="$V"/>
             </app>
           </gupdate>
@@ -159,8 +172,10 @@ jobs:
       - name: Publish packages to the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          XPI: ${{ steps.xpi.outputs.xpi }}
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="$GITHUB_REF_NAME"
           # Re-running the workflow for a tag finds its release already there:
           # that is the one tolerated case. Any other failure fails the job.
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -168,7 +183,7 @@ jobs:
           else
             gh release create "$TAG" --title "$TAG" --notes "Automated release."
           fi
-          gh release upload "$TAG" "dist-pack/belz-extension-${{ steps.ver.outputs.version }}.crx" "${{ steps.xpi.outputs.xpi }}" --clobber
+          gh release upload "$TAG" "dist-pack/belz-extension-$VERSION.crx" "$XPI" --clobber
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1

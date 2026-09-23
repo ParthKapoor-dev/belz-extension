@@ -25,7 +25,7 @@ It runs on Chrome, Edge, Brave, Firefox and Zen. It only talks to the sites you 
 
 Signed builds are attached to the project's [GitHub Releases](https://github.com/ParthKapoor-dev/belz-extension/releases) when they are published. To build it yourself, which takes about a minute:
 
-**You need:** [Git](https://git-scm.com/), [Bun](https://bun.sh/), and [Node.js](https://nodejs.org/) 18 or newer to build (20 or newer for `bun run dev` on Linux, which needs recursive file watching; 22 or newer for the end-to-end tests, which use Node's built-in `WebSocket`).
+**You need:** [Git](https://git-scm.com/), [Bun](https://bun.sh/) (CI and the release build use Bun 1.2.20), and [Node.js](https://nodejs.org/) 18 or newer to build (20 or newer for `bun run dev` on Linux, which needs recursive file watching; 22 or newer for the end-to-end tests, which use Node's built-in `WebSocket`).
 
 ```bash
 git clone https://github.com/ParthKapoor-dev/belz-extension.git
@@ -225,7 +225,7 @@ scripts/              build, per-browser packaging, dev watcher
 
 ## Releasing
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`. It type-checks and runs the unit tests, then:
+Pushing a `v*` tag runs `.github/workflows/release.yml`. The tag sets the version that ships: `v1.2.3` builds version `1.2.3` (`scripts/pack.mjs --version`). The `version` in `manifest.json` and `package.json` is only what a local build carries. The workflow type-checks and runs the unit tests, then:
 
 - Builds and signs a Chrome `.crx` and a Firefox `.xpi`.
 - Attaches both to a GitHub Release.
