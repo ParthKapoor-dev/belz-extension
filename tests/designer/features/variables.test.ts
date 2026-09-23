@@ -38,10 +38,10 @@ function complete(doc: string, explicit = false): { from: number; labels: string
 }
 
 describe('variable completion', () => {
-  test('right after #{ it offers every variable, closing the brace', () => {
+  test('right after #{ it offers the variables in scope, closing the brace', () => {
     const result = complete('select #{|');
     expect(result?.from).toBe(9);
-    expect(result?.labels).toEqual(['reportCodes', 'varGuardStorage', 'firstOut', 'laterOut']);
+    expect(result?.labels).toEqual(['reportCodes', 'varGuardStorage', 'firstOut']);
     expect(result?.applies[0]).toBe('reportCodes}');
   });
 
@@ -49,7 +49,13 @@ describe('variable completion', () => {
     expect(complete('#{rep|}')?.applies[0]).toBe('reportCodes');
   });
 
-  test('outputs not produced yet sort last and say so', () => {
+  test('outputs of this and later steps are never offered', () => {
+    expect(complete('#{later|')?.labels ?? []).not.toContain('laterOut');
+    expect(complete('#{laterOut.|')).toBeNull();
+    expect(complete('#{firstOut.|')?.labels).toEqual(['element']);
+  });
+
+  test('descriptions say where a variable comes from', () => {
     const later = describeVariable(SCOPE.variables[3]!);
     expect(later.detail).toBe('step 3.3 (later)');
     expect(describeVariable(SCOPE.variables[2]!).info).toBe('Output of step 3.1');

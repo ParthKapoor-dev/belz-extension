@@ -26,9 +26,8 @@ const HOVER_KIND_CLASS = ns('VariableHoverKind');
 /** How far past the hovered position a reference can still extend. */
 const HOVER_LOOKAHEAD = 200;
 
-/** Declared names first, then earlier outputs; outputs not produced yet last. */
+/** Inputs first, then internal variables, then outputs of earlier steps. */
 function boostOf(variable: ScopeVariable): number {
-  if (!variable.inScope) return -50;
   return variable.kind === 'input' ? 3 : variable.kind === 'variable' ? 2 : 1;
 }
 
@@ -37,10 +36,15 @@ function boostOf(variable: ScopeVariable): number {
  * `#{ … ` (SpEL such as `#{a == null or a.size()}` names them without `#`).
  * After `#{name.` it offers `element`, the item of a step looping over `name`:
  * which step loops over what is not visible on the page, so it is offered for
- * any known name.
+ * any name in scope.
+ *
+ * Only variables in scope are offered: outputs of the edited step and of later
+ * steps do not exist yet when this step runs, so they are never suggested (the
+ * linter still flags them if typed by hand).
  */
 export function variableCompletionSource(scope: VariableScope): CompletionSource {
-  const known = variablesByName(scope);
+  const inScope = scope.variables.filter((variable) => variable.inScope);
+  const known = variablesByName({ ...scope, variables: inScope });
 
   return (context: CompletionContext): CompletionResult | null => {
     let from: number;
@@ -82,7 +86,7 @@ export function variableCompletionSource(scope: VariableScope): CompletionSource
       };
     }
 
-    const options: Completion[] = scope.variables.map((variable) => {
+    const options: Completion[] = inScope.map((variable) => {
       const { detail, info } = describeVariable(variable);
       return {
         label: variable.name,
