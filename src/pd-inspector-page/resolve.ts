@@ -1,12 +1,10 @@
 // DOM -> config-node ownership, anchored on className.
 //
-// This replaces the old two-tag anchor correlation, which counted
-// `exp-form-builder` / `exp-data-table` elements document-wide and zipped them
-// against the config by index. That scheme was wrong in principle (the counts
-// came from different regions of the page) and useless in practice — the page
-// it was written for renders ZERO form-builders.
+// Counting framework tags (`exp-form-builder`, `exp-data-table`) document-wide
+// and zipping them against the config by index does not work: those counts come
+// from different regions of the page, and many pages render none of them.
 //
-// What actually works, established by measurement on live pages:
+// What does work, established by measurement on live pages:
 //
 //   - The runtime emits an `<exp-layout class="exp-layout-use-sibling">` marker
 //     before each element it renders, but the marker set is NOT 1:1 with config
@@ -20,7 +18,7 @@
 //
 // So: use className as anchor points, and answer "who owns this element?" by
 // climbing to the nearest anchored ancestor. On the reference page that covers
-// 98% of visible elements, against 1 usable anchor before.
+// 98% of visible elements.
 
 import { isSymbolRef } from './config';
 import { PD_CONFIG_NODES } from '../config/selectors';

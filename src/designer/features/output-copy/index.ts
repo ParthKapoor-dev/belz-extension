@@ -1,14 +1,10 @@
 // Output copy — one floating Copy button shared by every output container.
 //
-// The earlier design appended a controls <div> and a button into each output
-// container, added a class and an inline `position: relative` to the container
-// itself, marked it with an attribute, and rescanned the whole document on
-// every DOM mutation to catch new ones. On a 40-step method that is 80 injected
-// nodes, 40 forced style resolutions, 40 mutations of the page's own markup,
-// and a querySelectorAll sweep per mutation batch.
-//
-// It is now a single hover-positioned overlay that touches nothing on the page.
-// See designer/ui/hover-overlay.ts.
+// A button injected into each output container would cost, on a 40-step
+// method, 80 injected nodes, 40 forced style resolutions, 40 mutations of the
+// page's own markup, and a querySelectorAll sweep per mutation batch. So it is
+// a single hover-positioned overlay that touches nothing on the page. See
+// designer/ui/hover-overlay.ts.
 
 import { AD } from '../../../config/selectors';
 import { EXTENSION_OWNED_ATTR, ns } from '../../../config/namespace';

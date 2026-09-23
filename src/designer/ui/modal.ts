@@ -2,8 +2,8 @@
 //
 // These are inline-style objects (the extension styles via Object.assign).
 // Apply them to the overlay / dialog / header / footer / title / close-button
-// of each modal so the JSON-input editor and the large text editor share an
-// identical shell: axiom-style — flat, sharp corners, hairline borders, the
+// of each modal so the JSON-input editor, the settings modal and the large
+// text editor share one shell: axiom-style — flat, sharp corners, hairline borders, the
 // mono typeface, no gradients or glows.
 
 import { T, FONT_MONO, RADIUS, SHADOW, SCRIM } from './theme';

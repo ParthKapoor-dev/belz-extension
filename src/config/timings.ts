@@ -24,6 +24,11 @@ export const TIMINGS = {
   autofillInputPoll: 400,
   /** Autofill: after the inputs appear, before writing, so Angular can settle. */
   autofillSettle: 500,
+  /**
+   * Autofill: how long each wait (title, then inputs) lasts before giving up,
+   * so a page that never renders the method does not poll forever.
+   */
+  autofillGiveUp: 30_000,
 
   /** Waiting for a widget to react: tries × interval. */
   widgetPoll: { tries: 24, interval: 30 },
@@ -52,6 +57,8 @@ export const TIMINGS = {
   /**
    * DevTools panels: how long the focus shortcut (Ctrl+Shift+A / P) pulses
    * the panel. Shared by both panels, so it lives here rather than in either.
+   * The panels' CSS animation reads it too, through the `--focus-flash-ms`
+   * property FocusFlash (devtools/view.ts) sets.
    */
   panelFocusFlash: 900
 } as const;

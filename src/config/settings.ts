@@ -39,7 +39,14 @@ const FONT_SIZES = [12, 13, 14, 16, 18] as const;
 
 export const SETTINGS = {
   titleUpdater: toggle('features', 'Title Updater', 'Update tab title with AD/PD method/page name'),
-  runTestShortcut: toggle('features', 'Keyboard Shortcuts', 'Ctrl+Shift+Enter run test · Shift+L copy link · Esc Esc unfocus'),
+  // Switches every KeyboardShortcuts shortcut, not only Run Test. The key keeps
+  // its original name because it is the stored setting: renaming it would
+  // reset every user's choice.
+  runTestShortcut: toggle(
+    'features',
+    'Keyboard Shortcuts',
+    'Ctrl+Shift+Enter run test · Esc Esc unfocus · Shift+L copy link (AD) · Shift+J JSON editor (AD)'
+  ),
   jsonEditor: toggle('features', 'JSON Editor', 'Show JSON input button and modal editor'),
   outputCopy: toggle('features', 'Output Copy', 'Show Copy button near output containers'),
   textareaEditor: toggle('features', 'Textarea Editor', 'Show Open button for native textareas'),

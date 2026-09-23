@@ -5,22 +5,24 @@
 // 1. The DESIGNER CONTENT SCRIPTS (AD, PD) are built together as ONE code-split
 //    ES-module graph into dist/modules/. This exists so the textarea editor's
 //    CodeMirror (~600 KB) can be loaded on first use instead of on every page
-//    load — features/textarea-editor/index.js reaches it via `import()`.
+//    load — src/designer/features/textarea-editor/index.ts reaches it via
+//    `import()`.
 //
 //    They MUST be one `bun build --splitting` call, not one call per entry.
-//    The lazy editor imports core/state, core/settings and ui/modal-lock,
-//    which are module-level singletons. Built separately, the editor chunk
-//    would carry its own copies: `state` would be two objects, settings two
-//    subscriber lists, and the modal lock two counters — so the keyboard
-//    shortcuts would stop seeing that the editor is open. One graph puts
-//    shared modules in shared chunks, and a page loads each chunk once.
+//    The lazy editor imports designer/core/settings, designer/ui/modal-lock,
+//    designer/ui/toast and the settings modal, which are module-level
+//    singletons. Built separately, the editor chunk would carry its own
+//    copies: the `settings` store would have two subscriber lists and the
+//    modal lock two counters — so the keyboard shortcuts would stop seeing
+//    that the editor is open. One graph puts shared modules in shared chunks,
+//    and a page loads each chunk once.
 //
 //    Content scripts cannot be ES modules themselves, so dist/ad-content.js
 //    and dist/pd-content.js are small generated loaders that `import()` the
-//    real entry. The loaders keep the paths background.js registers, so no
-//    registration changes. Both browsers require the imported files to be
-//    web_accessible_resources (verified: without it Chromium and Firefox
-//    both refuse the import) — see manifest.json.
+//    real entry. The loaders keep the paths src/background/content-scripts.ts
+//    registers, so no registration changes. Both browsers require the
+//    imported files to be web_accessible_resources (verified: without it
+//    Chromium and Firefox both refuse the import) — see manifest.json.
 //
 // 2. EVERYTHING ELSE is built standalone, one invocation per entry, so the
 //    output lands flat in dist/ (a single shared build would mirror the src/

@@ -42,57 +42,73 @@ export function startCurlAutofillFeature(): void {
   waitForPageTitleThenSync(jsonString);
 }
 
-function waitForPageTitle(): Promise<string> {
-  const initialTitle = document.title;
-  log.debug('waiting for page title (current:', JSON.stringify(initialTitle), ')');
-  return new Promise<string>(resolve => {
+/** Resolves true once `ready()` holds, or false after `timeoutMs`, checking every `intervalMs`. */
+function pollUntil(ready: () => boolean, intervalMs: number, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const deadline = Date.now() + timeoutMs;
     const check = setInterval(() => {
-      const current = document.title;
-      if (current && current !== initialTitle) {
+      if (ready()) {
         clearInterval(check);
-        resolve(current);
+        resolve(true);
+      } else if (Date.now() >= deadline) {
+        clearInterval(check);
+        resolve(false);
       }
-    }, TIMINGS.autofillTitlePoll);
+    }, intervalMs);
   });
 }
 
 async function waitForPageTitleThenSync(jsonString: string): Promise<void> {
-  const title = await waitForPageTitle();
-  log.debug('page title ready:', JSON.stringify(title), '— starting input poll');
+  // A title change is the sign that the app has rendered the method. It is
+  // only a hint: if it never changes (the title was already final when this
+  // script ran), go on and look for the inputs anyway.
+  const initialTitle = document.title;
+  log.debug('waiting for page title (current:', JSON.stringify(initialTitle), ')');
+  const titled = await pollUntil(
+    () => Boolean(document.title) && document.title !== initialTitle,
+    TIMINGS.autofillTitlePoll,
+    TIMINGS.autofillGiveUp
+  );
+  if (titled) log.debug('page title ready:', JSON.stringify(document.title), '— starting input poll');
+  else log.debug(`page title did not change within ${TIMINGS.autofillGiveUp} ms — looking for inputs anyway`);
 
   let attempt = 0;
+  const found = await pollUntil(
+    () => {
+      attempt++;
+      const count = extractAllInputs().length;
+      log.debug(`attempt ${attempt}: ${count} inputs extracted (${document.querySelectorAll(AD_INPUTS.keyElements).length} INPUT_LIST_* ids)`);
+      return count > 0;
+    },
+    TIMINGS.autofillInputPoll,
+    TIMINGS.autofillGiveUp
+  );
+  if (!found) {
+    log.warn(`no test inputs appeared within ${TIMINGS.autofillGiveUp} ms; autofill gave up`);
+    toast.show('Autofill: the method\'s inputs did not appear, nothing was filled');
+    return;
+  }
 
-  const timer = setInterval(async () => {
-    attempt++;
+  // Small pause to let Angular finish any pending bindings after the last render
+  await new Promise((r) => setTimeout(r, TIMINGS.autofillSettle));
 
-    const rawCount = document.querySelectorAll(AD_INPUTS.keyElements).length;
-    const inputs = extractAllInputs();
-    log.debug(`attempt ${attempt}: ${inputs.length} inputs extracted (${rawCount} INPUT_LIST_* ids)`);
-    if (inputs.length === 0) return;
+  log.debug('calling syncJSONToInputs...');
+  const result = await syncJSONToInputs(jsonString);
+  log.debug('sync result:', JSON.stringify(result, null, 2));
 
-    clearInterval(timer);
+  if (result.skippedMissingKeys?.length) {
+    log.debug('skipped (no matching input on page):', result.skippedMissingKeys);
+  }
+  if (result.failedKeys?.length) {
+    log.warn('failed to populate:', result.failedKeys);
+  }
+  if (result.errors?.length) {
+    log.warn('errors:', result.errors);
+  }
 
-    // Small pause to let Angular finish any pending bindings after the last render
-    await new Promise(r => setTimeout(r, TIMINGS.autofillSettle));
-
-    log.debug('calling syncJSONToInputs...');
-    const result = await syncJSONToInputs(jsonString);
-    log.debug('sync result:', JSON.stringify(result, null, 2));
-
-    if (result.skippedMissingKeys?.length) {
-      log.debug('skipped (no matching input on page):', result.skippedMissingKeys);
-    }
-    if (result.failedKeys?.length) {
-      log.warn('failed to populate:', result.failedKeys);
-    }
-    if (result.errors?.length) {
-      log.warn('errors:', result.errors);
-    }
-
-    if (result.success) {
-      toast.show(`Autofill: filled ${result.filledCount} input${result.filledCount === 1 ? '' : 's'}`);
-    } else {
-      toast.show(`Autofill: filled ${result.filledCount}, check console for details`);
-    }
-  }, TIMINGS.autofillInputPoll);
+  if (result.success) {
+    toast.show(`Autofill: filled ${result.filledCount} input${result.filledCount === 1 ? '' : 's'}`);
+  } else {
+    toast.show(`Autofill: filled ${result.filledCount}, check console for details`);
+  }
 }

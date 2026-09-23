@@ -4,7 +4,7 @@
 // Network-tab response viewer: array-length badges, collapsed previews, a
 // property filter, expand/collapse-all, and a Raw toggle back to plain text.
 //
-// Vanilla DOM only (no framework), to match panel.ts. All nodes are built with
+// Vanilla DOM only (no framework), like the rest of the panel. All nodes are built with
 // textContent, so payload contents can never inject markup.
 
 const INDENT_PX = 13;

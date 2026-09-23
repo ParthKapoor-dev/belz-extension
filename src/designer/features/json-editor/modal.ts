@@ -189,7 +189,9 @@ export class JsonEditorModal {
 
     const helpText = document.createElement('div');
     Object.assign(helpText.style, { fontSize: '12px', color: T.fgFaint });
-    helpText.textContent = 'Keys marked with * are mandatory';
+    // JSON keys must match the page's input keys exactly, so mandatory ones
+    // cannot be marked in the editor text; they are listed under it instead.
+    helpText.textContent = 'Mandatory keys, if any, are listed under the editor';
 
     const buttonGroup = document.createElement('div');
     Object.assign(buttonGroup.style, { display: 'flex', gap: '8px' });
@@ -229,6 +231,10 @@ export class JsonEditorModal {
   }
 
   private ensure(): ModalParts {
+    // The host app can wipe and re-render the body, taking the modal with it.
+    // Drop the detached one (its listener, and the modal lock if it was open)
+    // and build afresh.
+    if (this.parts && !this.parts.overlay.isConnected) this.dispose();
     this.parts ??= this.build();
     return this.parts;
   }

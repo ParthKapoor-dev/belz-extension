@@ -1,4 +1,4 @@
-// Guards the build's two load-bearing properties, on the real build output:
+// Guards four load-bearing properties of the build, on the real build output:
 //
 //  1. The ~600 KB editor (CodeMirror) is NOT parsed on page load. It must be
 //     reachable from the content-script entries only through a dynamic
@@ -9,7 +9,7 @@
 //  4. Nor is the AD `#{variable}` scanner: only ad-content.ts passes it to
 //     TextareaEditor.
 //
-// Runs scripts/build.mjs, so it takes about a second.
+// Runs scripts/build.mjs, so it rewrites dist/ and takes a few seconds.
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { execSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';

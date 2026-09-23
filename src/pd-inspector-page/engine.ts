@@ -204,8 +204,7 @@ export class PdEngine {
       this.highlighter.hide();
       return;
     }
-    // The node label says WHICH config node, not just which component — the old
-    // scheme could only ever name a whole form-builder region.
+    // The label names the config node, not just its component.
     const node = hit.node.className
       ? `<${hit.node.name} class="${hit.node.className}">`
       : `<${hit.node.name}>`;

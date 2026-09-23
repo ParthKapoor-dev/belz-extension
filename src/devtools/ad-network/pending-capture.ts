@@ -1,6 +1,6 @@
 // Show in-flight AD chain requests in the panel, like the OG Network tab does.
 //
-// chrome.devtools.network.onRequestFinished (used by panel.ts) fires only
+// chrome.devtools.network.onRequestFinished (used by network-panel.ts) fires only
 // when a request COMPLETES, so a slow / hung / pending request is invisible
 // in our panel while it's live. The OG Network tab shows it because it hooks
 // into DevTools' start-of-request signal — an API extensions do not get.
@@ -23,8 +23,9 @@ import type { PendingEntry } from './types';
 /**
  * The IIFE injected into the inspected page. Runs at page scope, so we cannot
  * reference any module state from here — everything the wrapper needs must be
- * inline. The CHAIN_RE mirrors extract.ts CHAIN_PATH_RE deliberately: keeping
- * it inline avoids a second inspectedWindow.eval to sync regex state.
+ * inline. The CHAIN_RE mirrors CHAIN_PATH_RE in src/config/endpoints.ts
+ * deliberately: keeping it inline avoids a second inspectedWindow.eval to sync
+ * regex state.
  */
 const WRAPPER_SCRIPT = `
 (function () {

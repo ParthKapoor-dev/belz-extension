@@ -1,4 +1,5 @@
-// Shared helpers for the AD Network DevTools panel.
+// Pure parsing for the AD Network DevTools panel: which request URLs are AD
+// chain calls, and what a chain response body says about its method.
 //
 // The Automation Designer "chain" API is hit two ways:
 //   - definition fetch  GET /rest/api/automation/chain[/v2]/<uuid>

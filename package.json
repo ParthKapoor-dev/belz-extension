@@ -2,6 +2,9 @@
   "name": "belz-extension",
   "version": "1.0.1",
   "description": "DevTools browser extension — AD Network panel and designer helpers",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",
     "@codemirror/commands": "^6.10.0",

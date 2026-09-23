@@ -81,9 +81,16 @@ function createFakeChrome() {
       onInstalled: new FakeEvent(),
       onStartup: new FakeEvent(),
       sent: [] as unknown[],
+      /**
+       * Replace per test: the answer the other end gives to a message (the
+       * background relay, the page engine behind it). Undefined by default.
+       */
+      respond: (_message: unknown): unknown => undefined,
       sendMessage(message: unknown, callback?: (response: unknown) => void) {
         fake.runtime.sent.push(message);
-        callback?.(undefined);
+        const response = fake.runtime.respond(message);
+        if (callback) queueMicrotask(() => callback(response));
+        return Promise.resolve(response);
       }
     },
     scripting: {
@@ -106,9 +113,24 @@ function createFakeChrome() {
       granted,
       onAdded: new FakeEvent(),
       onRemoved: new FakeEvent(),
+      /** Set false to have the user deny the next requests. */
+      allowRequest: true,
+      /** Set false to have the browser refuse removals. */
+      allowRemove: true,
+      /** Every origin list passed to request(), in order. */
+      requested: [] as string[][],
       async contains({ origins }: { origins: string[] }) { return origins.every((o) => granted.has(o)); },
-      async request({ origins }: { origins: string[] }) { origins.forEach((o) => granted.add(o)); return true; },
-      async remove({ origins }: { origins: string[] }) { origins.forEach((o) => granted.delete(o)); return true; }
+      async request({ origins }: { origins: string[] }) {
+        fake.permissions.requested.push(origins);
+        if (!fake.permissions.allowRequest) return false;
+        origins.forEach((o) => granted.add(o));
+        return true;
+      },
+      async remove({ origins }: { origins: string[] }) {
+        if (!fake.permissions.allowRemove) return false;
+        origins.forEach((o) => granted.delete(o));
+        return true;
+      }
     },
     tabs: {
       created: [] as unknown[],
@@ -132,7 +154,14 @@ function createFakeChrome() {
         onRequestFinished: new FakeEvent(),
         getHAR(callback: (log: { entries: unknown[] }) => void) { callback({ entries: [] }); }
       },
-      panels: { create(_t: string, _i: string, _p: string, cb?: () => void) { cb?.(); } }
+      panels: {
+        /** Every panel created, as `[title, page]`. */
+        created: [] as [string, string][],
+        create(title: string, _icon: string, page: string, cb?: () => void) {
+          fake.devtools.panels.created.push([title, page]);
+          cb?.();
+        }
+      }
     },
 
     /** Forget stored data and recorded calls. Listeners stay registered. */
@@ -142,8 +171,13 @@ function createFakeChrome() {
       registered.clear();
       granted.clear();
       fake.runtime.sent.length = 0;
+      fake.runtime.respond = () => undefined;
       fake.tabs.created.length = 0;
       fake.runtime.lastError = undefined;
+      fake.permissions.allowRequest = true;
+      fake.permissions.allowRemove = true;
+      fake.permissions.requested.length = 0;
+      fake.devtools.panels.created.length = 0;
       fake.devtools.inspectedWindow.evalHandler = () => undefined;
     }
   };

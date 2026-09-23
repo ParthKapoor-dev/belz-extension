@@ -700,6 +700,10 @@ export class TextareaEditorModal {
   };
 
   private ensureOverlay(): HTMLDivElement {
+    // The host app can wipe and re-render the body, taking the modal with it.
+    // Drop the detached one (listeners, view, the modal lock if it was open)
+    // and build afresh.
+    if (this.overlay && !this.overlay.isConnected) this.dispose();
     if (this.overlay) return this.overlay;
 
     const overlay = document.createElement('div');

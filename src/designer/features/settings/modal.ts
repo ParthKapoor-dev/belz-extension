@@ -15,6 +15,14 @@ import {
 import { EXTENSION_OWNED_ATTR, ns, nsAttr } from '../../../config/namespace';
 import { modalLock } from '../../ui/modal-lock';
 import { T, RADIUS } from '../../ui/theme';
+import {
+  MODAL_DIALOG,
+  MODAL_FOOTER,
+  MODAL_HEADER,
+  MODAL_ICON_BTN,
+  MODAL_OVERLAY,
+  MODAL_TITLE
+} from '../../ui/modal';
 
 const SETTINGS_MODAL_ID = ns('SettingsModal');
 const CONTENT_ID = ns('SettingsContent');
@@ -211,6 +219,8 @@ function appendSection(content: HTMLElement, section: SettingSection, title: str
 
 export class SettingsModal {
   private overlay: HTMLDivElement | null = null;
+  /** Set while open: repaints the rows when the settings change elsewhere (another tab). */
+  private unsubscribe: (() => void) | null = null;
 
   private refresh(): void {
     if (!this.overlay) return;
@@ -235,7 +245,17 @@ export class SettingsModal {
   close(): void {
     if (!this.overlay || this.overlay.style.display === 'none') return;
     this.overlay.style.display = 'none';
+    this.unsubscribe?.();
+    this.unsubscribe = null;
     modalLock.unlock();
+  }
+
+  /** Close, and remove the modal's DOM and listener. The next open rebuilds it. */
+  dispose(): void {
+    this.close();
+    document.removeEventListener('keydown', this.onEscape, true);
+    this.overlay?.remove();
+    this.overlay = null;
   }
 
   private readonly onEscape = (event: KeyboardEvent): void => {
@@ -245,69 +265,37 @@ export class SettingsModal {
   };
 
   private ensureOverlay(): HTMLDivElement {
+    // The host app can wipe and re-render the body, taking the modal with it.
+    // Drop the detached one (its listener, subscription and the modal lock if
+    // it was open) and build afresh.
+    if (this.overlay && !this.overlay.isConnected) this.dispose();
     if (this.overlay) return this.overlay;
 
     const overlay = document.createElement('div');
     overlay.id = SETTINGS_MODAL_ID;
     overlay.setAttribute(EXTENSION_OWNED_ATTR, 'true');
-    Object.assign(overlay.style, {
-      position: 'fixed',
-      inset: '0',
-      zIndex: '1000002',
-      display: 'none',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'rgba(2, 6, 23, 0.72)',
-      backdropFilter: 'blur(4px)',
-      padding: '20px'
-    });
+    Object.assign(overlay.style, MODAL_OVERLAY, { zIndex: '1000002' });
 
     const dialog = document.createElement('div');
-    Object.assign(dialog.style, {
+    Object.assign(dialog.style, MODAL_DIALOG, {
       width: '560px',
       maxWidth: 'calc(100vw - 30px)',
-      maxHeight: 'calc(100vh - 40px)',
-      overflow: 'hidden',
-      borderRadius: RADIUS,
-      border: '1px solid rgba(148, 163, 184, 0.3)',
-      background: T.surface,
-      boxShadow: '0 30px 70px rgba(0,0,0,0.45)',
-      display: 'flex',
-      flexDirection: 'column'
+      maxHeight: 'calc(100vh - 40px)'
     });
 
     const header = document.createElement('div');
-    Object.assign(header.style, {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '14px 16px',
-      borderBottom: '1px solid rgba(148, 163, 184, 0.22)'
-    });
+    Object.assign(header.style, MODAL_HEADER);
 
     const title = document.createElement('h2');
     title.textContent = 'Extension Settings';
-    Object.assign(title.style, {
-      margin: '0',
-      color: T.fg,
-      fontSize: '16px'
-    });
+    Object.assign(title.style, MODAL_TITLE);
 
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.textContent = '×';
+    closeBtn.title = 'Close';
     closeBtn.setAttribute('aria-label', 'Close settings');
-    Object.assign(closeBtn.style, {
-      width: '30px',
-      height: '30px',
-      borderRadius: RADIUS,
-      border: '1px solid rgba(248, 113, 113, 0.45)',
-      background: 'rgba(248, 113, 113, 0.14)',
-      color: T.danger,
-      fontSize: '20px',
-      cursor: 'pointer',
-      lineHeight: '1'
-    });
+    Object.assign(closeBtn.style, MODAL_ICON_BTN, { fontSize: '18px' });
     closeBtn.onclick = () => this.close();
 
     header.appendChild(title);
@@ -328,14 +316,7 @@ export class SettingsModal {
     appendSection(content, 'advanced', 'Advanced');
 
     const footer = document.createElement('div');
-    Object.assign(footer.style, {
-      borderTop: '1px solid rgba(148, 163, 184, 0.22)',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      gap: '10px',
-      padding: '12px 16px'
-    });
+    Object.assign(footer.style, MODAL_FOOTER);
 
     const hint = document.createElement('div');
     hint.textContent = 'Settings apply immediately and are persisted in this browser.';
@@ -378,12 +359,16 @@ export class SettingsModal {
     return overlay;
   }
 
-  /** Open the modal showing the current settings. */
+  /**
+   * Open the modal showing the current settings, and keep it current while
+   * open: a change made in another tab (or by a shortcut) repaints the rows.
+   */
   open(): void {
-    const wasOpen = this.isOpen;
     const overlay = this.ensureOverlay();
-    this.refresh();
+    const wasOpen = this.isOpen;
     overlay.style.display = 'flex';
+    // subscribe() calls back at once, which paints the current settings.
+    this.unsubscribe ??= settings.subscribe(() => this.refresh());
     if (!wasOpen) modalLock.lock();
   }
 }

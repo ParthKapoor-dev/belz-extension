@@ -1,7 +1,7 @@
 // JSON editor: a JSON button next to the Inputs heading of an AD method,
 // opening an editor for all of the method's test inputs at once.
 import { pageObserver } from '../../core/observer';
-import { createJSONButton, injectJSONButton } from './injector';
+import { createJSONButton, injectJSONButton, restoreHeadings, type StyledHeadings } from './injector';
 import { jsonEditorModal } from './modal';
 import { TIMINGS } from '../../../config/timings';
 import type { Feature } from '../../core/feature';
@@ -10,14 +10,17 @@ export class JsonEditor implements Feature {
   private button: HTMLButtonElement | null = null;
   private unsubscribe: (() => void) | null = null;
   private firstTry: ReturnType<typeof setTimeout> | null = null;
+  /** Inputs headings restyled to hold the button; put back by stop(). */
+  private readonly styled: StyledHeadings = new Map();
 
   start(): void {
     this.button ??= createJSONButton(() => jsonEditorModal.open());
     const button = this.button;
+    const inject = () => injectJSONButton(button, this.styled);
     // The Inputs heading renders late, and the AD app re-renders it; the
     // observer puts the button back whenever it goes missing.
-    this.firstTry ??= setTimeout(() => injectJSONButton(button), TIMINGS.jsonButtonFirstTry);
-    this.unsubscribe ??= pageObserver.subscribe(() => injectJSONButton(button));
+    this.firstTry ??= setTimeout(inject, TIMINGS.jsonButtonFirstTry);
+    this.unsubscribe ??= pageObserver.subscribe(inject);
   }
 
   stop(): void {
@@ -27,5 +30,6 @@ export class JsonEditor implements Feature {
     this.firstTry = null;
     jsonEditorModal.dispose();
     this.button?.remove();
+    restoreHeadings(this.styled);
   }
 }

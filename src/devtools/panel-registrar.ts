@@ -5,8 +5,8 @@
 // pd-inspector/), which the browser loads when the user first opens each
 // panel tab.
 //
-// The panel pages (`panel.html`, `panel-pd.html`) live at the extension root
-// (not under dist/): Chromium resolves these paths relative to the extension
+// The panel pages (`panel.html`, `panel-pd.html`) sit at the root of the
+// packaged extension (scripts/pack.mjs puts them there, not under dist/): Chromium resolves these paths relative to the extension
 // root, but Firefox resolves them relative to the devtools page — a
 // `dist/panel.html` would become `dist/dist/panel.html` there and load blank.
 //
@@ -16,7 +16,7 @@
 // window, not per-host. We check on init and again on navigation so panels
 // appear the moment the user reaches an allowed site.
 
-import { isHostsChange, readEnabledHosts } from '../shared/hosts';
+import { isHostsChange, normalizeHost, readEnabledHosts } from '../shared/hosts';
 import { evalInPage } from './inspected';
 import { createLogger } from '../shared/logger';
 
@@ -27,10 +27,14 @@ const PANELS = [
   { title: 'PD Inspector', page: 'panel-pd.html' }
 ];
 
-/** The inspected page's lowercase host; '' when DevTools cannot tell. */
+/**
+ * The inspected page's host, normalised like the stored site list (lowercase,
+ * no port); '' when DevTools cannot tell. `location.host` would keep a port
+ * ("site.test:8443") and never match the stored "site.test".
+ */
 async function currentHost(): Promise<string> {
-  const result = await evalInPage('location.host');
-  return typeof result === 'string' ? result.toLowerCase() : '';
+  const result = await evalInPage('location.hostname');
+  return typeof result === 'string' ? normalizeHost(result) ?? '' : '';
 }
 
 /** The granted hosts from the user's site list, lowercased. */

@@ -1,7 +1,7 @@
 // Method names and categories in the AD Network panel: what is known so far,
 // and the queue that asks the platform for the rest.
 
-import type { MethodResolver } from './api';
+import { isRetryableError, type MethodResolver } from './api';
 import type { MethodSummary } from './types';
 import { errorText } from './format';
 import { createLogger } from '../../shared/logger';
@@ -57,10 +57,12 @@ export class MethodNames {
 /**
  * Resolves queued uuids against the platform, a few at a time, after a short
  * debounce. Cache hits return without touching the network, so a warm panel
- * paints instantly. A uuid that fails for transport/auth reasons goes back on
- * the queue and is retried later — the user may still be signing in, or the
- * page may not have fired an authenticated request yet for us to lift a token
- * from.
+ * paints instantly. A uuid whose resolve fails with a retryable error
+ * (`isRetryableError` in api.ts: unreachable host, 401/403, 408/429/5xx, or no
+ * HTTP status) goes back on the queue and is retried every RESOLVE_RETRY_MS —
+ * the user may still be signing in, or the page may not have fired an
+ * authenticated request yet for us to lift a token from. Any other HTTP error
+ * (a 404 on both endpoints, say) is final for that uuid, as is a null summary.
  */
 export class ResolveQueue {
   private readonly pending = new Set<string>();
@@ -109,7 +111,9 @@ export class ResolveQueue {
     this.pending.clear();
     if (uuids.length === 0) return;
 
+    /** Failed with a retryable error: queued again. */
     const failed: string[] = [];
+    let anyFailed = false;
     let lastError: unknown = null;
     let cursor = 0;
     const worker = async (): Promise<void> => {
@@ -124,15 +128,17 @@ export class ResolveQueue {
           this.names.apply(uuid, summary);
         } catch (err) {
           lastError = err;
-          log.warn('resolve failed for ' + uuid, err);
-          failed.push(uuid);
+          anyFailed = true;
+          const retry = isRetryableError(err);
+          log.warn(`resolve failed for ${uuid}${retry ? ' (will retry)' : ''}:`, err);
+          if (retry) failed.push(uuid);
         }
       }
     };
     await Promise.all(Array.from({ length: Math.min(RESOLVE_CONCURRENCY, uuids.length) }, worker));
     if (generation !== this.generation) return; // stopped meanwhile
 
-    this.onOutcome(failed.length > 0, errorText(lastError));
+    this.onOutcome(anyFailed, errorText(lastError));
     for (const uuid of failed) {
       if (this.names.isIncomplete(uuid)) this.pending.add(uuid);
     }

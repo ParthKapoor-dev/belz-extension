@@ -4,6 +4,35 @@
     <meta charset="utf-8" />
     <title>belz-extension settings</title>
     <style>
+      /* Ioskeley Mono — OFL-licensed Berkeley-Mono-style monospace (fonts/). */
+      @font-face {
+        font-family: "Ioskeley Mono";
+        src: url("fonts/IoskeleyMono-Regular.woff2") format("woff2");
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Ioskeley Mono";
+        src: url("fonts/IoskeleyMono-Italic.woff2") format("woff2");
+        font-weight: 400;
+        font-style: italic;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Ioskeley Mono";
+        src: url("fonts/IoskeleyMono-Bold.woff2") format("woff2");
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Ioskeley Mono";
+        src: url("fonts/IoskeleyMono-BoldItalic.woff2") format("woff2");
+        font-weight: 700;
+        font-style: italic;
+        font-display: swap;
+      }
       :root {
         --ink: #08090a;
         --surface: #101113;
@@ -18,7 +47,7 @@
         --accent-fg: #08090a;
         --danger: #f85149;
         --success: #3fb950;
-        --mono: 'Berkeley Mono', 'IoskeleyMono', ui-monospace, SFMono-Regular, Menlo, monospace;
+        --mono: "Berkeley Mono", "Ioskeley Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
       }
       * {
         box-sizing: border-box;
@@ -237,8 +266,9 @@
         <p class="hint">
           Add hostnames where the extension is allowed to inject its content
           scripts. Each grant is scoped to <code>https://&lt;host&gt;/*</code>
-          and asks for permission at Add time. Revoke returns the permission
-          and unregisters the scripts immediately.
+          and asks for permission at Add time. Revoke gives the permission
+          back to the browser, then removes the site from this list; the
+          extension then unregisters its scripts for that site.
         </p>
         <p class="hint">
           If a site serves the Automation Designer UI on a different host than
@@ -250,7 +280,7 @@
           <input
             id="add-input"
             type="text"
-            placeholder="nsm-dev.nc.verifi.dev"
+            placeholder="your-instance.example.com"
             autocomplete="off"
             spellcheck="false"
           />

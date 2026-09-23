@@ -62,6 +62,21 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * True when a failed resolve may succeed later without anything else
+ * changing: the host was unreachable, the user is not signed in yet (401/403),
+ * the server was busy or broken (408, 429, 5xx), or the failure carried no
+ * HTTP status (inspected origin not known yet, a non-JSON answer such as a
+ * login page). Any other HTTP status (404 on both endpoints, 400, ...) is a
+ * definite answer about that uuid and is not retried.
+ */
+export function isRetryableError(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return true;
+  if (err.transport || err.status === undefined) return true;
+  const s = err.status;
+  return s === 401 || s === 403 || s === 408 || s === 429 || s >= 500;
+}
+
 type Headers = Record<string, string>;
 
 type Json = Record<string, unknown>;

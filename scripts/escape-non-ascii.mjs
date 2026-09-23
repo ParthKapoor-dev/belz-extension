@@ -1,7 +1,16 @@
+// Rewrites one bundled file in place, replacing every non-ASCII character with
+// a \uXXXX escape, so extension loaders that reject non-ASCII scripts accept it.
+//
+// usage: node scripts/escape-non-ascii.mjs <file>   (relative to the current
+// directory; scripts/build.mjs runs it from the repo root, once per output)
 import fs from 'node:fs';
 import path from 'node:path';
 
-const fileArg = process.argv[2] || 'dist/content-script.js';
+const fileArg = process.argv[2];
+if (!fileArg) {
+  console.error('usage: node scripts/escape-non-ascii.mjs <file>');
+  process.exit(1);
+}
 const filePath = path.resolve(process.cwd(), fileArg);
 
 if (!fs.existsSync(filePath)) {

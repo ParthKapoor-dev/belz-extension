@@ -4,6 +4,7 @@
 //
 // A short message in the bottom-right corner. One element, reused.
 import { T, FONT_MONO, RADIUS, SHADOW } from './theme';
+import { EXTENSION_OWNED_ATTR } from '../../config/namespace';
 
 const VISIBLE_MS = 1200;
 
@@ -25,8 +26,11 @@ export class Toast {
   }
 
   private element(): HTMLDivElement {
-    if (this.el) return this.el;
+    // The host app can wipe and re-render the body, taking the toast with it:
+    // rebuild rather than write into a detached element.
+    if (this.el && this.el.isConnected) return this.el;
     const el = document.createElement('div');
+    el.setAttribute(EXTENSION_OWNED_ATTR, 'true');
     Object.assign(el.style, {
       position: 'fixed',
       bottom: '24px',

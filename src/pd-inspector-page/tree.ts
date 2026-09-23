@@ -2,7 +2,7 @@
 //
 // Turns a raw compiled-config `layout` node (the wire `RawLayoutNode` shape:
 // id, name, props, children, field, isSymbol, _elementId) into a normalized
-// tree the overlay can render — with a node kind, a human label, and the
+// tree the DevTools panel can render — with a node kind, a human label, and the
 // visibility verdict that drives the "conditionally hidden" workflow.
 
 import { PD_CONFIG_NODES } from '../config/selectors';

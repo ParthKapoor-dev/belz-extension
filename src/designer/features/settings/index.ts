@@ -58,6 +58,8 @@ function injectSettingsButton(onOpen: () => void): boolean {
     return false;
   }
 
+  // Never undone: SettingsLauncher runs for the life of the page and has no
+  // stop(), so the button (and the flex layout that holds it) stays.
   if (pageTitle.style.display !== 'flex') {
     Object.assign(pageTitle.style, {
       display: 'flex',

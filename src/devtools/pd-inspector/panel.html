@@ -35,7 +35,8 @@
         30%, 70% { box-shadow: inset 0 0 0 3px #3b82f6; }
       }
       body.focus-flash {
-        animation: focus-pulse 900ms ease-in-out;
+        /* Length set by FocusFlash (devtools/view.ts) from TIMINGS.panelFocusFlash. */
+        animation: focus-pulse var(--focus-flash-ms) ease-in-out;
       }
 
       .toolbar {

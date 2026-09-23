@@ -33,7 +33,7 @@ interface DeployedPage {
 /** A child reference inside a layout: an embedded component, or the outlet. */
 export type ChildRef = { type: 'symbol'; name: string } | { type: 'outlet' };
 
-/** Pull the env slug out of a verifi/expertly host (e.g. "nsm-dev"). */
+/** The env slug: the host's first label (e.g. "dev" for dev.example.com). */
 function envFromHost(host: string): string {
   const m = host.match(/^([a-z0-9-]+)\./i);
   return m?.[1] ?? host;

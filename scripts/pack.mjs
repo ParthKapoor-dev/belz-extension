@@ -46,7 +46,7 @@ execSync('node scripts/build.mjs', { cwd: root, stdio: 'inherit' });
 // of the packaged tree. That location is load-bearing: Chromium resolves a
 // DevTools panel's page path against the extension root, Firefox against the
 // devtools page, and both agree only when the devtools page and the panels
-// sit together at the root. See src/devtools/devtools-page.js.
+// sit together at the root. See src/devtools/panel-registrar.ts.
 //
 // `sites.default.json` is optional and gitignored — when the user keeps one it
 // ships in the tree so a fresh install can restore their site list. stage()

@@ -81,6 +81,7 @@ jobs:
               ("0123456789abcdef"[b>>4])+("0123456789abcdef"[b&15])).join("")
               .replace(/[0-9a-f]/g,c=>"abcdefghijklmnop"[parseInt(c,16)]));
           ')
+          if [ -z "$ID" ]; then echo "::error::could not derive the Chrome extension ID from CHROME_CRX_KEY"; exit 1; fi
           echo "id=$ID" >> "$GITHUB_OUTPUT"
           echo "Chrome extension ID: $ID"
           rm -f key.pem
@@ -96,8 +97,11 @@ jobs:
             --channel=unlisted \
             --api-key="$AMO_JWT_ISSUER" \
             --api-secret="$AMO_JWT_SECRET" \
-            --artifacts-dir=dist-pack || true
-          XPI=$(ls dist-pack/*.xpi 2>/dev/null | head -1 || true)
+            --artifacts-dir=dist-pack
+          # A sign that "succeeded" without producing an XPI must not publish
+          # an updates.json with an empty update_link.
+          XPI=$(find dist-pack -maxdepth 1 -name '*.xpi' | head -1)
+          if [ -z "$XPI" ]; then echo "::error::web-ext sign produced no .xpi"; exit 1; fi
           echo "xpi=$XPI" >> "$GITHUB_OUTPUT"
 
       - name: Generate update manifests
@@ -105,12 +109,16 @@ jobs:
           V="${{ steps.ver.outputs.version }}"
           BASE="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
           FF_ID=$(node -e 'console.log(require("./release.config.json").firefoxId)')
+          CRX="dist-pack/belz-extension-$V.crx"
+          XPI="${{ steps.xpi.outputs.xpi }}"
+          XPI_NAME=$(basename "$XPI")
+          if [ -z "$XPI_NAME" ] || [ ! -f "$XPI" ]; then echo "::error::no signed XPI to publish"; exit 1; fi
+          if [ ! -f "$CRX" ]; then echo "::error::no CRX to publish"; exit 1; fi
           mkdir -p pages
-          cp dist-pack/*.crx pages/ 2>/dev/null || true
-          cp dist-pack/*.xpi pages/ 2>/dev/null || true
+          cp "$CRX" "$XPI" pages/
           # Stable "latest" copies — Firefox force-install points install_url here.
-          cp dist-pack/*.crx pages/belz-extension-latest.crx 2>/dev/null || true
-          cp dist-pack/*.xpi pages/belz-extension-latest.xpi 2>/dev/null || true
+          cp "$CRX" pages/belz-extension-latest.crx
+          cp "$XPI" pages/belz-extension-latest.xpi
           cat > pages/updates.xml <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
@@ -119,7 +127,6 @@ jobs:
             </app>
           </gupdate>
           EOF
-          XPI_NAME=$(basename "${{ steps.xpi.outputs.xpi }}" 2>/dev/null || echo "")
           cat > pages/updates.json <<EOF
           { "addons": { "$FF_ID": { "updates": [
             { "version": "$V", "update_link": "$BASE/$XPI_NAME" } ] } } }
@@ -129,9 +136,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --notes "Automated release." || true
-          gh release upload "${{ github.ref_name }}" dist-pack/*.crx --clobber || true
-          gh release upload "${{ github.ref_name }}" dist-pack/*.xpi --clobber || true
+          TAG="${{ github.ref_name }}"
+          # Re-running the workflow for a tag finds its release already there:
+          # that is the one tolerated case. Any other failure fails the job.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists; uploading into it"
+          else
+            gh release create "$TAG" --title "$TAG" --notes "Automated release."
+          fi
+          gh release upload "$TAG" "dist-pack/belz-extension-${{ steps.ver.outputs.version }}.crx" "${{ steps.xpi.outputs.xpi }}" --clobber
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

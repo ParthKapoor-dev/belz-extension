@@ -1,14 +1,13 @@
 // Textarea editor launcher — a single floating overlay shared by every
 // textarea on the page.
 //
-// The earlier design wrapped each textarea in a positioned <div> and appended
-// its own controls node with two buttons: four extra elements per textarea,
-// which on a 40-step Automation Designer method meant ~480 injected elements,
-// a layout-sync pass over all of them, and a full-page rescan on every DOM
-// mutation to keep them attached. It also made the extension a heavy source of
-// the very mutations it was reacting to.
+// Per-textarea controls are deliberately avoided: wrapping each textarea in a
+// positioned <div> with its own buttons costs four extra elements per textarea
+// (~480 on a 40-step Automation Designer method), a layout-sync pass over all
+// of them, and a full-page rescan on every DOM mutation to keep them attached,
+// and makes the extension a heavy source of the very mutations it reacts to.
 //
-// The shared-overlay machinery now lives in designer/ui/hover-overlay.ts, so this
+// The shared-overlay machinery lives in designer/ui/hover-overlay.ts, so this
 // file is just what makes a textarea overlay a textarea overlay: which
 // elements qualify, which buttons appear, and how they shrink for a short box.
 
@@ -97,7 +96,6 @@ export class TextareaEditor implements Feature {
         hover: [ICON_BUTTON_HOVER, ICON_BUTTON_UNHOVER],
         adjust: (el: HTMLButtonElement, size: OverlaySize) => {
           el.style.fontSize = `${Math.max(size.glyphSize - 1, 10)}px`;
-          el.style.borderRadius = size.compact ? '6px' : '8px';
         },
         onClick: async (textarea: HTMLTextAreaElement) => {
           const textToCopy = textarea.value || '';

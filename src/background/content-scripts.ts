@@ -21,8 +21,8 @@ interface ScriptTemplate {
   js: string;
 }
 
-// Each granted host gets three registrations — AD, PD, PD-Inspector — matching
-// the routes the old static manifest declared.
+// Each granted host gets three registrations — AD, PD, PD-Inspector — one per
+// route the extension acts on.
 export const CONTENT_SCRIPT_TEMPLATES: readonly ScriptTemplate[] = [
   { key: 'ad', path: `${AD_ROUTE_PREFIX}*`, js: 'dist/ad-content.js' },
   { key: 'pd', path: `${PD_ROUTE_PREFIX}*`, js: 'dist/pd-content.js' },

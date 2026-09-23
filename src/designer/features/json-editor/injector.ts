@@ -1,11 +1,23 @@
 import { T, FONT_MONO, RADIUS } from '../../ui/theme';
 import { AD_INPUTS } from '../../../config/selectors';
-import { ns } from '../../../config/namespace';
+import { EXTENSION_OWNED_ATTR, ns } from '../../../config/namespace';
 import { createLogger } from '../../../shared/logger';
 
 const log = createLogger('json-editor');
 
 export const JSON_BUTTON_ID = ns('JSONButton');
+
+/** The inline styles of an Inputs heading before the button was added to it. */
+type HeadingStyle = Pick<CSSStyleDeclaration, 'display' | 'alignItems' | 'justifyContent'>;
+
+/** Headings whose inline style injectJSONButton changed, with what they had before. */
+export type StyledHeadings = Map<HTMLElement, HeadingStyle>;
+
+/** Put back the inline styles injectJSONButton changed, and forget them. */
+export function restoreHeadings(styled: StyledHeadings): void {
+  for (const [el, previous] of styled) Object.assign(el.style, previous);
+  styled.clear();
+}
 
 // Button injection
 export function findInputsSection(): HTMLElement | null {
@@ -61,6 +73,7 @@ export function createJSONButton(onClick: () => void): HTMLButtonElement {
     '<path d="M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1"/>' +
     '</svg><span>JSON</span>';
   button.setAttribute('title', 'Edit inputs as JSON');
+  button.setAttribute(EXTENSION_OWNED_ATTR, 'true');
   button.id = JSON_BUTTON_ID;
 
   Object.assign(button.style, {
@@ -100,8 +113,12 @@ export function createJSONButton(onClick: () => void): HTMLButtonElement {
   return button;
 }
 
-/** Put `button` next to the Inputs heading, unless it is already on the page. */
-export function injectJSONButton(button: HTMLButtonElement): boolean {
+/**
+ * Put `button` next to the Inputs heading, unless it is already on the page.
+ * A heading whose inline style is changed to hold the button is recorded in
+ * `styled`, so the caller can put it back (restoreHeadings) when it stops.
+ */
+export function injectJSONButton(button: HTMLButtonElement, styled?: StyledHeadings): boolean {
   try {
     // Don't inject if already present
     if (button.isConnected || document.getElementById(JSON_BUTTON_ID)) {
@@ -137,6 +154,14 @@ export function injectJSONButton(button: HTMLButtonElement): boolean {
 
     // Ensure the container can hold the button
     if (titleElement.style.display !== 'flex') {
+      if (styled) {
+        // Headings the app has since re-rendered away need no restoring.
+        for (const el of styled.keys()) if (!el.isConnected) styled.delete(el);
+        if (!styled.has(titleElement)) {
+          const { display, alignItems, justifyContent } = titleElement.style;
+          styled.set(titleElement, { display, alignItems, justifyContent });
+        }
+      }
       Object.assign(titleElement.style, {
         display: 'flex',
         alignItems: 'center',

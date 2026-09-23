@@ -1,4 +1,6 @@
-// Design tokens for the extension — injected UI + DevTools panel.
+// Design tokens for the UI the designer content scripts inject into AD/PD pages.
+// (The DevTools panels and the options page are plain HTML pages with their
+// own CSS; they do not import this.)
 //
 // One dark theme, axiom-style blue accent, sharp corners, hairline borders,
 // no gradients. Hex values inlined — no external token package dependency.
@@ -38,9 +40,14 @@ export const T = {
   success: palette.success,
 };
 
-/** Monospace stack — matches web + CLI. */
+/**
+ * Monospace stack, the same family names as the extension pages. On AD/PD
+ * pages the bundled Ioskeley Mono is not loaded (the fonts are not
+ * web-accessible), so it applies only if the user has it installed; otherwise
+ * the system monospace fallbacks do.
+ */
 export const FONT_MONO =
-  '"Berkeley Mono", "IoskeleyMono", ui-monospace, SFMono-Regular, Menlo, monospace';
+  '"Berkeley Mono", "Ioskeley Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
 
 /** Sharp corners everywhere. */
 export const RADIUS = "0";

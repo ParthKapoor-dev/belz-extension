@@ -4,10 +4,12 @@
     <meta charset="utf-8" />
   </head>
   <body>
-    <!-- Background page for the DevTools extension; registers the panel.
-         This file lives at the extension root so the panel page path passed
-         to chrome.devtools.panels.create resolves identically in Chromium
-         (relative to the root) and Firefox (relative to the devtools page). -->
+    <!-- The DevTools page: registers the panels (panel-registrar.ts).
+         This file lives in src/devtools/ but scripts/pack.mjs copies it to
+         the ROOT of the packaged extension, next to the panel pages, so the
+         panel page path passed to chrome.devtools.panels.create resolves
+         identically in Chromium (relative to the root) and Firefox (relative
+         to the devtools page). -->
     <script src="dist/devtools-page.js"></script>
   </body>
 </html>

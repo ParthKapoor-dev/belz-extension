@@ -196,7 +196,8 @@
         30%, 70% { background: rgba(59, 130, 246, 0.35); }
       }
       tbody tr.focus-flash {
-        animation: focus-pulse 900ms ease-in-out;
+        /* Length set by FocusFlash (devtools/view.ts) from TIMINGS.panelFocusFlash. */
+        animation: focus-pulse var(--focus-flash-ms) ease-in-out;
       }
       /* In-flight rows — sit at the bottom of the list, distinct from the
          completed rows above them so it's obvious they'll disappear when
