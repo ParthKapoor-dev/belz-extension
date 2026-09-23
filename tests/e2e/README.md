@@ -1,6 +1,6 @@
 # `tests/e2e/`
 
-End-to-end check of the built, packaged extension in real headless browsers: Chromium over the DevTools protocol (CDP) and Firefox over WebDriver BiDi. It proves what unit tests cannot, because it runs the shipped files: minified, code-split, with the editor loaded lazily. It is not part of `bun test`, and CI does not run it.
+End-to-end check of the built, packaged extension in real headless browsers: Chromium over the DevTools protocol (CDP) and Firefox over WebDriver BiDi. It proves what unit tests cannot, because it runs the shipped files: minified, code-split, with the IDE loaded lazily. It is not part of `bun test`, and CI does not run it.
 
 ## Contents
 
@@ -27,13 +27,13 @@ The page (`page.html`) waits past the overlay's first re-arm, then records:
 | Report key | Expected | Meaning |
 |---|---|---|
 | `contentScriptRan` | `true` | `Ctrl+Shift+Enter` clicked Run Test, so the content script is running. |
-| `editorBeforeClick` | `false` | No `.cm-editor` before the editor is opened: it is lazily loaded. |
+| `ideBeforeClick` | `false` | No `.cm-editor` before the IDE is opened: it is lazily loaded. |
 | `overlayShown` | `true` | Hovering the textarea shows the shared overlay and its launcher. |
-| `editorOpened`, `contentMatches` | `true` | Clicking the launcher loads the editor chunk and opens it with the textarea's text. |
-| `detected` | `'sql'` | The editor detected SQL (the text is SQL containing `#{userId}`). |
+| `ideOpened`, `contentMatches` | `true` | Clicking the launcher loads the IDE chunk and opens it with the textarea's text. |
+| `detected` | `'sql'` | The IDE detected SQL (the text is SQL containing `#{userId}`). |
 | `variableStatus` | `'Outside steps · 2 variables in scope'` | The AD variable scanner ran on open and found the input and the step output. |
-| `runTestWhileEditorOpen` | `0` | With the editor open, `Ctrl+Shift+Enter` does nothing: the lazy editor and the eager shortcut share one modal lock. |
-| `editorClosed`, `runTestAfterClose` | `true`, `1` | `Esc` closes the editor, after which the shortcut works again. |
+| `runTestWhileIdeOpen` | `0` | With the IDE open, `Ctrl+Shift+Enter` does nothing: the lazy IDE and the eager shortcut share one modal lock. |
+| `ideClosed`, `runTestAfterClose` | `true`, `1` | `Esc` closes the IDE, after which the shortcut works again. |
 | `publishedOverlay` | `true` | The overlay also appears over a `disabled` (published) textarea, whose hover the browser retargets to its parent. |
 
 ## Prerequisites
@@ -55,7 +55,7 @@ The output is one line per browser: passed with the number of checks, skipped, o
 ## Conventions
 
 - Match patterns in the patched manifest carry no port. Firefox rejects a pattern with one, and a port-less pattern matches every port.
-- The page reads the extension's own element ids (`#belzTextareaControls`, `.belzTextareaLauncher`, `#belzTextareaEditorLanguage`, `#belzTextareaEditorStatus`, `#belzTextareaEditorOverlay`). Renaming one in `src/` means updating `page.html`.
+- The page reads the extension's own element ids (`#belzTextareaControls`, `.belzTextareaLauncher`, `#belzIdeLanguage`, `#belzIdeStatus`, `#belzIdeOverlay`). Renaming one in `src/` means updating `page.html`.
 
 ## Adding or changing things
 

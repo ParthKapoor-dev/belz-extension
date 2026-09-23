@@ -3,7 +3,7 @@ import {
   detectLanguage,
   LANGUAGE_OPTIONS,
   type LanguageMode
-} from '../../../src/designer/features/textarea-editor/language';
+} from '../../../src/designer/features/ide/language';
 
 describe('detectLanguage', () => {
   const cases: Array<[string, string, LanguageMode]> = [

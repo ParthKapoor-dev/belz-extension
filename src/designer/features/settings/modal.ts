@@ -258,7 +258,7 @@ export class SettingsModal {
     this.overlay = null;
   }
 
-  // Only the topmost modal answers Esc (it may be open over the large editor
+  // Only the topmost modal answers Esc (it may be open over the IDE
   // or the JSON editor), and only once: the event is marked handled.
   private readonly onEscape = (event: KeyboardEvent): void => {
     if (!this.isOpen || event.key !== 'Escape') return;
@@ -316,7 +316,7 @@ export class SettingsModal {
     });
 
     appendSection(content, 'features', null);
-    appendSection(content, 'editor', 'Textarea Editor Defaults');
+    appendSection(content, 'ide', 'IDE Defaults');
     appendSection(content, 'advanced', 'Advanced');
 
     const footer = document.createElement('div');

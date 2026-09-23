@@ -3,18 +3,18 @@
 // Two kinds of build happen here.
 //
 // 1. The DESIGNER CONTENT SCRIPTS (AD, PD) are built together as ONE code-split
-//    ES-module graph into dist/modules/. This exists so the textarea editor's
+//    ES-module graph into dist/modules/. This exists so the IDE's
 //    CodeMirror (~600 KB) can be loaded on first use instead of on every page
-//    load — src/designer/features/textarea-editor/index.ts reaches it via
+//    load — src/designer/features/ide/index.ts reaches it via
 //    `import()`.
 //
 //    They MUST be one `bun build --splitting` call, not one call per entry.
-//    The lazy editor imports designer/core/settings, designer/ui/modal-lock,
+//    The lazy IDE imports designer/core/settings, designer/ui/modal-lock,
 //    designer/ui/toast and the settings modal, which are module-level
-//    singletons. Built separately, the editor chunk would carry its own
+//    singletons. Built separately, the IDE chunk would carry its own
 //    copies: the `settings` store would have two subscriber lists and the
 //    modal lock two counters — so the keyboard shortcuts would stop seeing
-//    that the editor is open. One graph puts shared modules in shared chunks,
+//    that the IDE is open. One graph puts shared modules in shared chunks,
 //    and a page loads each chunk once.
 //
 //    Content scripts cannot be ES modules themselves, so dist/ad-content.js

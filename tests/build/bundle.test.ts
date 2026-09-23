@@ -7,7 +7,7 @@
 //  3. The JSON editor (AD only) is not in the PD content script at all: only
 //     ad-content.ts passes it to KeyboardShortcuts.
 //  4. Nor is the AD `#{variable}` scanner: only ad-content.ts passes it to
-//     TextareaEditor.
+//     Ide.
 //
 // Runs scripts/build.mjs, so it rewrites dist/ and takes a few seconds.
 import { beforeAll, describe, expect, test } from 'bun:test';
@@ -17,9 +17,9 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dir, '../..');
 const modules = path.join(root, 'dist/modules');
-/** Page-load budget per designer page, in bytes. It was 656 KB before the lazy editor. */
+/** Page-load budget per designer page, in bytes. It was 656 KB before the lazy IDE. */
 const EAGER_BUDGET = 100 * 1024;
-/** A string only the editor module carries (its CodeMirror theme). */
+/** A string only the IDE module carries (its CodeMirror theme). */
 const EDITOR_MARKER = '.cm-scroller';
 /** A string only the JSON editor carries (its modal title). */
 const JSON_EDITOR_MARKER = 'Edit Input JSON';
@@ -60,7 +60,7 @@ describe('build output', () => {
   });
 
   for (const entry of ['ad-content.js', 'pd-content.js']) {
-    test(`${entry}: the editor is not loaded with the page`, () => {
+    test(`${entry}: the IDE is not loaded with the page`, () => {
       const eager = staticClosure(entry);
       const withEditor = eager.filter((f) =>
         readFileSync(path.join(modules, f), 'utf8').includes(EDITOR_MARKER));
@@ -80,7 +80,7 @@ describe('build output', () => {
     expect(closureCode('ad-content.js').includes(SCOPE_SCANNER_MARKER)).toBe(true);
   });
 
-  test('the editor exists as a lazily loaded chunk', () => {
+  test('the IDE exists as a lazily loaded chunk', () => {
     const chunks = readdirSync(modules).filter((f) =>
       readFileSync(path.join(modules, f), 'utf8').includes(EDITOR_MARKER));
     expect(chunks).toHaveLength(1);

@@ -83,7 +83,7 @@ export class SettingsLauncher {
     document.getElementById(SETTINGS_BUTTON_ID)?.remove();
     for (const [title, previous] of this.styled) Object.assign(title.style, previous);
     this.styled.clear();
-    // Closed and removed; the next open() (from the large editor's ⚙) rebuilds it.
+    // Closed and removed; the next open() (from the IDE's ⚙) rebuilds it.
     settingsModal.dispose();
   }
 

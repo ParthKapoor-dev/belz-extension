@@ -1,13 +1,13 @@
-// Syntax-mode detection for the large text editor.
+// Syntax-mode detection for the IDE.
 //
-// The editor has no "auto" mode: detection always runs, and the header
+// The IDE has no "auto" mode: detection always runs, and the header
 // dropdown reports what it found. Picking from the dropdown overrides the
-// detector until the editor is closed and reopened.
+// detector until the IDE is closed and reopened.
 //
 // Pure: no DOM, no CodeMirror. Kept apart from modal.ts so it can be tested
-// (and reasoned about) without loading the ~600 KB editor.
+// (and reasoned about) without loading the ~600 KB IDE.
 
-/** Every mode the editor can be in, in dropdown order. */
+/** Every mode the IDE can be in, in dropdown order. */
 export type LanguageMode = 'sql' | 'spel' | 'javascript' | 'json' | 'java' | 'python' | 'plain';
 
 export const LANGUAGE_OPTIONS: ReadonlyArray<{ value: LanguageMode; label: string }> = [

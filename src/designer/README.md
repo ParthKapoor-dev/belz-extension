@@ -1,6 +1,6 @@
 # `src/designer/`
 
-The content scripts that run inside Automation Designer (`/automation-designer/*`) and Page Designer (`/ui-designer/*`) tabs. They add the extension's tools to those pages: the large text editor, the JSON input editor, copy buttons, keyboard shortcuts, tab titles and the settings modal.
+The content scripts that run inside Automation Designer (`/automation-designer/*`) and Page Designer (`/ui-designer/*`) tabs. They add the extension's tools to those pages: the IDE, the JSON input editor, copy buttons, keyboard shortcuts, tab titles and the settings modal.
 
 ## Contents
 
@@ -27,7 +27,7 @@ What each entry passes in:
 | `runTestShortcut` | `KeyboardShortcuts` with the Run Test, copy-link and JSON editor actions | `KeyboardShortcuts` with no actions (Esc Esc only) |
 | `jsonEditor` | `JsonEditor` | not bundled |
 | `outputCopy` | `OutputCopy` | `OutputCopy` |
-| `textareaEditor` | `TextareaEditor` with `scanScope` as its scope provider | `TextareaEditor` without one |
+| `ide` | `Ide` with `scanScope` as its scope provider | `Ide` without one |
 
 `ad-content.ts` also calls `startCurlAutofillFeature()` directly. It is not a toggleable feature.
 
@@ -41,7 +41,7 @@ Shift+J follows the `jsonEditor` setting: the action `ad-content.ts` passes retu
 ## Conventions
 
 - **Pass dependencies in to keep PD small.** AD-only code (Run Test, the method link, the JSON editor, the `#{variable}` scanner) is reached only from `ad-content.ts`, as constructor arguments. `pd-content.ts` must not import it. `tests/build/bundle.test.ts` checks this.
-- **The editor is lazy.** `features/textarea-editor/modal.ts` (CodeMirror) is reached only through `import('./modal')`. Anything reached by a static import loads on every page.
+- **The IDE is lazy.** `features/ide/modal.ts` (CodeMirror) is reached only through `import('./modal')`. Anything reached by a static import loads on every page.
 - **Singletons are bundled once.** Modules with page-wide state (`settings`, `pageObserver`, `modalLock`, `toast`, the three modals) start with a `/*! belz-singleton: ... */` marker, and `scripts/check-singletons.mjs` fails the build if one is bundled twice. A new stateful module here needs the marker.
 - The extension's own DOM ids and classes use `ns()`, and injected nodes carry `EXTENSION_OWNED_ATTR` (both from `config/namespace.ts`), so the overlays skip them.
 

@@ -11,8 +11,8 @@ One folder per designer feature. Each runs in the content script on AD pages, PD
 | [`run-test/`](run-test/) | `runTestAction`: finds and clicks AD's Run Test button (passed to `KeyboardShortcuts` by `ad-content.ts`) | none | AD |
 | [`json-editor/`](json-editor/) | `JsonEditor`: JSON button and modal to edit every test input as one JSON object | `jsonEditor` | AD |
 | [`output-copy/`](output-copy/) | `OutputCopy`: hover copy button on output containers | `outputCopy` | AD, PD |
-| [`textarea-editor/`](textarea-editor/) | `TextareaEditor`: hover Open/Copy buttons on textareas, and the lazy CodeMirror editor with `#{variable}` intellisense | `textareaEditor` | AD, PD |
-| [`ad-scope/`](ad-scope/) | `scanScope()`: reads the `#{variables}` in scope from the AD page, for the editor | `textareaVariableIntellisense` (checked by `TextareaEditor`) | AD |
+| [`ide/`](ide/) | `Ide`: hover Open/Copy buttons on textareas, and the lazy CodeMirror IDE with `#{variable}` intellisense | `ide` | AD, PD |
+| [`ad-scope/`](ad-scope/) | `scanScope()`: reads the `#{variables}` in scope from the AD page, for the IDE | `ideIntellisense` (checked by `Ide`) | AD |
 | [`curl-autofill/`](curl-autofill/) | `startCurlAutofillFeature()`: fills the inputs with the request body the AD Network panel handed over ("Open in draft") | none, always on | AD |
 | [`settings/`](settings/) | `SettingsLauncher` (⚙ button, Ctrl+, / Alt+, and the Alt+Shift+S browser command) and the in-page Settings modal | none, always on | AD, PD |
 
@@ -20,12 +20,12 @@ One folder per designer feature. Each runs in the content script on AD pages, PD
 
 Toggleable features are classes implementing `Feature` from [`../core/feature.ts`](../core/feature.ts). The entry passes them to `bootstrap()`, which starts and stops each as its setting changes. `SettingsLauncher` is started by `bootstrap()` itself. `startCurlAutofillFeature()` is called once by `ad-content.ts`. `run-test/` and `ad-scope/` are plain functions that other code calls.
 
-Features share state only through the page-wide singletons: `settings`, `pageObserver`, `modalLock`, `toast`, and the modals `jsonEditorModal`, `settingsModal` and `textareaEditorModal`.
+Features share state only through the page-wide singletons: `settings`, `pageObserver`, `modalLock`, `toast`, and the modals `jsonEditorModal`, `settingsModal` and `ideModal`.
 
 ## Conventions
 
 - `start()` and `stop()` are each safe to call twice, and `stop()` undoes everything `start()` did: listeners, timers, `pageObserver` subscriptions, injected DOM. A feature that owns a modal calls the modal's `dispose()`.
-- Code that only AD needs is passed in as a constructor argument from `ad-content.ts` (`KeyboardShortcuts` takes its `ShortcutActions`, `TextareaEditor` takes a `ScopeProvider`), so it is not bundled into PD pages.
+- Code that only AD needs is passed in as a constructor argument from `ad-content.ts` (`KeyboardShortcuts` takes its `ShortcutActions`, `Ide` takes a `ScopeProvider`), so it is not bundled into PD pages.
 - Only the topmost modal answers keys: modals take `modalLock` with themselves as owner and check `modalLock.isTopmost(this)` (see [`../ui/`](../ui/)).
 - Selectors for the page's markup go in `config/selectors.ts`, waits tuned against the page in `config/timings.ts`, and the extension's own ids come from `ns()`.
 

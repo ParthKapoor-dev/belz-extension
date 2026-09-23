@@ -1,8 +1,8 @@
-// `#{variable}` intellisense for the large editor: completion, hover and lint
-// over a VariableScope read once when the editor opened.
+// `#{variable}` intellisense for the IDE: completion, hover and lint
+// over a VariableScope read once when the IDE opened.
 //
-// Part of the lazily loaded editor chunk (imported by modal.ts only). The scope
-// is plain data: the editor never reads the page itself (see scope.ts).
+// Part of the lazily loaded IDE chunk (imported by modal.ts only). The scope
+// is plain data: the IDE never reads the page itself (see scope.ts).
 
 import { EditorView, hoverTooltip } from '@codemirror/view';
 import { linter } from '@codemirror/lint';

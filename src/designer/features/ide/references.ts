@@ -1,7 +1,7 @@
-// `#{variable}` references in the large editor's text: where they are, what
+// `#{variable}` references in the IDE's text: where they are, what
 // they point to, and which look wrong.
 //
-// Pure: no DOM, no CodeMirror. variables.ts wires these into the editor
+// Pure: no DOM, no CodeMirror. variables.ts wires these into the IDE
 // (completion, hover, lint); keeping them apart lets them be tested on plain
 // strings.
 //
@@ -34,7 +34,7 @@ export function describeVariable(variable: ScopeVariable): { detail: string; inf
     : { detail: `step ${step} (later)`, info: `Output of step ${step} (not produced yet at this step)` };
 }
 
-/** The editor footer's summary of a scope. */
+/** The IDE footer's summary of a scope. */
 export function scopeStatus(scope: VariableScope): string {
   const count = scope.variables.filter((v) => v.inScope).length;
   const where = scope.step === null ? 'Outside steps' : `Step ${stepLabel(scope.step)}`;

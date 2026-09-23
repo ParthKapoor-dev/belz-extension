@@ -2,16 +2,16 @@
 // them a given step can see — read from the live page, so unsaved draft edits
 // (a step added a moment ago) count. No API call, no auth.
 //
-// Called once each time the large editor opens (see TextareaEditor's scope
+// Called once each time the IDE opens (see Ide's scope
 // provider), never per keystroke and never from an observer: two
 // querySelectorAll calls over the page, one per group.
 //
-// AD-only: ad-content.ts hands scanScope to TextareaEditor. pd-content.ts does
+// AD-only: ad-content.ts hands scanScope to Ide. pd-content.ts does
 // not, so the PD bundle never contains this module.
 
 import { AD_SCOPE } from '../../../config/selectors';
 import { createLogger } from '../../../shared/logger';
-import type { ScopeVariable, VariableScope } from '../textarea-editor/scope';
+import type { ScopeVariable, VariableScope } from '../ide/scope';
 
 const log = createLogger('ad-scope');
 

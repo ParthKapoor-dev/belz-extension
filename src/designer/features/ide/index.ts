@@ -1,4 +1,4 @@
-// Textarea editor launcher — a single floating overlay shared by every
+// IDE launcher — a single floating overlay shared by every
 // textarea on the page.
 //
 // Per-textarea controls are deliberately avoided: wrapping each textarea in a
@@ -25,7 +25,7 @@ import type { Feature } from '../../core/feature';
 import { settings } from '../../core/settings';
 import type { ScopeProvider, VariableScope } from './scope';
 
-const log = createLogger('textarea-editor');
+const log = createLogger('ide');
 
 const CONTROLS_ID = ns('TextareaControls');
 const TEXTAREA_COPY_BUTTON_CLASS = ns('TextareaCopyButton');
@@ -36,11 +36,11 @@ type ModalModule = typeof import('./modal');
 //
 // A PUBLISHED Automation Designer method renders its steps as non-editable
 // fields, and Open + Copy are exactly what you want there: reading a long SQL
-// step in the large editor, and copying it out. Refusing them meant the
+// step in the IDE, and copying it out. Refusing them meant the
 // overlay only ever appeared on drafts.
 //
 // Nothing can be written back by accident — the modal already handles a
-// read-only source: TextareaEditorModal.showSource() marks the subtitle
+// read-only source: IdeModal.showSource() marks the subtitle
 // "(read only)" and disables Save, and save() bails on a disabled button.
 //
 // The hit test is for `disabled` specifically: document-level delegation
@@ -62,12 +62,12 @@ function sizeForTextarea(rect: DOMRect): OverlaySize {
   };
 }
 
-export class TextareaEditor implements Feature {
+export class Ide implements Feature {
   /**
    * `scopeProvider` reads the `#{variables}` in scope at a textarea, for the
-   * editor's completion, hover and lint. Only ad-content.ts passes one
+   * IDE's completion, hover and lint. Only ad-content.ts passes one
    * (designer/features/ad-scope), so PD pages do not bundle the scanner and
-   * their editor simply has no variables.
+   * their IDE simply has no variables.
    */
   constructor(private readonly scopeProvider?: ScopeProvider) {}
 
@@ -80,13 +80,13 @@ export class TextareaEditor implements Feature {
       {
         className: ns('TextareaLauncher'),
         glyph: '⤢',
-        title: 'Open large editor',
+        title: 'Open in IDE',
         style: PRIMARY_BUTTON_STYLE,
         hover: [PRIMARY_BUTTON_HOVER, PRIMARY_BUTTON_UNHOVER],
         adjust: (el: HTMLButtonElement, size: OverlaySize) => {
           el.style.fontSize = `${Math.max(size.glyphSize, 11)}px`;
         },
-        onClick: (textarea: HTMLTextAreaElement) => this.openEditorFor(textarea)
+        onClick: (textarea: HTMLTextAreaElement) => this.openIdeFor(textarea)
       },
       {
         className: TEXTAREA_COPY_BUTTON_CLASS,
@@ -110,11 +110,11 @@ export class TextareaEditor implements Feature {
     ]
   });
 
-  // The editor modal is loaded on first use, not with the page.
+  // The IDE modal is loaded on first use, not with the page.
   //
   // modal.ts pulls in CodeMirror and every language mode: ~600 KB, which was
   // ~94% of each content script and was parsed on every AD and PD page load
-  // whether or not anyone opened the editor. The bundler splits this dynamic
+  // whether or not anyone opened the IDE. The bundler splits this dynamic
   // import into its own chunk, fetched the first time Open is clicked.
   //
   // The chunk shares core/settings, ui/modal-lock and the other singletons
@@ -129,9 +129,9 @@ export class TextareaEditor implements Feature {
 
   stop(): void {
     this.overlay.stop();
-    // Only an editor that was ever loaded can be open. Never trigger the load
+    // Only an IDE that was ever loaded can be open. Never trigger the load
     // just to close something that cannot exist.
-    this.modal?.then((m) => m.textareaEditorModal.dispose(), () => {});
+    this.modal?.then((m) => m.ideModal.dispose(), () => {});
   }
 
   private loadModal(): Promise<ModalModule> {
@@ -146,23 +146,23 @@ export class TextareaEditor implements Feature {
 
   /** The variables in scope at `textarea`, read once per open; null when off or unavailable. */
   private scopeFor(textarea: HTMLTextAreaElement): VariableScope | null {
-    if (!this.scopeProvider || !settings.get().textareaVariableIntellisense) return null;
+    if (!this.scopeProvider || !settings.get().ideIntellisense) return null;
     try {
       return this.scopeProvider(textarea);
     } catch (error) {
-      // A page the scanner cannot read still gets its editor, just without variables.
+      // A page the scanner cannot read still gets its IDE, just without variables.
       log.warn('could not read the variables in scope:', error);
       return null;
     }
   }
 
-  private async openEditorFor(textarea: HTMLTextAreaElement): Promise<void> {
+  private async openIdeFor(textarea: HTMLTextAreaElement): Promise<void> {
     try {
-      const { textareaEditorModal } = await this.loadModal();
-      textareaEditorModal.open(textarea, this.scopeFor(textarea));
+      const { ideModal } = await this.loadModal();
+      ideModal.open(textarea, this.scopeFor(textarea));
     } catch (error) {
-      log.error('textarea editor failed to load:', error);
-      toast.show('Editor failed to load — see console');
+      log.error('IDE failed to load:', error);
+      toast.show('IDE failed to load — see console');
     }
   }
 }

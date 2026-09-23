@@ -134,8 +134,8 @@ export const AD_WIDGETS = {
 } as const;
 
 /**
- * The variables an AD method declares, read from the live page by the large
- * editor's `#{variable}` intellisense (designer/features/ad-scope). The live
+ * The variables an AD method declares, read from the live page by the
+ * IDE's `#{variable}` intellisense (designer/features/ad-scope). The live
  * DOM, not the chain API, so unsaved draft edits (a step just added) count.
  */
 export const AD_SCOPE = {

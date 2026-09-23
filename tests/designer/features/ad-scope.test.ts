@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { fieldCodeName, scanScope, stepIndexOf } from '../../../src/designer/features/ad-scope/scan';
-import type { VariableScope } from '../../../src/designer/features/textarea-editor/scope';
+import type { VariableScope } from '../../../src/designer/features/ide/scope';
 import { renderAdScope, renderStepOutput } from '../../fixtures/ad-scope';
 
 const textarea = (id: string): HTMLTextAreaElement => {

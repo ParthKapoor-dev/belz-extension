@@ -11,7 +11,7 @@ A copy button (⧉) that appears when the pointer is over an output container. I
 ## How it works
 
 1. `OutputCopy` builds a `HoverOverlay` (from `ui/hover-overlay.ts`) with the id `ns('OutputCopyControls')` and one button. `start()` / `stop()` start and stop the overlay.
-2. `resolveOutputContainer()` returns `node.closest(AD.outputContainer)`. It returns null for a textarea, including a disabled one found with `textareaUnderPointer()`, so the textarea editor's overlay gets that spot instead.
+2. `resolveOutputContainer()` returns `node.closest(AD.outputContainer)`. It returns null for a textarea, including a disabled one found with `textareaUnderPointer()`, so the IDE's overlay gets that spot instead.
 3. On click, `extractOutputText()` clones the container, removes any `[EXTENSION_OWNED_ATTR]` nodes from the clone, and copies its text with `copyText()`. A toast reports the result.
 
 There is one controls element for the whole page. The page's markup is not changed.

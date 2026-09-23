@@ -56,8 +56,8 @@ const overlayShown = () => {
     chord(); await sleep(400);
     r.contentScriptRan = runTestClicks === 1;
 
-    // The editor is not loaded until someone asks for it.
-    r.editorBeforeClick = !!$('.cm-editor');
+    // The IDE is not loaded until someone asks for it.
+    r.ideBeforeClick = !!$('.cm-editor');
 
     // Hover a textarea: the shared overlay appears.
     const ta = $('#ta');
@@ -65,24 +65,24 @@ const overlayShown = () => {
     const launcher = await waitFor(() => overlayShown() && $('.belzTextareaLauncher'), 2000);
     r.overlayShown = !!launcher;
 
-    // First click loads the editor chunk and opens it with the text.
+    // First click loads the IDE chunk and opens it with the text.
     if (launcher) launcher.click();
     const editor = await waitFor(() => $('.cm-editor'), 5000);
-    r.editorOpened = !!editor;
+    r.ideOpened = !!editor;
     r.contentMatches = editor ? $('.cm-content').textContent === ta.value : false;
-    r.detected = ($('#belzTextareaEditorLanguage') || {}).value || null;
+    r.detected = ($('#belzIdeLanguage') || {}).value || null;
     // The AD scanner ran on open; this textarea is outside any step.
-    r.variableStatus = ($('#belzTextareaEditorStatus') || {}).textContent || null;
+    r.variableStatus = ($('#belzIdeStatus') || {}).textContent || null;
 
-    // The lazily loaded editor and the eagerly loaded shortcut must share ONE
-    // modal lock: with the editor open, Run Test must not fire.
+    // The lazily loaded IDE and the eagerly loaded shortcut must share ONE
+    // modal lock: with the IDE open, Run Test must not fire.
     const clicksBefore = runTestClicks;
     chord(); await sleep(400);
-    r.runTestWhileEditorOpen = runTestClicks - clicksBefore;
+    r.runTestWhileIdeOpen = runTestClicks - clicksBefore;
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await sleep(200);
-    r.editorClosed = $('#belzTextareaEditorOverlay').style.display === 'none';
+    r.ideClosed = $('#belzIdeOverlay').style.display === 'none';
     chord(); await sleep(400);
     r.runTestAfterClose = runTestClicks - clicksBefore;
 

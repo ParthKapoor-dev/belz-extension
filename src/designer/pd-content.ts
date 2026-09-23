@@ -8,12 +8,12 @@
 import { TitleUpdater } from './features/title-updater/index';
 import { KeyboardShortcuts } from './features/keyboard/shortcuts';
 import { OutputCopy } from './features/output-copy/index';
-import { TextareaEditor } from './features/textarea-editor/index';
+import { Ide } from './features/ide/index';
 import { bootstrap } from './core/bootstrap';
 
 bootstrap({
   titleUpdater: new TitleUpdater(),
   runTestShortcut: new KeyboardShortcuts(),
   outputCopy: new OutputCopy(),
-  textareaEditor: new TextareaEditor()
+  ide: new Ide()
 });

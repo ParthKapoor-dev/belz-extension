@@ -8,7 +8,7 @@ import { JsonEditor } from './features/json-editor/index';
 import { jsonEditorModal } from './features/json-editor/modal';
 import { startCurlAutofillFeature } from './features/curl-autofill/index';
 import { OutputCopy } from './features/output-copy/index';
-import { TextareaEditor } from './features/textarea-editor/index';
+import { Ide } from './features/ide/index';
 import { scanScope } from './features/ad-scope/scan';
 import { settings } from './core/settings';
 import { bootstrap } from './core/bootstrap';
@@ -27,8 +27,8 @@ bootstrap({
   }),
   jsonEditor: new JsonEditor(),
   outputCopy: new OutputCopy(),
-  // The `#{variables}` in scope, re-read off the live method page on every editor open.
-  textareaEditor: new TextareaEditor((textarea) => scanScope(document, textarea))
+  // The `#{variables}` in scope, re-read off the live method page on every IDE open.
+  ide: new Ide((textarea) => scanScope(document, textarea))
 });
 
 // Fill the inputs from the AD Network panel's "Open in draft" handoff.

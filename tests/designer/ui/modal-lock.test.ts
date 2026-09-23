@@ -7,7 +7,7 @@ describe('modal lock', () => {
   test('counts nested locks and restores the page only on the last unlock', () => {
     document.body.style.overflow = 'auto';
     lock.lock();
-    lock.lock(); // e.g. settings opened from inside the editor
+    lock.lock(); // e.g. settings opened from inside the IDE
     expect(lock.isLocked).toBe(true);
     expect(document.body.style.position).toBe('fixed');
 

@@ -3,7 +3,7 @@
 // Unit tests (bun test) run the source against a simulated DOM. This runs the
 // built extension — minified, code-split, lazily loaded — inside headless
 // Chromium and Firefox, on tests/e2e/page.html, and checks what a user would
-// see. It is what proves, for example, that the lazily loaded editor and the
+// see. It is what proves, for example, that the lazily loaded IDE and the
 // eagerly loaded shortcut really share one modal lock in a browser.
 //
 // How: builds, copies build/chrome and build/firefox to a temp directory and
@@ -31,14 +31,14 @@ const RESULT_TIMEOUT_MS = 30_000;
 /** What the scenario page must report. */
 const EXPECTED = {
   contentScriptRan: true,
-  editorBeforeClick: false,
+  ideBeforeClick: false,
   overlayShown: true,
-  editorOpened: true,
+  ideOpened: true,
   contentMatches: true,
   detected: 'sql',
   variableStatus: 'Outside steps · 2 variables in scope',
-  runTestWhileEditorOpen: 0,
-  editorClosed: true,
+  runTestWhileIdeOpen: 0,
+  ideClosed: true,
   runTestAfterClose: 1,
   publishedOverlay: true
 };

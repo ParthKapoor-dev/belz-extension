@@ -1,17 +1,17 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { openSearchPanel } from '@codemirror/search';
 import type { EditorView } from '@codemirror/view';
-import { TextareaEditorModal } from '../../../src/designer/features/textarea-editor/modal';
+import { IdeModal } from '../../../src/designer/features/ide/modal';
 import { SettingsModal } from '../../../src/designer/features/settings/modal';
 import { JsonEditorModal } from '../../../src/designer/features/json-editor/modal';
 import { modalLock } from '../../../src/designer/ui/modal-lock';
 import { ns } from '../../../src/config/namespace';
 
 // Esc in the extension's modals: only the topmost modal closes, CodeMirror's
-// own popups close first, and unsaved edits in the large editor are not
+// own popups close first, and unsaved edits in the IDE are not
 // dropped on the first press. Assertions read plain values only.
 
-const STATUS_ID = ns('TextareaEditorStatus');
+const STATUS_ID = ns('IdeStatus');
 
 /** Press Esc the way a user does: at the focused element, bubbling up. */
 function esc(): boolean {
@@ -35,14 +35,14 @@ function openEditor(text = 'select 1') {
   const textarea = document.createElement('textarea');
   textarea.value = text;
   document.body.append(textarea);
-  const editor = track(new TextareaEditorModal());
+  const editor = track(new IdeModal());
   editor.open(textarea);
   const view = () => (editor as unknown as { view: EditorView | null }).view;
   const isOpen = () => view() !== null;
   return { editor, textarea, view, isOpen };
 }
 
-describe('the large editor', () => {
+describe('the IDE', () => {
   test('Esc closes it when nothing was changed', () => {
     const { isOpen } = openEditor();
     expect(isOpen()).toBe(true);
@@ -83,7 +83,7 @@ describe('the large editor', () => {
 });
 
 describe('stacked modals', () => {
-  test('Esc closes the settings modal over the large editor, not the editor too', () => {
+  test('Esc closes the settings modal over the IDE, not the IDE too', () => {
     const { isOpen } = openEditor();
     const settingsModal = track(new SettingsModal());
     settingsModal.open();
@@ -105,7 +105,7 @@ describe('stacked modals', () => {
     expect(json.isOpen).toBe(false);
   });
 
-  test('Ctrl+S does not save the editor while the settings modal is over it', () => {
+  test('Ctrl+S does not save the IDE while the settings modal is over it', () => {
     const { view, textarea } = openEditor('a');
     view()!.dispatch({ changes: { from: 1, insert: 'b' } });
     track(new SettingsModal()).open();

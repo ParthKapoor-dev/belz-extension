@@ -19,17 +19,17 @@ The way to open the extension's in-page Settings modal on a designer page, and t
 
 `SettingsLauncher.stop()` undoes all of it: the timers, the `pageObserver` subscription, both listeners, the button, the title's layout, and it disposes `settingsModal`. The page never calls it (the launcher lives as long as the page); the teardown returned by `bootstrap()` does, in tests.
 
-**The modal.** `SettingsModal` builds its DOM on first open. Rows come from `settingsIn(section)` in `config/settings.ts`: a switch for a toggle, a dropdown for a select. Sections are `features` (no title), `editor` ("Textarea Editor Defaults") and `advanced` ("Advanced"). Each change calls `settings.set(key, value)`, which saves to `chrome.storage.local` and notifies every subscriber, so features start or stop at once. While open it subscribes to the store, so the rows repaint when a setting changes elsewhere (another tab); `close()` unsubscribes. It uses the shared `MODAL_*` shell from `ui/modal.ts`. If the host app wiped it from the page, the next `open()` drops it (releasing its `modalLock` hold) and rebuilds it. It takes `modalLock` with itself as owner while open and closes on **Done**, ×, a click on the backdrop, or Escape. Escape closes it only while it is the topmost modal, and marks the key handled, so the one press does not also close the large editor or the JSON editor under it.
+**The modal.** `SettingsModal` builds its DOM on first open. Rows come from `settingsIn(section)` in `config/settings.ts`: a switch for a toggle, a dropdown for a select. Sections are `features` (no title), `ide` ("IDE Defaults") and `advanced` ("Advanced"). Each change calls `settings.set(key, value)`, which saves to `chrome.storage.local` and notifies every subscriber, so features start or stop at once. While open it subscribes to the store, so the rows repaint when a setting changes elsewhere (another tab); `close()` unsubscribes. It uses the shared `MODAL_*` shell from `ui/modal.ts`. If the host app wiped it from the page, the next `open()` drops it (releasing its `modalLock` hold) and rebuilds it. It takes `modalLock` with itself as owner while open and closes on **Done**, ×, a click on the backdrop, or Escape. Escape closes it only while it is the topmost modal, and marks the key handled, so the one press does not also close the IDE or the JSON editor under it.
 
 ## How it connects
 
-- **Used by:** `core/bootstrap.ts` (`SettingsLauncher`) and the large editor's ⚙ button (`settingsModal.open()` in `textarea-editor/modal.ts`).
+- **Used by:** `core/bootstrap.ts` (`SettingsLauncher`) and the IDE's ⚙ button (`settingsModal.open()` in `ide/modal.ts`).
 - **Depends on:** `core/settings.ts`, `core/observer.ts`, `config/settings.ts`, `HEADER` in `config/selectors.ts`, `config/timings.ts`, `config/namespace.ts`, `ui/modal-lock.ts`, `ui/modal.ts`, `ui/styles.ts`, `ui/theme.ts`, `shared/messages.ts`, `chrome.runtime.onMessage`. The browser command is handled in [`background/commands.ts`](../../../background/commands.ts).
 
 ## Conventions
 
 - The modal never lists settings itself. `config/settings.ts` is the only list, and the rows follow from it.
-- `modal.ts` holds page-wide state and has a `belz-singleton` marker: the eager launcher and the lazily loaded editor must open the same modal.
+- `modal.ts` holds page-wide state and has a `belz-singleton` marker: the eager launcher and the lazily loaded IDE must open the same modal.
 - `SettingsLauncher` is not a `Feature`: no setting switches it off.
 
 ## Testing

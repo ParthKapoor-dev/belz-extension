@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { EditorState } from '@codemirror/state';
 import { CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
-import { variableCompletionSource } from '../../../src/designer/features/textarea-editor/variables';
+import { variableCompletionSource } from '../../../src/designer/features/ide/variables';
 import {
   describeVariable,
   findExpressions,
@@ -9,8 +9,8 @@ import {
   lintReferences,
   referenceAt,
   scopeStatus
-} from '../../../src/designer/features/textarea-editor/references';
-import type { VariableScope } from '../../../src/designer/features/textarea-editor/scope';
+} from '../../../src/designer/features/ide/references';
+import type { VariableScope } from '../../../src/designer/features/ide/scope';
 
 // Editing step 3.2: step 3.1's output is in scope, step 3.3's is not.
 const SCOPE: VariableScope = {

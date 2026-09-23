@@ -4,7 +4,7 @@
 // derived from this list: adding a setting means adding one entry here.
 
 /** Where the settings modal shows a setting. */
-export type SettingSection = 'features' | 'editor' | 'advanced';
+export type SettingSection = 'features' | 'ide' | 'advanced';
 
 /** An on/off setting, shown as a switch. */
 export interface ToggleSpec {
@@ -49,33 +49,33 @@ export const SETTINGS = {
   ),
   jsonEditor: toggle('features', 'JSON Editor', 'Show JSON input button and modal editor'),
   outputCopy: toggle('features', 'Output Copy', 'Show Copy button near output containers'),
-  textareaEditor: toggle('features', 'Textarea Editor', 'Show Open button for native textareas'),
+  ide: toggle('features', 'IDE', 'Show the Open in IDE and Copy buttons on textareas'),
 
-  // The editor language is not a setting: it is always detected from the
-  // content, and the editor's own header dropdown reports what was detected
+  // The IDE language is not a setting: it is always detected from the
+  // content, and the IDE's own header dropdown reports what was detected
   // (and allows a one-off override). A stored default would only fight the
   // detector.
-  textareaEditorWrap: select({
-    section: 'editor',
-    label: 'Editor Wrap',
-    description: 'Wrap long lines in the large editor',
+  ideWrap: select({
+    section: 'ide',
+    label: 'IDE Wrap',
+    description: 'Wrap long lines in the IDE',
     default: 'wrap',
     options: [
       { value: 'nowrap', label: 'No Wrap' },
       { value: 'wrap', label: 'Wrap' }
     ]
   }),
-  textareaEditorFontSize: select({
-    section: 'editor',
-    label: 'Editor Font Size',
-    description: 'Default font size for large editor',
+  ideFontSize: select({
+    section: 'ide',
+    label: 'IDE Font Size',
+    description: 'Default font size in the IDE',
     default: 13,
     options: FONT_SIZES.map((value) => ({ value, label: `${value}px` }))
   }),
-  textareaVariableIntellisense: toggle(
-    'editor',
-    'Variable Intellisense',
-    'Complete, explain and check #{variables} in the large editor (Automation Designer)'
+  ideIntellisense: toggle(
+    'ide',
+    'IDE Autocomplete',
+    'Complete, explain and check #{variables} in the IDE (Automation Designer)'
   ),
 
   debugLogging: toggle(
@@ -91,8 +91,8 @@ export type SettingKey = keyof typeof SETTINGS;
 type ValueOf<S> = S extends ToggleSpec ? boolean : S extends SelectSpec<infer V> ? V : never;
 export type Settings = { [K in SettingKey]: ValueOf<(typeof SETTINGS)[K]> };
 
-export type WrapMode = Settings['textareaEditorWrap'];
-export type EditorFontSize = Settings['textareaEditorFontSize'];
+export type WrapMode = Settings['ideWrap'];
+export type IdeFontSize = Settings['ideFontSize'];
 
 export const SETTING_KEYS = Object.keys(SETTINGS) as SettingKey[];
 

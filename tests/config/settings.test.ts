@@ -19,12 +19,12 @@ describe('settings schema', () => {
   });
 
   test('every setting is shown in exactly one modal section', () => {
-    const shown = [...settingsIn('features'), ...settingsIn('editor'), ...settingsIn('advanced')].map(([k]) => k);
+    const shown = [...settingsIn('features'), ...settingsIn('ide'), ...settingsIn('advanced')].map(([k]) => k);
     expect(shown.sort()).toEqual([...SETTING_KEYS].sort());
   });
 
   test('defaults come from the schema', () => {
-    expect(DEFAULT_SETTINGS.textareaEditorFontSize).toBe(13);
+    expect(DEFAULT_SETTINGS.ideFontSize).toBe(13);
     expect(DEFAULT_SETTINGS.debugLogging).toBe(false);
     expect(DEFAULT_SETTINGS.jsonEditor).toBe(true);
   });
@@ -32,15 +32,15 @@ describe('settings schema', () => {
 
 describe('sanitizeSetting', () => {
   test('select values compare as text and come back typed', () => {
-    expect(sanitizeSetting('textareaEditorFontSize', '16')).toBe(16);
-    expect(sanitizeSetting('textareaEditorFontSize', ' 16px')).toBe(16);
-    expect(sanitizeSetting('textareaEditorWrap', 'nowrap')).toBe('nowrap');
+    expect(sanitizeSetting('ideFontSize', '16')).toBe(16);
+    expect(sanitizeSetting('ideFontSize', ' 16px')).toBe(16);
+    expect(sanitizeSetting('ideWrap', 'nowrap')).toBe('nowrap');
   });
 
   test('an unknown select value falls back to the default', () => {
-    expect(sanitizeSetting('textareaEditorFontSize', 99)).toBe(13);
-    expect(sanitizeSetting('textareaEditorWrap', 'sideways')).toBe('wrap');
-    expect(sanitizeSetting('textareaEditorWrap', undefined)).toBe('wrap');
+    expect(sanitizeSetting('ideFontSize', 99)).toBe(13);
+    expect(sanitizeSetting('ideWrap', 'sideways')).toBe('wrap');
+    expect(sanitizeSetting('ideWrap', undefined)).toBe('wrap');
   });
 
   test('toggles are coerced to booleans', () => {

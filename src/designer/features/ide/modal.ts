@@ -1,4 +1,4 @@
-/*! belz-singleton: designer/features/textarea-editor/modal */
+/*! belz-singleton: designer/features/ide/modal */
 // Holds module-level state, so it must be bundled exactly once;
 // the build fails otherwise. See scripts/check-singletons.mjs.
 import { Compartment, EditorState } from '@codemirror/state';
@@ -16,7 +16,7 @@ import { settings } from '../../core/settings';
 import {
   SETTINGS,
   sanitizeSetting,
-  type EditorFontSize,
+  type IdeFontSize,
   type Settings,
   type WrapMode
 } from '../../../config/settings';
@@ -41,16 +41,16 @@ import { variableCompletionSource, variableExtensions } from './variables';
 import { scopeStatus } from './references';
 import type { VariableScope } from './scope';
 
-const OVERLAY_ID = ns('TextareaEditorOverlay');
-const TITLE_ID = ns('TextareaEditorTitle');
-const SUBTITLE_ID = ns('TextareaEditorSubtitle');
-const EDITOR_HOST_ID = ns('TextareaEditorHost');
-const SAVE_BTN_ID = ns('TextareaEditorSave');
-const LANG_SELECT_ID = ns('TextareaEditorLanguage');
-const WRAP_SELECT_ID = ns('TextareaEditorWrapMode');
-const FONT_SIZE_SELECT_ID = ns('TextareaEditorFontSize');
-const EDITOR_SETTINGS_BUTTON_ID = ns('TextareaEditorSettingsButton');
-const STATUS_ID = ns('TextareaEditorStatus');
+const OVERLAY_ID = ns('IdeOverlay');
+const TITLE_ID = ns('IdeTitle');
+const SUBTITLE_ID = ns('IdeSubtitle');
+const EDITOR_HOST_ID = ns('IdeHost');
+const SAVE_BTN_ID = ns('IdeSave');
+const LANG_SELECT_ID = ns('IdeLanguage');
+const WRAP_SELECT_ID = ns('IdeWrapMode');
+const FONT_SIZE_SELECT_ID = ns('IdeFontSize');
+const EDITOR_SETTINGS_BUTTON_ID = ns('IdeSettingsButton');
+const STATUS_ID = ns('IdeStatus');
 
 const DEFAULT_STATUS = 'Syntax highlighting and optional line wrapping.';
 /** Shown after Esc with unsaved changes; a second Esc within the window discards them. */
@@ -329,21 +329,21 @@ function appendOptions(
 }
 
 
-function getSelectedFontSize(): EditorFontSize {
-  return sanitizeSetting('textareaEditorFontSize', byId<HTMLSelectElement>(FONT_SIZE_SELECT_ID)?.value);
+function getSelectedFontSize(): IdeFontSize {
+  return sanitizeSetting('ideFontSize', byId<HTMLSelectElement>(FONT_SIZE_SELECT_ID)?.value);
 }
 
 function getSelectedWrapMode(): WrapMode {
-  return sanitizeSetting('textareaEditorWrap', byId<HTMLSelectElement>(WRAP_SELECT_ID)?.value);
+  return sanitizeSetting('ideWrap', byId<HTMLSelectElement>(WRAP_SELECT_ID)?.value);
 }
 
-function getEditorSettings(): { wrap: WrapMode; fontSize: EditorFontSize } {
+function getIdeSettings(): { wrap: WrapMode; fontSize: IdeFontSize } {
   const current = settings.get();
-  return { wrap: current.textareaEditorWrap, fontSize: current.textareaEditorFontSize };
+  return { wrap: current.ideWrap, fontSize: current.ideFontSize };
 }
 
-function syncEditorControlValuesFromSettings(): void {
-  const editor = getEditorSettings();
+function syncIdeControlValuesFromSettings(): void {
+  const editor = getIdeSettings();
   const wrapSelect = byId<HTMLSelectElement>(WRAP_SELECT_ID);
   const fontSizeSelect = byId<HTMLSelectElement>(FONT_SIZE_SELECT_ID);
 
@@ -436,7 +436,7 @@ function describeSource(textarea: HTMLTextAreaElement): string {
   return `Editing: ${label}`;
 }
 
-export class TextareaEditorModal {
+export class IdeModal {
   private overlay: HTMLDivElement | null = null;
   /** The page textarea being edited. */
   private source: HTMLTextAreaElement | null = null;
@@ -571,24 +571,24 @@ export class TextareaEditorModal {
   private onWrapPicked(): void {
     if (!this.view) return;
     const wrapMode = getSelectedWrapMode();
-    settings.set('textareaEditorWrap', wrapMode);
+    settings.set('ideWrap', wrapMode);
     this.setWrapMode(wrapMode);
   }
 
   private onFontSizePicked(): void {
     const fontSize = getSelectedFontSize();
-    settings.set('textareaEditorFontSize', fontSize);
+    settings.set('ideFontSize', fontSize);
     this.applyFontSize(fontSize);
   }
 
   private applySettings(next: Settings): void {
-    syncEditorControlValuesFromSettings();
+    syncIdeControlValuesFromSettings();
     if (!this.view) return;
 
     // Language is not a stored setting — it is detected, or overridden in the
     // header — so a settings change never touches it.
-    this.setWrapMode(next.textareaEditorWrap);
-    this.applyFontSize(next.textareaEditorFontSize);
+    this.setWrapMode(next.ideWrap);
+    this.applyFontSize(next.ideFontSize);
   }
 
   private followSettings(): void {
@@ -611,7 +611,7 @@ export class TextareaEditorModal {
     modalLock.unlock(this);
   }
 
-  /** True while the editor holds text that differs from what was opened. */
+  /** True while the IDE holds text that differs from what was opened. */
   get hasUnsavedChanges(): boolean {
     return this.view !== null && this.text() !== this.openedText;
   }
@@ -659,7 +659,7 @@ export class TextareaEditorModal {
       return;
     }
     const copied = await copyText(text);
-    toast.show(copied ? 'Copied editor text' : 'Failed to copy');
+    toast.show(copied ? 'Copied IDE text' : 'Failed to copy');
   }
 
   private save(): void {
@@ -672,7 +672,7 @@ export class TextareaEditorModal {
 
     // Read-only sources now reach this path: a published AD method opens here
     // for reading, and Ctrl+S is muscle memory. Say why nothing was written
-    // rather than swallowing the keystroke. The editor itself stays editable on
+    // rather than swallowing the keystroke. The IDE itself stays editable on
     // purpose — scratch-editing a published step is useful — so this is the
     // only place the boundary is felt.
     if (saveBtn.disabled) {
@@ -694,7 +694,7 @@ export class TextareaEditorModal {
 
     const readOnly = sourceEl.readOnly || sourceEl.disabled;
 
-    title.textContent = 'Large Text Editor';
+    title.textContent = 'IDE';
     subtitle.textContent = readOnly
       ? `${describeSource(sourceEl)} (read only)`
       : describeSource(sourceEl);
@@ -706,11 +706,11 @@ export class TextareaEditorModal {
     this.statusText = this.scope ? scopeStatus(this.scope) : DEFAULT_STATUS;
     this.setStatus(this.statusText, false);
 
-    syncEditorControlValuesFromSettings();
+    syncIdeControlValuesFromSettings();
     this.createView(sourceEl);
   }
 
-  // Escape, Ctrl+S and Ctrl+F while the editor is open and on top (the
+  // Escape, Ctrl+S and Ctrl+F while the IDE is open and on top (the
   // settings modal can open over it). Capture phase, so the host page's own
   // shortcuts never see them.
   private readonly onKeydown = (event: KeyboardEvent): void => {
@@ -743,7 +743,7 @@ export class TextareaEditorModal {
       const view = this.view;
       if (view) {
         openSearchPanel(view);
-        // The view itself, not `this.view`: the editor may have been closed
+        // The view itself, not `this.view`: the IDE may have been closed
         // (and this.view cleared) by the time the frame runs.
         requestAnimationFrame(() => {
           view.dom.querySelector<HTMLInputElement>('.cm-search input')?.focus();
@@ -781,7 +781,7 @@ export class TextareaEditorModal {
     const titleWrap = document.createElement('div');
     const title = document.createElement('h2');
     title.id = TITLE_ID;
-    title.textContent = 'Large Text Editor';
+    title.textContent = 'IDE';
     Object.assign(title.style, {
       margin: '0',
       fontSize: '16px',
@@ -819,7 +819,7 @@ export class TextareaEditorModal {
       outline: 'none',
       cursor: 'pointer'
     });
-    appendOptions(fontSizeSelect, SETTINGS.textareaEditorFontSize);
+    appendOptions(fontSizeSelect, SETTINGS.ideFontSize);
 
     const wrapSelect = document.createElement('select');
     wrapSelect.id = WRAP_SELECT_ID;
@@ -833,7 +833,7 @@ export class TextareaEditorModal {
       outline: 'none',
       cursor: 'pointer'
     });
-    appendOptions(wrapSelect, SETTINGS.textareaEditorWrap);
+    appendOptions(wrapSelect, SETTINGS.ideWrap);
 
     const languageSelect = document.createElement('select');
     languageSelect.id = LANG_SELECT_ID;
@@ -849,7 +849,7 @@ export class TextareaEditorModal {
     });
     languageSelect.setAttribute(
       'title',
-      'Detected syntax mode — pick another to override it for this editor session'
+      'Detected syntax mode — pick another to override it for this IDE session'
     );
     for (const option of LANGUAGE_OPTIONS) {
       const optionEl = document.createElement('option');
@@ -888,7 +888,7 @@ export class TextareaEditorModal {
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
     copyBtn.textContent = 'Copy';
-    copyBtn.setAttribute('title', 'Copy editor text');
+    copyBtn.setAttribute('title', 'Copy IDE text');
     Object.assign(copyBtn.style, {
       border: '1px solid rgba(148, 163, 184, 0.45)',
       background: 'rgba(15, 23, 42, 0.75)',
@@ -905,7 +905,7 @@ export class TextareaEditorModal {
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.textContent = '×';
-    closeBtn.setAttribute('aria-label', 'Close large text editor');
+    closeBtn.setAttribute('aria-label', 'Close IDE');
     Object.assign(closeBtn.style, {
       width: '30px',
       height: '30px',
@@ -1003,7 +1003,7 @@ export class TextareaEditorModal {
     languageSelect.addEventListener('change', () => this.onLanguagePicked());
     wrapSelect.addEventListener('change', () => this.onWrapPicked());
     fontSizeSelect.addEventListener('change', () => this.onFontSizePicked());
-    syncEditorControlValuesFromSettings();
+    syncIdeControlValuesFromSettings();
 
     return this.overlay;
   }
@@ -1032,5 +1032,5 @@ export class TextareaEditorModal {
   }
 }
 
-/** The page's large text editor. */
-export const textareaEditorModal = new TextareaEditorModal();
+/** The page's IDE. */
+export const ideModal = new IdeModal();

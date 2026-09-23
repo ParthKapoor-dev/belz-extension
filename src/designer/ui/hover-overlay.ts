@@ -1,7 +1,7 @@
 // A single floating controls element, shared by every matching element on the
 // page and positioned over whichever one the pointer or keyboard focus is on.
 //
-// This is the pattern the textarea editor was rebuilt around, generalised so
+// This is the pattern the IDE was rebuilt around, generalised so
 // the output-copy feature can use it too. The alternative — a controls node
 // injected per match — costs O(matches) elements, restructures the page's own
 // markup, and needs a full rescan on every DOM mutation to stay attached. On a
@@ -305,7 +305,7 @@ export class HoverOverlay<T extends HTMLElement> {
 
   // `event` is forwarded so a resolver can hit-test the pointer position.
   // That is the only way to reach a `disabled` control, which receives no
-  // pointer events of its own — see resolveTextarea in the textarea editor.
+  // pointer events of its own — see resolveTextarea in the IDE.
   private resolve(node: EventTarget | null, event: Event): T | null {
     // A nodeType check, not `instanceof Element`: an element from another
     // frame, or seen through Firefox's content-script wrappers, can fail

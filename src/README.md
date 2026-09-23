@@ -6,7 +6,7 @@ All the extension's TypeScript and HTML source. Bun bundles it into `dist/`, and
 
 | File / directory | What it does |
 |---|---|
-| [`designer/`](designer/) | Content scripts on Automation Designer (`/automation-designer/*`) and Page Designer (`/ui-designer/*`) pages: the editor overlay, JSON input editor, shortcuts, settings modal |
+| [`designer/`](designer/) | Content scripts on Automation Designer (`/automation-designer/*`) and Page Designer (`/ui-designer/*`) pages: the IDE, JSON input editor, shortcuts, settings modal |
 | [`pd-inspector-page/`](pd-inspector-page/) | Content script on published pages (`/pages/*`): the engine that answers the PD Inspector panel |
 | [`devtools/`](devtools/) | The DevTools page and its two panels, **AD Network** and **PD Inspector** |
 | [`background/`](background/) | Background service worker: registers content scripts per allowed site, relays PD Inspector messages, hands over "Open in draft" request bodies, handles browser-level shortcuts |

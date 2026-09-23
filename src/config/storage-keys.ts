@@ -6,7 +6,7 @@
 // namespace.ts) and keep their names on purpose: renaming a key would lose
 // what every user already has stored under it.
 
-/** Feature toggles + textarea editor defaults. Written by src/designer/core/settings.ts. */
+/** Feature toggles + IDE defaults. Written by src/designer/core/settings.ts. */
 export const SETTINGS_STORAGE_KEY = 'sdExtensionSettingsV1';
 
 /** User-added sites the extension is allowed to inject into. Options page + background. */

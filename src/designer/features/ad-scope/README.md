@@ -1,6 +1,6 @@
 # `src/designer/features/ad-scope/`
 
-Reads which `#{variables}` an Automation Designer method has, and which of them the step being edited can use, straight from the live page. The large editor uses the result for completion, hover and lint. AD pages only.
+Reads which `#{variables}` an Automation Designer method has, and which of them the step being edited can use, straight from the live page. The IDE uses the result for completion, hover and lint. AD pages only.
 
 ## Contents
 
@@ -15,14 +15,14 @@ Reads which `#{variables}` an Automation Designer method has, and which of them 
 1. **Inputs and internal variables:** every `AD_SCOPE.declaredFieldCodes` element. The name comes from its `Field Code: #{name}` text (`AD_SCOPE.fieldCodeText`). Inside `AD_SCOPE.internalList` it is a `variable`, otherwise an `input`. These are always in scope.
 2. **Step outputs:** every `AD_SCOPE.stepOutputFieldCodes` element. Its step index comes from the id of the enclosing `AD_SCOPE.step` element (`step3_<index>`, 0-based). An output is in scope only if its step comes before the edited textarea's step. Outside any step, everything is in scope.
 
-Each name is listed once. A declared variable wins over an output with the same name, and an output made by several steps keeps the earliest. The result is a `VariableScope` (`{ step, variables }`), whose types live in [`../textarea-editor/scope.ts`](../textarea-editor/scope.ts).
+Each name is listed once. A declared variable wins over an output with the same name, and an output made by several steps keeps the earliest. The result is a `VariableScope` (`{ step, variables }`), whose types live in [`../ide/scope.ts`](../ide/scope.ts).
 
 It reads the page, not the chain API. So unsaved draft edits count, and no auth is needed.
 
 ## How it connects
 
-- **Used by:** `ad-content.ts`, which passes `(textarea) => scanScope(document, textarea)` to `TextareaEditor` as its `ScopeProvider`. `TextareaEditor.scopeFor()` calls it once per editor open, and only when `textareaVariableIntellisense` is on.
-- **Depends on:** `AD_SCOPE` in `config/selectors.ts`, `shared/logger.ts`, and the types in `textarea-editor/scope.ts`.
+- **Used by:** `ad-content.ts`, which passes `(textarea) => scanScope(document, textarea)` to `Ide` as its `ScopeProvider`. `Ide.scopeFor()` calls it once per IDE open, and only when `ideIntellisense` is on.
+- **Depends on:** `AD_SCOPE` in `config/selectors.ts`, `shared/logger.ts`, and the types in `ide/scope.ts`.
 
 ## Conventions
 

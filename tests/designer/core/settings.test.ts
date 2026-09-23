@@ -58,14 +58,14 @@ describe('SettingsStore', () => {
     const store = new SettingsStore(mem.storage);
     mem.changeElsewhere({
       titleUpdater: 0,
-      textareaEditorWrap: 'sideways',
-      textareaEditorFontSize: '16',
+      ideWrap: 'sideways',
+      ideFontSize: '16',
       unknownKey: 'x'
     });
     const s = store.get();
     expect(s.titleUpdater).toBe(false);
-    expect(s.textareaEditorWrap).toBe(DEFAULT_SETTINGS.textareaEditorWrap);
-    expect(s.textareaEditorFontSize).toBe(16);
+    expect(s.ideWrap).toBe(DEFAULT_SETTINGS.ideWrap);
+    expect(s.ideFontSize).toBe(16);
     expect('unknownKey' in s).toBe(false);
     // Keys missing from storage keep their defaults.
     expect(s.outputCopy).toBe(DEFAULT_SETTINGS.outputCopy);

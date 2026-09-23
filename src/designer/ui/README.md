@@ -25,26 +25,26 @@ UI building blocks shared by the designer features: the floating hover overlay, 
 
 Because it uses delegation, elements added later need no registration and no rescan. It never changes the page's own markup.
 
-**`ModalLock`** counts `lock()` / `unlock()` calls, so nested modals work (the settings modal over the editor). On the first lock it saves the body styles and scroll position and fixes the body in place. On the last unlock it restores them. `KeyboardShortcuts` checks `modalLock.isLocked` and does nothing while it is set.
+**`ModalLock`** counts `lock()` / `unlock()` calls, so nested modals work (the settings modal over the IDE). On the first lock it saves the body styles and scroll position and fixes the body in place. On the last unlock it restores them. `KeyboardShortcuts` checks `modalLock.isLocked` and does nothing while it is set.
 
-It also keeps the open modals in order. A modal passes itself as the owner: `lock(owner)` puts it on top of the stack and `unlock(owner)` takes it off; the stack is emptied when the count reaches zero. `isTopmost(owner)` tells a modal whether it is the most recently opened one still open. Each modal answers its keys (Escape, and the editor's Ctrl+S / Ctrl+F) only while it is topmost, and marks a handled Escape (`preventDefault`, `stopPropagation`), so one press closes one modal.
+It also keeps the open modals in order. A modal passes itself as the owner: `lock(owner)` puts it on top of the stack and `unlock(owner)` takes it off; the stack is emptied when the count reaches zero. `isTopmost(owner)` tells a modal whether it is the most recently opened one still open. Each modal answers its keys (Escape, and the IDE's Ctrl+S / Ctrl+F) only while it is topmost, and marks a handled Escape (`preventDefault`, `stopPropagation`), so one press closes one modal.
 
 **`Toast`** reuses one element (marked `EXTENSION_OWNED_ATTR`) and fades it out after 1.2 s. If the host app wiped it from the page, the next `show()` builds a new one.
 
 ## How it connects
 
-- **Used by:** `OutputCopy` and `TextareaEditor` each own a `HoverOverlay`. The JSON editor, settings and textarea editor modals take `modalLock`. Most features call `toast.show()`. The modals and buttons use `modal.ts`, `styles.ts` and `theme.ts`.
+- **Used by:** `OutputCopy` and `Ide` each own a `HoverOverlay`. The JSON editor, settings and IDE modals take `modalLock`. Most features call `toast.show()`. The modals and buttons use `modal.ts`, `styles.ts` and `theme.ts`.
 - **Depends on:** `core/rearm.ts`, `config/namespace.ts` (`EXTENSION_OWNED_ATTR`), `shared/logger.ts`.
 
 ## Conventions
 
 - Styling is inline: style objects applied with `Object.assign(el.style, ...)`. Take colours and fonts from `theme.ts` rather than new literals.
-- `modal-lock.ts` and `toast.ts` hold page-wide state and carry a `belz-singleton` marker. They must be bundled once, or the lazily loaded editor would lock a different copy than the one the shortcuts check (see [AGENTS.md](../../../AGENTS.md)).
+- `modal-lock.ts` and `toast.ts` hold page-wide state and carry a `belz-singleton` marker. They must be bundled once, or the lazily loaded IDE would lock a different copy than the one the shortcuts check (see [AGENTS.md](../../../AGENTS.md)).
 - Every modal calls `modalLock.lock(this)` when it opens and `unlock(this)` when it closes, exactly once each, and checks `isTopmost(this)` (and `event.defaultPrevented`) before acting on a key.
 
 ## Testing
 
-[`tests/designer/ui/hover-overlay.test.ts`](../../../tests/designer/ui/hover-overlay.test.ts) covers showing and hiding, the single controls element, button clicks, skipping the extension's own UI, and `stop()`. [`tests/designer/ui/modal-lock.test.ts`](../../../tests/designer/ui/modal-lock.test.ts) covers the lock, and [`tests/designer/features/modal-escape.test.ts`](../../../tests/designer/features/modal-escape.test.ts) the topmost-modal rule with real modals. The e2e run ([`tests/e2e/`](../../../tests/e2e/)) checks that the lazy editor and the eager shortcut share one lock. How to run them is in the Development section of the [root README](../../../README.md).
+[`tests/designer/ui/hover-overlay.test.ts`](../../../tests/designer/ui/hover-overlay.test.ts) covers showing and hiding, the single controls element, button clicks, skipping the extension's own UI, and `stop()`. [`tests/designer/ui/modal-lock.test.ts`](../../../tests/designer/ui/modal-lock.test.ts) covers the lock, and [`tests/designer/features/modal-escape.test.ts`](../../../tests/designer/features/modal-escape.test.ts) the topmost-modal rule with real modals. The e2e run ([`tests/e2e/`](../../../tests/e2e/)) checks that the lazy IDE and the eager shortcut share one lock. How to run them is in the Development section of the [root README](../../../README.md).
 
 ## Adding or changing things
 

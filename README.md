@@ -77,8 +77,8 @@ Repeat for each environment you use (dev, QA, and so on). To remove access, clic
 
 | Feature | How to use it |
 |---|---|
-| **Large text editor** | Hover over any text box and click **⤢** (top-right corner). Opens a full-screen editor with line numbers, search (`Ctrl+F`) and syntax highlighting. On published methods, it opens read-only. See [Large text editor](#large-text-editor) below. |
-| **`#{variable}` intellisense** | In the large editor, type `#{` to pick from the method's inputs, internal variables and step outputs. Hover a name to see where it comes from. Unknown names, outputs of steps that run later, and an unclosed `#{` are underlined. Variables are read from the page each time the editor opens, so unsaved edits (a step you just added) are included. The footer shows the current step and how many variables it can use. |
+| **IDE** | Hover over any text box and click **⤢** (**Open in IDE**, top-right corner). The IDE opens full-screen for that text box, with line numbers, search (`Ctrl+F`) and syntax highlighting. On published methods, it opens read-only. See [IDE](#ide) below. |
+| **`#{variable}` intellisense** | In the IDE, type `#{` to pick from the method's inputs, internal variables and step outputs. Hover a name to see where it comes from. Unknown names, outputs of steps that run later, and an unclosed `#{` are underlined. Variables are read from the page each time the IDE opens, so unsaved edits (a step you just added) are included. The footer shows the current step and how many variables it can use. |
 | **Copy a text box** | Hover over a text box and click **⧉**. |
 | **Edit inputs as JSON** | Click the **JSON** button next to a method's **Inputs** heading, or press `Shift+J`. Edit every input as one JSON document. **Sync** writes your changes back into each input field with the correct type, including dates, booleans and structured data. |
 | **Copy an output** | Hover over an output and click **⧉**. |
@@ -88,16 +88,18 @@ Repeat for each environment you use (dev, QA, and so on). To remove access, clic
 
 ### In Page Designer
 
-The tab title updates to `PD: <page name>`, and the large text editor, the copy buttons, `Esc` `Esc` and the Settings modal work the same as in Automation Designer. Page Designer has no Run Test, method link or JSON input editor, so `Ctrl+Shift+Enter`, `Shift+L` and `Shift+J` do nothing there and are left to the page. The `#{variable}` intellisense is AD-only.
+The tab title updates to `PD: <page name>`, and the IDE, the copy buttons, `Esc` `Esc` and the Settings modal work the same as in Automation Designer. Page Designer has no Run Test, method link or JSON input editor, so `Ctrl+Shift+Enter`, `Shift+L` and `Shift+J` do nothing there and are left to the page. The `#{variable}` intellisense is AD-only.
 
-### Large text editor
+### IDE
 
-- **Save:** `Ctrl+S` (`Command+S` on Mac) or **Save** writes the text back into the text box and closes the editor. **Cancel** and **×** close without saving.
-- **Esc** closes the editor, but first closes whatever CodeMirror has open: the autocomplete list or the search panel. If you changed the text, the first `Esc` only asks, in the footer; press `Esc` again within 3 seconds to discard your changes. Typing in between cancels the question.
+The IDE is a full-screen CodeMirror editor that opens for the page text box you clicked **⤢** on: language modes, autocomplete, hover help and checks.
+
+- **Save:** `Ctrl+S` (`Command+S` on Mac) or **Save** writes the text back into the text box and closes the IDE. **Cancel** and **×** close without saving.
+- **Esc** closes the IDE, but first closes whatever CodeMirror has open: the autocomplete list or the search panel. If you changed the text, the first `Esc` only asks, in the footer; press `Esc` again within 3 seconds to discard your changes. Typing in between cancels the question.
 - **Autocomplete:** suggestions appear as you type (`Ctrl+Space` asks for them). `↑`/`↓` choose, `Enter` accepts, `Esc` closes the list.
 - **Language:** detected from the text (SQL, SpEL, JavaScript, JSON, Java, Python or plain text). The language dropdown in the header overrides it for this editing session only.
-- **Wrap and font size:** the two dropdowns next to it change the **Editor Wrap** and **Editor Font Size** settings, so the choice applies everywhere, not just to this editor.
-- **⚙** opens the Settings modal over the editor, and **Copy** copies the editor's text.
+- **Wrap and font size:** the two dropdowns next to it change the **IDE Wrap** and **IDE Font Size** settings, so the choice applies everywhere, not just to this text box.
+- **⚙** opens the Settings modal over the IDE, and **Copy** copies the IDE's text.
 
 ### DevTools: AD Network
 
@@ -126,7 +128,7 @@ Open a **published** page (a `/pages/...` URL) on an allowed site, open DevTools
 
 ## Settings
 
-The **Settings modal** is on the AD and PD pages themselves (it is not the options page, which only holds the allowed sites). Open it with the **⚙** button next to the page title, the **⚙** in the large editor, `Alt+Shift+S`, or `Alt+,` (`Ctrl+,` works too where the browser does not keep it for itself; Firefox and Zen do). Changes apply immediately and are shared across all your sites.
+The **Settings modal** is on the AD and PD pages themselves (it is not the options page, which only holds the allowed sites). Open it with the **⚙** button next to the page title, the **⚙** in the IDE, `Alt+Shift+S`, or `Alt+,` (`Ctrl+,` works too where the browser does not keep it for itself; Firefox and Zen do). Changes apply immediately and are shared across all your sites.
 
 | Setting | What it does | Default |
 |---|---|---|
@@ -134,10 +136,10 @@ The **Settings modal** is on the AD and PD pages themselves (it is not the optio
 | **Keyboard Shortcuts** | One switch for every in-page shortcut: `Ctrl+Shift+Enter`, `Esc` `Esc`, `Shift+L` and `Shift+J` | on |
 | **JSON Editor** | The **JSON** button next to **Inputs**, and `Shift+J` | on |
 | **Output Copy** | The **⧉** copy button on outputs | on |
-| **Textarea Editor** | The **⤢** and **⧉** buttons on text boxes | on |
-| **Editor Wrap** | Wrap long lines in the large editor: **Wrap** or **No Wrap** | Wrap |
-| **Editor Font Size** | The large editor's font size: 12, 13, 14, 16 or 18 px | 13 px |
-| **Variable Intellisense** | `#{variable}` completion, hover and checks in the large editor (AD only) | on |
+| **IDE** | The **⤢** and **⧉** buttons on text boxes | on |
+| **IDE Wrap** | Wrap long lines in the IDE: **Wrap** or **No Wrap** | Wrap |
+| **IDE Font Size** | The IDE's font size: 12, 13, 14, 16 or 18 px | 13 px |
+| **IDE Autocomplete** | `#{variable}` completion, hover and checks in the IDE (AD only) | on |
 | **Debug Logging** (under **Advanced**) | Prints the extension's step-by-step messages to the browser console | off |
 
 The browser-level shortcuts (`Alt+Shift+S`, `Ctrl+Shift+A`, `Ctrl+Shift+P`) are not affected by the **Keyboard Shortcuts** setting.
@@ -154,7 +156,7 @@ The browser-level shortcuts (`Alt+Shift+S`, `Ctrl+Shift+A`, `Ctrl+Shift+P`) are 
 | `Esc` `Esc` | Leave the current field, so your edit registers | AD, PD, in a field |
 | `Alt+Shift+S` | Open the Settings modal | AD, PD |
 | `Alt+,` or `Ctrl+,` | Open the Settings modal (`Ctrl+,` is taken by Firefox and Zen) | AD, PD |
-| `Ctrl+S` / `Ctrl+F` / `Esc` | Save and close / search / close (see [Large text editor](#large-text-editor)) | Large editor |
+| `Ctrl+S` / `Ctrl+F` / `Esc` | Save and close / search / close (see [IDE](#ide)) | IDE |
 | `Ctrl+Shift+A` (`Command+Shift+A` on Mac) | Jump to the newest entry in AD Network | DevTools open |
 | `Ctrl+Shift+P` (`Command+Shift+P` on Mac) | Refresh PD Inspector | DevTools open |
 

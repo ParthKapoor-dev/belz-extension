@@ -2,7 +2,7 @@
 #
 # The build is part of the check on purpose: it runs the singleton check
 # (scripts/check-singletons.mjs) and tests/build/bundle.test.ts verifies the
-# editor stays out of the page-load bundle.
+# IDE stays out of the page-load bundle.
 #
 # The browser end-to-end suite (`bun run test:e2e`) is run locally for now.
 name: test

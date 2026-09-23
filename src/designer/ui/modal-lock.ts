@@ -5,10 +5,10 @@
 // While any extension modal is open, the page behind it must not scroll, and
 // page shortcuts (Run Test, say) must not fire. Every modal takes the lock
 // when it opens and releases it when it closes; the lock counts, so nested
-// modals (the settings modal over the editor) work.
+// modals (the settings modal over the IDE) work.
 //
 // It also keeps the open modals in order, so only the topmost one answers
-// its keys: one Esc closes the settings modal, not the editor under it too.
+// its keys: one Esc closes the settings modal, not the IDE under it too.
 
 type SavedStyles = {
   body: Pick<CSSStyleDeclaration, 'overflow' | 'position' | 'top' | 'left' | 'right' | 'width'>;

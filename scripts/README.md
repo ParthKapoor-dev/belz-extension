@@ -19,7 +19,7 @@ Build tooling. These Node scripts turn `src/` into loadable extensions: bundle t
 
 1. **`pack.mjs`** reads `manifest.json` and [`release.config.json`](../release.config.json), then runs `build.mjs`.
 2. **`build.mjs`** deletes `dist/` (chunk names carry a hash, so a stale chunk could otherwise ship), then:
-   - builds `src/designer/ad-content.ts` and `src/designer/pd-content.ts` in **one** `bun build --splitting` call into `dist/modules/` (entries, shared chunks, and the lazily loaded editor chunk);
+   - builds `src/designer/ad-content.ts` and `src/designer/pd-content.ts` in **one** `bun build --splitting` call into `dist/modules/` (entries, shared chunks, and the lazily loaded IDE chunk);
    - writes `dist/ad-content.js` and `dist/pd-content.js`, small loaders that `import()` the real entry from `dist/modules/` (content scripts cannot be ES modules);
    - builds each entry in its `standalone` list as its own minified bundle (`pd-inspector.js`, `background.js`, `options.js`, `devtools-page.js`, `panel.js`, `panel-pd.js`);
    - runs `escape-non-ascii.mjs` over every output file;

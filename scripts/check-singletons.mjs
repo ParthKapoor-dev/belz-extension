@@ -5,9 +5,9 @@
 // the modal lock, the modals — only works if there is ONE copy of it per
 // page. If a second bundle carries its own copy, both copies run and neither
 // knows about the other. Nothing errors. The concrete case that was measured:
-// build the lazy editor as a separate bundle, and it opens and looks perfect,
-// but Ctrl+Shift+Enter fires Run Test behind the open editor, because the
-// shortcut and the editor check different copies of ui/modal-lock.ts.
+// build the lazy IDE as a separate bundle, and it opens and looks perfect,
+// but Ctrl+Shift+Enter fires Run Test behind the open IDE, because the
+// shortcut and the IDE check different copies of ui/modal-lock.ts.
 //
 // How it works. Each stateful module starts with a marker:
 //

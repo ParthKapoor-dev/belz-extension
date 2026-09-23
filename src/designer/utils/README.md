@@ -18,7 +18,7 @@ Stateless helpers for the designer content scripts: reading names off the AD/PD 
 
 ## How it connects
 
-- **Used by:** `TitleUpdater` (method and page names), `copyAdRichLink()` in `features/keyboard/ad-link.ts` (method name and category for the Shift+L link), `OutputCopy` and `TextareaEditor` (`textareaUnderPointer`, `copyText`), the JSON editor (`firstMatch`), and the editor modal (`copyText`).
+- **Used by:** `TitleUpdater` (method and page names), `copyAdRichLink()` in `features/keyboard/ad-link.ts` (method name and category for the Shift+L link), `OutputCopy` and `Ide` (`textareaUnderPointer`, `copyText`), the JSON editor (`firstMatch`), and the editor modal (`copyText`).
 - **Depends on:** `config/selectors.ts` (`AD`, `PD`), `config/namespace.ts`, `shared/logger.ts`.
 
 ## Conventions

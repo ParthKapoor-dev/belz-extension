@@ -27,7 +27,7 @@ The lifecycle machinery of the designer content scripts: how features are starte
 
 ## How it connects
 
-- **Used by:** the two entries (`bootstrap`), every feature (`Feature`, and often `pageObserver` or `settings`), `ui/hover-overlay.ts` (`Rearm`), the settings modal and the editor modal (`settings`).
+- **Used by:** the two entries (`bootstrap`), every feature (`Feature`, and often `pageObserver` or `settings`), `ui/hover-overlay.ts` (`Rearm`), the settings modal and the IDE modal (`settings`).
 - **Depends on:** `config/settings.ts` (schema and validation), `config/storage-keys.ts` (`SETTINGS_STORAGE_KEY`), `config/timings.ts` (`rearmDelays`), `shared/logger.ts`, and `features/settings/` (`SettingsLauncher`).
 
 ## Conventions

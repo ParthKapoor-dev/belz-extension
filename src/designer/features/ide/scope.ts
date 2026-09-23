@@ -1,8 +1,8 @@
-// The variables the large editor knows about while it edits one textarea: the
-// contract between the editor and whatever reads them off the page.
+// The variables the IDE knows about while it edits one textarea: the
+// contract between the IDE and whatever reads them off the page.
 //
-// Types only. The editor never looks for variables itself: an optional
-// ScopeProvider is passed to TextareaEditor, and only ad-content.ts passes one
+// Types only. The IDE never looks for variables itself: an optional
+// ScopeProvider is passed to Ide, and only ad-content.ts passes one
 // (designer/features/ad-scope), so the PD bundle carries no scanner.
 
 /** Where a variable comes from. */
@@ -23,5 +23,5 @@ export interface VariableScope {
   variables: ScopeVariable[];
 }
 
-/** Reads the variables in scope at `textarea`. Called once per editor open. */
+/** Reads the variables in scope at `textarea`. Called once per IDE open. */
 export type ScopeProvider = (textarea: HTMLTextAreaElement) => VariableScope;
