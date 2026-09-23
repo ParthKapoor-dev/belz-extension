@@ -72,13 +72,23 @@ What does **not** belong here:
 ## Conventions
 
 - A selector list means "try in order, first match wins" (`firstMatch()` in `designer/utils/dom.ts`).
-- Storage keys carry a version suffix. Changing a stored shape incompatibly means a new key.
+- Storage keys carry a version suffix; see "Stored shapes" below.
 - Group selectors by the page area that owns them, and say in a comment what the selector finds.
+
+## Stored shapes
+
+What is stored under a key is a contract with every installed copy: the settings (keyed by the
+`SETTINGS` keys, with the values each accepts), the site list (`HostEntry`), the method cache.
+Reading is forgiving: `sanitizeSettings()` gives a missing or invalid setting its default, and
+`readHosts()` drops a malformed entry. Before the first release there are no installed copies to
+keep, and these shapes change freely. From the first release on, an incompatible change (a renamed
+setting key, a narrower set of values, a different structure) needs either a new key, with its
+version suffix bumped, or a migration that reads the old shape and writes the new one.
 
 ## Testing
 
 [`tests/config/settings.test.ts`](../../tests/config/settings.test.ts) covers the settings schema,
-`sanitizeSetting` and `sanitizeSettings`. Selectors are exercised by the designer feature tests under
+`sanitizeSetting` (a toggle takes only a real boolean) and `sanitizeSettings`. Selectors are exercised by the designer feature tests under
 [`tests/designer/`](../../tests/designer/). To run the tests, see the root
 [README](../../README.md#development)'s Development section.
 

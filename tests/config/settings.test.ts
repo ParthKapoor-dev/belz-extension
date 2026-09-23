@@ -43,9 +43,13 @@ describe('sanitizeSetting', () => {
     expect(sanitizeSetting('ideWrap', undefined)).toBe('wrap');
   });
 
-  test('toggles are coerced to booleans', () => {
-    expect(sanitizeSetting('outputCopy', 0)).toBe(false);
-    expect(sanitizeSetting('outputCopy', 'yes')).toBe(true);
+  test('a toggle takes only a real boolean; anything else gives its default', () => {
+    expect(sanitizeSetting('outputCopy', false)).toBe(false);
+    expect(sanitizeSetting('debugLogging', true)).toBe(true);
+    expect(sanitizeSetting('outputCopy', 'false')).toBe(true); // default on
+    expect(sanitizeSetting('outputCopy', 0)).toBe(true);
+    expect(sanitizeSetting('debugLogging', 'true')).toBe(false); // default off
+    expect(sanitizeSetting('debugLogging', 1)).toBe(false);
   });
 });
 

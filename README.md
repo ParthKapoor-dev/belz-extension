@@ -81,21 +81,24 @@ Repeat for each environment you use (dev, QA, and so on). To remove access, clic
 | **`#{variable}` intellisense** | In the IDE, type `#{` to pick from the method's inputs, internal variables and step outputs. Hover a name to see where it comes from. Unknown names, outputs of steps that run later, and an unclosed `#{` are underlined. Variables are read from the page each time the IDE opens, so unsaved edits (a step you just added) are included. The footer shows the current step and how many variables it can use. |
 | **Copy a text box** | Hover over a text box and click **⧉**. |
 | **Edit inputs as JSON** | Click the **JSON** button next to a method's **Inputs** heading, or press `Shift+J`. Edit every input as one JSON document. **Sync** writes your changes back into each input field with the correct type, including dates, booleans and structured data. |
-| **Copy an output** | Hover over an output and click **⧉**. |
-| **Run Test from anywhere** | `Ctrl+Shift+Enter`, even while you're typing in a field. It commits the field first, so the test uses your latest edit. |
+| **Copy an output** | Hover over a method's output and click **⧉**. |
+| **Run Test from anywhere** | `Ctrl+Shift+Enter`, even while you're typing in a field. It commits the field first, so the test uses your latest edit. When the page shows no Run Test button, the key does nothing and is left to the page. |
 | **Copy a link to the method** | `Shift+L` copies a link labelled `category::method`. It pastes as a clickable link in Slack and docs. |
 | **Readable tab titles** | Tabs show `AD: <method name>` rather than a generic title. Turning the feature off puts the page's own title back. |
 
 ### In Page Designer
 
-The tab title updates to `PD: <page name>`, and the IDE, the copy buttons, `Esc` `Esc` and the Settings modal work the same as in Automation Designer. Page Designer has no Run Test, method link or JSON input editor, so `Ctrl+Shift+Enter`, `Shift+L` and `Shift+J` do nothing there and are left to the page. The `#{variable}` intellisense is AD-only.
+The tab title updates to `PD: <page name>`, and the IDE (with its **⧉** copy button on text boxes), `Esc` `Esc` and the Settings modal work the same as in Automation Designer. Page Designer has no Run Test, method link or JSON input editor, so `Ctrl+Shift+Enter`, `Shift+L` and `Shift+J` do nothing there and are left to the page. The output copy button and the `#{variable}` intellisense are AD-only.
 
 ### IDE
 
 The IDE is a full-screen CodeMirror editor that opens for the page text box you clicked **⤢** on: language modes, autocomplete, hover help and checks.
 
-- **Save:** `Ctrl+S` (`Command+S` on Mac) or **Save** writes the text back into the text box and closes the IDE. **Cancel** and **×** close without saving.
-- **Esc** closes the IDE, but first closes whatever CodeMirror has open: the autocomplete list or the search panel. If you changed the text, the first `Esc` only asks, in the footer; press `Esc` again within 3 seconds to discard your changes. Typing in between cancels the question.
+- **Save:** `Ctrl+S` (`Command+S` on Mac) or **Save** writes the text back into the text box and closes the IDE.
+- **Cancel** and **×** close without saving, and without asking.
+- **Esc** or a **click outside** the IDE closes it. `Esc` first closes whatever CodeMirror has open: the autocomplete list or the search panel. If you changed the text, the first `Esc` or click outside only asks, in the footer; press `Esc` or click outside again within 3 seconds to discard your changes. Typing in between cancels the question.
+- **Search:** `Ctrl+F` (`Command+F`) opens the search panel.
+- The keys the IDE handles (`Ctrl/Command+S`, `Ctrl/Command+F`, `Esc`) are kept from the page and the browser: `Ctrl+S` never opens the browser's Save page dialog.
 - **Autocomplete:** suggestions appear as you type (`Ctrl+Space` asks for them). `↑`/`↓` choose, `Enter` accepts, `Esc` closes the list.
 - **Language:** detected from the text (SQL, SpEL, JavaScript, JSON, Java, Python or plain text). The language dropdown in the header overrides it for this editing session only.
 - **Wrap and font size:** the two dropdowns next to it change the **IDE Wrap** and **IDE Font Size** settings, so the choice applies everywhere, not just to this text box.
@@ -133,16 +136,16 @@ The **Settings modal** is on the AD and PD pages themselves (it is not the optio
 | Setting | What it does | Default |
 |---|---|---|
 | **Title Updater** | Names the tab `AD: <method>` / `PD: <page>` | on |
-| **Keyboard Shortcuts** | One switch for every in-page shortcut: `Ctrl+Shift+Enter`, `Esc` `Esc`, `Shift+L` and `Shift+J` | on |
+| **Keyboard Shortcuts** | `Ctrl+Shift+Enter`, `Esc` `Esc`, `Shift+L` and `Shift+J` | on |
 | **JSON Editor** | The **JSON** button next to **Inputs**, and `Shift+J` | on |
-| **Output Copy** | The **⧉** copy button on outputs | on |
+| **Output Copy** | The **⧉** copy button on method outputs (AD) | on |
 | **IDE** | The **⤢** and **⧉** buttons on text boxes | on |
 | **IDE Wrap** | Wrap long lines in the IDE: **Wrap** or **No Wrap** | Wrap |
 | **IDE Font Size** | The IDE's font size: 12, 13, 14, 16 or 18 px | 13 px |
 | **IDE Autocomplete** | `#{variable}` completion, hover and checks in the IDE (AD only) | on |
 | **Debug Logging** (under **Advanced**) | Prints the extension's step-by-step messages to the browser console | off |
 
-The browser-level shortcuts (`Alt+Shift+S`, `Ctrl+Shift+A`, `Ctrl+Shift+P`) are not affected by the **Keyboard Shortcuts** setting.
+The **Keyboard Shortcuts** switch covers exactly those four keys. It does not affect the Settings shortcut (`Alt+,` / `Ctrl+,`) or the IDE's keys, which are always on, nor the browser-level shortcuts (`Alt+Shift+S`, `Ctrl+Shift+A`, `Ctrl+Shift+P`), which the browser handles.
 
 ---
 
@@ -153,14 +156,20 @@ The browser-level shortcuts (`Alt+Shift+S`, `Ctrl+Shift+A`, `Ctrl+Shift+P`) are 
 | `Ctrl+Shift+Enter` | Run Test (commits the field you're typing in first) | AD |
 | `Shift+J` | Open the JSON input editor (when **JSON Editor** is on) | AD, not while typing |
 | `Shift+L` | Copy a link to this method | AD, not while typing |
-| `Esc` `Esc` | Leave the current field, so your edit registers | AD, PD, in a field |
+| `Esc` `Esc` (twice within 500 ms) | Leave the current field, so your edit registers | AD, PD, in a field |
 | `Alt+Shift+S` | Open the Settings modal | AD, PD |
 | `Alt+,` or `Ctrl+,` | Open the Settings modal (`Ctrl+,` is taken by Firefox and Zen) | AD, PD |
-| `Ctrl+S` / `Ctrl+F` / `Esc` | Save and close / search / close (see [IDE](#ide)) | IDE |
+| `Ctrl+S` (`Command+S`) | Save and close | IDE |
+| `Ctrl+F` (`Command+F`) | Search | IDE |
+| `Ctrl+Space` | Show autocomplete suggestions | IDE |
+| `↑` / `↓`, `Enter` | Choose / accept a suggestion | IDE, autocomplete list open |
+| `Esc` | Close the autocomplete list or search panel, else close the IDE (asks first with unsaved changes) | IDE |
 | `Ctrl+Shift+A` (`Command+Shift+A` on Mac) | Jump to the newest entry in AD Network | DevTools open |
 | `Ctrl+Shift+P` (`Command+Shift+P` on Mac) | Refresh PD Inspector | DevTools open |
 
 "Not while typing" means the key does nothing while the cursor is in a text field, including fields inside embedded components and frames, so you can type a capital `J` or `L`.
+
+While a modal is open (the IDE, the JSON editor or the Settings modal), the page shortcuts (`Ctrl+Shift+Enter`, `Esc` `Esc`, `Shift+L`, `Shift+J`) do nothing: keys belong to the topmost modal.
 
 `Alt+Shift+S`, `Ctrl+Shift+A` and `Ctrl+Shift+P` are browser-level shortcuts. They can clash with the browser's own shortcuts (in Chrome, `Ctrl+Shift+A` searches tabs, and `Ctrl+Shift+P` opens a private window in Firefox); when one does, the browser keeps it. Change them at `chrome://extensions/shortcuts`, or in Firefox at `about:addons` → ⚙ → **Manage Extension Shortcuts**.
 

@@ -9,12 +9,10 @@ import { createLogger } from '../../shared/logger';
 const log = createLogger('observer');
 
 // The MutationObserver only watches document.body, so changes inside a shadow
-// root never reach it. The poll is the safety net for those — but it used to
-// run every subscriber unconditionally once a second, which on a large method
-// meant re-scanning the whole page forever, even while the user did nothing.
-//
-// It now checks a cheap fingerprint first and skips the work when the DOM has
-// not actually changed, on a longer interval since it is only a fallback.
+// root never reach it. A poll is the safety net for those. It runs every
+// POLL_FALLBACK_MS, checks a cheap fingerprint of the DOM first, and calls the
+// subscribers only when that changed, so an idle page costs one count per
+// poll rather than a re-scan by every subscriber.
 const POLL_FALLBACK_MS = 2000;
 
 type Subscriber = () => void;

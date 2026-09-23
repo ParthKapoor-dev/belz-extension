@@ -6,7 +6,7 @@ Unit tests for [`src/config/settings.ts`](../../src/config/settings.ts), the set
 
 | File | What it does |
 |---|---|
-| [`settings.test.ts`](settings.test.ts) | Tests the schema's consistency and the `sanitizeSetting()` / `sanitizeSettings()` validators. |
+| [`settings.test.ts`](settings.test.ts) | Tests the schema's consistency and the `sanitizeSetting()` / `sanitizeSettings()` validators (a toggle takes only a real boolean). |
 
 ## What is covered
 

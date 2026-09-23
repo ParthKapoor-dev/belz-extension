@@ -2,7 +2,7 @@
 
 Two hover buttons on every textarea, **Open** (⤢) and **Copy** (⧉), and the full-screen CodeMirror IDE that Open launches. On AD pages the IDE also completes, explains and lints `#{variable}` references. Runs in the content script on AD and PD pages. Switched by the `ide` setting.
 
-This folder is performance-critical. Read "IDE textarea overlay", "IDE `#{variable}` intellisense" and "Content-script module graph" in [AGENTS.md](../../../../AGENTS.md) before changing it.
+This folder is performance-critical. Read "Textarea overlay (opens the IDE)", "IDE `#{variable}` intellisense" and "Content-script module graph" in [AGENTS.md](../../../../AGENTS.md) before changing it.
 
 ## Contents
 
@@ -27,13 +27,13 @@ This folder is performance-critical. Read "IDE textarea overlay", "IDE `#{variab
 
 **IDE.** The language is detected on every open and again as the text changes, until the user picks one in the header's language dropdown, which overrides it for this open only. It is not a setting. The wrap and font-size dropdowns in the header read `settings` and write back to it, so they change the global IDE Wrap and IDE Font Size settings for every IDE on every site. The header's ⚙ button opens the Settings modal over the IDE; **Copy** copies the IDE's text.
 
-Keys while open are handled in the capture phase, and only while the IDE is the topmost modal (`modalLock.isTopmost(this)`), so with the Settings modal over it they belong to that modal:
+Keys while open are handled by one `keydown` listener on `window` in the capture phase, and only while the IDE is the topmost modal (`modalLock.isTopmost(this)`), so with the Settings modal over it they belong to that modal. It runs before every listener on the document and below, and before window-capture listeners added after the IDE first opened. A key it handles is consumed (`preventDefault()` and `stopImmediatePropagation()`), so neither the page's own shortcuts nor the browser's Save page / Find act on it:
 
 - Ctrl/Cmd+S saves (and closes); Ctrl/Cmd+F opens search.
 - Escape first leaves CodeMirror's own popups to CodeMirror: while the completion list (`completionStatus`) or the search panel (`searchPanelOpen`) is open, the modal does not act, and CodeMirror's Escape closes the popup.
-- Otherwise Escape closes the IDE, unless there are unsaved changes (`hasUnsavedChanges`: the text differs from what was opened). Then the first Escape only shows `DISCARD_PROMPT` in the footer, and a second Escape within `DISCARD_WINDOW_MS` discards the changes and closes. Typing after the prompt takes it back. This never uses a browser dialog.
+- Otherwise Escape closes the IDE, unless there are unsaved changes (`hasUnsavedChanges`: the text differs from what was opened). Then the first Escape only shows `DISCARD_PROMPT` in the footer, and a second Escape within `DISCARD_WINDOW_MS` (3 s) discards the changes and closes. Typing after the prompt takes it back. This never uses a browser dialog.
 
-**Save** writes the text into the source textarea and fires `input` and `change`. For a read-only source Save is disabled and Ctrl+S only shows a toast. Cancel, × and a click on the backdrop close without asking.
+Closing, in one place: **Save** (or Ctrl/Cmd+S) writes the text into the source textarea, fires `input` and `change`, and closes; for a read-only source Save is disabled and Ctrl+S only shows a toast. **Cancel** and **×** close without saving and without asking: they are explicit. **Escape** and a **click on the backdrop** close at once when nothing changed; with unsaved changes they ask first (`closeOrAskFirst()`), and a second press or click (either one) within the window discards.
 
 **Variables** (only when a scope was passed):
 
@@ -61,7 +61,7 @@ Keys while open are handled in the capture phase, and only while the IDE is the 
 - [`tests/designer/features/language.test.ts`](../../../../tests/designer/features/language.test.ts): `detectLanguage()`.
 - [`tests/designer/features/variables.test.ts`](../../../../tests/designer/features/variables.test.ts): completion, expression finding, lint, hover lookup and footer status.
 - [`tests/designer/ui/hover-overlay.test.ts`](../../../../tests/designer/ui/hover-overlay.test.ts): the overlay.
-- [`tests/designer/features/modal-escape.test.ts`](../../../../tests/designer/features/modal-escape.test.ts): Escape (unchanged text, the discard prompt, the search panel, the Settings modal on top) and Ctrl+S under the Settings modal.
+- [`tests/designer/features/modal-escape.test.ts`](../../../../tests/designer/features/modal-escape.test.ts): Escape and a click on the backdrop (unchanged text, the discard prompt, the search panel, the Settings modal on top), Ctrl+S under the Settings modal, and that the keys the IDE handles never reach the page's own listeners.
 - [`tests/build/bundle.test.ts`](../../../../tests/build/bundle.test.ts): the IDE stays out of the page-load bundle.
 - [`tests/e2e/`](../../../../tests/e2e/): in real browsers, the overlay (also on a disabled textarea), lazy loading, SQL detection, the footer status, and the shared modal lock.
 
@@ -70,4 +70,4 @@ How to run them is in the Development section of the [root README](../../../../R
 ## Adding or changing things
 
 - **A new language mode:** add it to `LanguageMode` and `LANGUAGE_OPTIONS` and teach `detectLanguage()` in `language.ts`, then add its extension to `getLanguageExtensionForMode()` and its completion to `getAutocompleteExtensionsForMode()` in `modal.ts`.
-- **Overlay changes** (`index.ts` or `ui/hover-overlay.ts`): re-run the node-visit benchmark described in [AGENTS.md](../../../../AGENTS.md) before and after.
+- **Overlay changes** (`index.ts` or `ui/hover-overlay.ts`): keep one controls element and no per-textarea DOM (see [AGENTS.md](../../../../AGENTS.md)); run `tests/designer/ui/hover-overlay.test.ts` and the end-to-end suite, which checks the overlay on a normal and a disabled textarea in real browsers.

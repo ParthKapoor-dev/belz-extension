@@ -2,6 +2,10 @@
 // its default, the values it accepts and where the settings modal shows it.
 // The Settings type, the defaults, validation and the modal's rows are all
 // derived from this list: adding a setting means adding one entry here.
+//
+// The keys are what is stored (under SETTINGS_STORAGE_KEY). Renaming one, or
+// changing the values it accepts incompatibly, resets every user's choice for
+// it: see "Stored shapes" in config/README.md.
 
 /** Where the settings modal shows a setting. */
 export type SettingSection = 'features' | 'ide' | 'advanced';
@@ -39,17 +43,16 @@ const FONT_SIZES = [12, 13, 14, 16, 18] as const;
 
 export const SETTINGS = {
   titleUpdater: toggle('features', 'Title Updater', 'Update tab title with AD/PD method/page name'),
-  // Switches every KeyboardShortcuts shortcut, not only Run Test. The key keeps
-  // its original name because it is the stored setting: renaming it would
-  // reset every user's choice.
+  // Switches every KeyboardShortcuts shortcut, not only Run Test; the key is
+  // what is stored, so it is not renamed to match.
   runTestShortcut: toggle(
     'features',
     'Keyboard Shortcuts',
     'Ctrl+Shift+Enter run test · Esc Esc unfocus · Shift+L copy link (AD) · Shift+J JSON editor (AD)'
   ),
   jsonEditor: toggle('features', 'JSON Editor', 'Show JSON input button and modal editor'),
-  outputCopy: toggle('features', 'Output Copy', 'Show Copy button near output containers'),
-  ide: toggle('features', 'IDE', 'Show the Open in IDE and Copy buttons on textareas'),
+  outputCopy: toggle('features', 'Output Copy', 'Show a Copy button on method outputs (Automation Designer)'),
+  ide: toggle('features', 'IDE', 'Show the Open in IDE and Copy buttons on text boxes'),
 
   // The IDE language is not a setting: it is always detected from the
   // content, and the IDE's own header dropdown reports what was detected
@@ -112,13 +115,14 @@ export function settingsIn(section: SettingSection): Array<[SettingKey, SettingS
 }
 
 /**
- * `value` as a valid value of setting `key`, or the default. Numeric options
- * accept anything that parses to them, so `'16'` from a <select> element (or
- * `'16px'`) is read as 16.
+ * `value` as a valid value of setting `key`, or the default. A toggle accepts
+ * only a real boolean (so a stray `"false"` is not read as on). Numeric
+ * options accept anything that parses to them, so `'16'` from a <select>
+ * element (or `'16px'`) is read as 16.
  */
 export function sanitizeSetting<K extends SettingKey>(key: K, value: unknown): Settings[K] {
   const spec: SettingSpec = SETTINGS[key];
-  if (spec.kind === 'toggle') return Boolean(value) as Settings[K];
+  if (spec.kind === 'toggle') return (typeof value === 'boolean' ? value : spec.default) as Settings[K];
   const parsed = Number.parseInt(String(value), 10);
   const match = spec.options.find((option) =>
     typeof option.value === 'number' ? option.value === parsed : option.value === value

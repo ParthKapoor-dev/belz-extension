@@ -53,8 +53,11 @@ const EDITOR_SETTINGS_BUTTON_ID = ns('IdeSettingsButton');
 const STATUS_ID = ns('IdeStatus');
 
 const DEFAULT_STATUS = 'Syntax highlighting and optional line wrapping.';
-/** Shown after Esc with unsaved changes; a second Esc within the window discards them. */
-const DISCARD_PROMPT = 'Unsaved changes: press Esc again to discard them, or Ctrl+S to save.';
+/**
+ * Shown after Esc or a click outside the IDE with unsaved changes; doing
+ * either again within the window discards them.
+ */
+const DISCARD_PROMPT = 'Unsaved changes: press Esc or click outside again to discard them, or Ctrl+S to save.';
 const DISCARD_WINDOW_MS = 3000;
 
 const EDITOR_VERTICAL_PADDING_PX = 14;
@@ -426,12 +429,18 @@ function syncSourceTextarea(sourceEl: HTMLTextAreaElement, value: string): void 
 
 
 
+/** A key the IDE handled: no one else, page or browser, acts on it. */
+function consume(event: KeyboardEvent): void {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}
+
 function describeSource(textarea: HTMLTextAreaElement): string {
   const label = textarea.getAttribute('aria-label')
     || textarea.getAttribute('name')
     || textarea.id
     || textarea.getAttribute('placeholder')
-    || 'textarea';
+    || 'text box';
 
   return `Editing: ${label}`;
 }
@@ -617,9 +626,10 @@ export class IdeModal {
   }
 
   /**
-   * Esc: close, but not straight over unsaved changes. The first Esc then
-   * only says so in the footer; a second one within DISCARD_WINDOW_MS
-   * discards them. Typing in between takes the prompt back.
+   * Esc or a click outside: close, but not straight over unsaved changes.
+   * The first one then only says so in the footer; a second (either of them)
+   * within DISCARD_WINDOW_MS discards them. Typing in between takes the
+   * prompt back. Cancel and × close without asking: they say so already.
    */
   private closeOrAskFirst(): void {
     if (!this.hasUnsavedChanges || Date.now() <= this.discardArmedUntil) {
@@ -645,7 +655,7 @@ export class IdeModal {
   /** Close, and remove the modal's DOM, listeners and settings subscription. */
   dispose(): void {
     this.close();
-    document.removeEventListener('keydown', this.onKeydown, true);
+    window.removeEventListener('keydown', this.onKeydown, true);
     this.unsubscribeSettings?.();
     this.unsubscribeSettings = null;
     this.overlay?.remove();
@@ -670,7 +680,7 @@ export class IdeModal {
       return;
     }
 
-    // Read-only sources now reach this path: a published AD method opens here
+    // Read-only sources reach this path: a published AD method opens here
     // for reading, and Ctrl+S is muscle memory. Say why nothing was written
     // rather than swallowing the keystroke. The IDE itself stays editable on
     // purpose — scratch-editing a published step is useful — so this is the
@@ -681,7 +691,7 @@ export class IdeModal {
     }
 
     syncSourceTextarea(sourceEl, this.text());
-    toast.show('Textarea updated');
+    toast.show('Text box updated');
     this.close();
   }
 
@@ -710,9 +720,12 @@ export class IdeModal {
     this.createView(sourceEl);
   }
 
-  // Escape, Ctrl+S and Ctrl+F while the IDE is open and on top (the
-  // settings modal can open over it). Capture phase, so the host page's own
-  // shortcuts never see them.
+  // Escape, Ctrl/Cmd+S and Ctrl/Cmd+F while the IDE is open and on top (the
+  // settings modal can open over it). On `window` in the capture phase, so it
+  // runs before every listener on the document and below it, and before any
+  // window-capture listener added after the IDE first opened. A key the IDE
+  // handles is consumed there: no listener after this one (the page's own
+  // shortcuts, the browser's Save page and Find) acts on it.
   private readonly onKeydown = (event: KeyboardEvent): void => {
     if (!this.overlay || this.overlay.style.display !== 'flex') {
       return;
@@ -725,21 +738,19 @@ export class IdeModal {
       // CodeMirror's, so it steps aside while one is open.
       const view = this.view;
       if (view && (completionStatus(view.state) !== null || searchPanelOpen(view.state))) return;
-      event.preventDefault();
-      event.stopPropagation();
+      consume(event);
       this.closeOrAskFirst();
       return;
     }
 
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
-      event.preventDefault();
+      consume(event);
       this.save();
       return;
     }
 
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
-      event.preventDefault();
-      event.stopPropagation();
+      consume(event);
       const view = this.view;
       if (view) {
         openSearchPanel(view);
@@ -991,14 +1002,12 @@ export class IdeModal {
     overlay.appendChild(dialog);
 
     overlay.addEventListener('click', (event) => {
-      if (event.target === overlay) {
-        this.close();
-      }
+      if (event.target === overlay) this.closeOrAskFirst();
     });
 
     document.body.appendChild(overlay);
     this.overlay = overlay;
-    document.addEventListener('keydown', this.onKeydown, true);
+    window.addEventListener('keydown', this.onKeydown, true);
     this.followSettings();
     languageSelect.addEventListener('change', () => this.onLanguagePicked());
     wrapSelect.addEventListener('change', () => this.onWrapPicked());

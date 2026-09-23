@@ -32,10 +32,10 @@ export function extractMethodName(): string | null {
   return input.value.trim();
 }
 
+/** The PD page's (or component's) title, as text; null when missing or empty. */
 export function extractPageName(): string | null {
   const pageTitleDiv = firstMatch(document, PD.pageTitle);
-  if (!pageTitleDiv) return null;
-  return (pageTitleDiv.innerText || pageTitleDiv.innerHTML).trim();
+  return pageTitleDiv?.textContent?.trim() || null;
 }
 
 export function extractServiceCategory(): string | null {

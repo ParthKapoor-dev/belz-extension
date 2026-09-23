@@ -57,13 +57,15 @@ describe('SettingsStore', () => {
     const mem = memoryStorage();
     const store = new SettingsStore(mem.storage);
     mem.changeElsewhere({
-      titleUpdater: 0,
+      titleUpdater: false,
+      jsonEditor: 'false', // not a boolean: the default (on)
       ideWrap: 'sideways',
       ideFontSize: '16',
       unknownKey: 'x'
     });
     const s = store.get();
     expect(s.titleUpdater).toBe(false);
+    expect(s.jsonEditor).toBe(true);
     expect(s.ideWrap).toBe(DEFAULT_SETTINGS.ideWrap);
     expect(s.ideFontSize).toBe(16);
     expect('unknownKey' in s).toBe(false);

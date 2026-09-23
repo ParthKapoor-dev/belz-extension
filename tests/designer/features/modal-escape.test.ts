@@ -12,6 +12,12 @@ import { ns } from '../../../src/config/namespace';
 // dropped on the first press. Assertions read plain values only.
 
 const STATUS_ID = ns('IdeStatus');
+const OVERLAY_ID = ns('IdeOverlay');
+
+/** Click the dimmed backdrop around the IDE. */
+function clickOutside(): void {
+  document.getElementById(OVERLAY_ID)!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+}
 
 /** Press Esc the way a user does: at the focused element, bubbling up. */
 function esc(): boolean {
@@ -56,7 +62,7 @@ describe('the IDE', () => {
     view()!.dispatch({ changes: { from: 1, insert: 'bc' } });
     esc();
     expect(isOpen()).toBe(true);
-    expect(document.getElementById(STATUS_ID)!.textContent).toContain('press Esc again to discard');
+    expect(document.getElementById(STATUS_ID)!.textContent).toContain('again to discard');
     esc();
     expect(isOpen()).toBe(false);
     expect(textarea.value).toBe('a'); // discarded, not written back
@@ -67,9 +73,50 @@ describe('the IDE', () => {
     view()!.dispatch({ changes: { from: 1, insert: 'b' } });
     esc();
     view()!.dispatch({ changes: { from: 2, insert: 'c' } });
-    expect(document.getElementById(STATUS_ID)!.textContent).not.toContain('press Esc again');
+    expect(document.getElementById(STATUS_ID)!.textContent).not.toContain('again to discard');
     esc();
     expect(isOpen()).toBe(true);
+  });
+
+  test('a click outside closes it when nothing was changed', () => {
+    const { isOpen } = openEditor();
+    clickOutside();
+    expect(isOpen()).toBe(false);
+  });
+
+  test('with unsaved changes, a click outside asks like Esc, and a second one discards', () => {
+    const { view, isOpen, textarea } = openEditor('a');
+    view()!.dispatch({ changes: { from: 1, insert: 'b' } });
+    clickOutside();
+    expect(isOpen()).toBe(true);
+    expect(document.getElementById(STATUS_ID)!.textContent).toContain('again to discard');
+    clickOutside();
+    expect(isOpen()).toBe(false);
+    expect(textarea.value).toBe('a');
+  });
+
+  test('the keys it handles never reach the page\'s own listeners', () => {
+    const { editor, view, isOpen, textarea } = openEditor('a');
+    const seen: string[] = [];
+    const record = (event: Event) => seen.push((event as KeyboardEvent).key);
+    const listeners: Array<[EventTarget, boolean]> = [[window, true], [window, false], [document, true], [document, false]];
+    for (const [target, capture] of listeners) target.addEventListener('keydown', record, capture);
+    try {
+      const press = (key: string) => {
+        const event = new KeyboardEvent('keydown', { key, ctrlKey: key !== 'Escape', bubbles: true, cancelable: true });
+        (document.activeElement || document.body).dispatchEvent(event);
+      };
+      press('f');
+      view()!.dispatch({ changes: { from: 1, insert: 'b' } });
+      press('s');
+      expect(textarea.value).toBe('ab'); // saved and closed
+      expect(isOpen()).toBe(false);
+      editor.open(textarea); // the same IDE: its listener was added before the page's
+      press('Escape');
+      expect(seen).toEqual([]);
+    } finally {
+      for (const [target, capture] of listeners) target.removeEventListener('keydown', record, capture);
+    }
   });
 
   // The completion list takes the same path (completionStatus instead of

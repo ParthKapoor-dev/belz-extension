@@ -39,6 +39,13 @@ describe('page name helpers', () => {
     expect(extractPageName()).toBe('Home');
   });
 
+  test('the PD title is read as text, never as markup', () => {
+    document.body.innerHTML = '<div class="page_title"><b>Home</b> &amp; <i>away</i></div>';
+    expect(extractPageName()).toBe('Home & away');
+    document.body.innerHTML = '<div class="page_title"><img src="x"></div>';
+    expect(extractPageName()).toBeNull();
+  });
+
   test('nothing on the page -> null', () => {
     document.body.innerHTML = '';
     expect(extractMethodName()).toBeNull();

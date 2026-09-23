@@ -1,6 +1,6 @@
 # `src/designer/features/output-copy/`
 
-A copy button (⧉) that appears when the pointer is over an output container. It copies the container's text. Runs in the content script on AD and PD pages. Switched by the `outputCopy` setting.
+A copy button (⧉) that appears when the pointer is over a method's output container. It copies the container's text. Runs in the content script on AD pages only: it looks for AD's output markup (`AD.outputContainer`), so `pd-content.ts` does not bundle it. Switched by the `outputCopy` setting.
 
 ## Contents
 
@@ -18,7 +18,7 @@ There is one controls element for the whole page. The page's markup is not chang
 
 ## How it connects
 
-- **Used by:** `ad-content.ts` and `pd-content.ts`.
+- **Used by:** `ad-content.ts`.
 - **Depends on:** `ui/hover-overlay.ts`, `ui/styles.ts`, `ui/toast.ts`, `utils/clipboard.ts`, `utils/dom.ts`, `AD.outputContainer` in `config/selectors.ts`, `config/namespace.ts`.
 
 ## Testing

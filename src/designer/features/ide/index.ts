@@ -91,7 +91,7 @@ export class Ide implements Feature {
       {
         className: TEXTAREA_COPY_BUTTON_CLASS,
         glyph: '⧉',
-        title: 'Copy textarea content',
+        title: 'Copy the text box',
         style: ICON_BUTTON_STYLE,
         hover: [ICON_BUTTON_HOVER, ICON_BUTTON_UNHOVER],
         adjust: (el: HTMLButtonElement, size: OverlaySize) => {
@@ -104,7 +104,7 @@ export class Ide implements Feature {
             return;
           }
           const copied = await copyText(textToCopy);
-          toast.show(copied ? 'Textarea copied' : 'Failed to copy textarea');
+          toast.show(copied ? 'Text box copied' : 'Failed to copy the text box');
         }
       }
     ]
