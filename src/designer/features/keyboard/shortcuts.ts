@@ -4,6 +4,7 @@ import { modalLock } from '../../ui/modal-lock';
 import { extractMethodName, extractServiceCategory } from '../../utils/dom';
 import { toast } from '../../ui/toast';
 import { Rearm } from '../../core/rearm';
+import { pageObserver } from '../../core/observer';
 import { AD_ROUTE_PREFIX } from '../../../config/routes';
 import { TIMINGS } from '../../../config/timings';
 import type { Feature } from '../../core/feature';
@@ -72,6 +73,7 @@ export class KeyboardShortcuts implements Feature {
    * go dead, and the shortcuts then stayed dead until a settings toggle.
    */
   private readonly rearm = new Rearm(() => this.attach());
+  private unsubscribe: (() => void) | null = null;
 
   /**
    * @param openJsonEditor What Shift+J opens. Only the AD content script
@@ -82,20 +84,27 @@ export class KeyboardShortcuts implements Feature {
   start(): void {
     this.attach();
     this.rearm.start();
+    // Also re-assert the listener on every page change (and the observer's
+    // poll). Without this self-healing, a listener the page dropped after
+    // boot left the shortcuts silently dead until a settings toggle
+    // re-attached them.
+    this.unsubscribe ??= pageObserver.subscribe(this.attach);
   }
 
   stop(): void {
     this.rearm.stop();
+    this.unsubscribe?.();
+    this.unsubscribe = null;
     window.removeEventListener('keydown', this.onKeydown, true);
   }
 
   // Idempotently (re)attach the keydown listener. Bound to `window` so it
   // survives the AD app replacing parts of the document, and the leading
   // removeEventListener guarantees the listener is never stacked twice.
-  private attach(): void {
+  private readonly attach = (): void => {
     window.removeEventListener('keydown', this.onKeydown, true);
     window.addEventListener('keydown', this.onKeydown, true);
-  }
+  };
 
   // An arrow property, so add/removeEventListener always see the same function.
   private readonly onKeydown = (event: KeyboardEvent): void => {

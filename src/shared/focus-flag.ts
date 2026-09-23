@@ -27,21 +27,31 @@ export function writeFocusFlag(target: FocusFlag['target']): void {
   flagArea().store.set({ [FOCUS_STORAGE_KEY]: value });
 }
 
-/** Panel side: call `onFocus` whenever the focus shortcut targets this panel. */
-export function watchFocusFlag(target: FocusFlag['target'], onFocus: () => void): void {
+/**
+ * Panel side: call `onFocus` whenever the focus shortcut targets this panel.
+ * Returns the function that stops watching.
+ */
+export function watchFocusFlag(target: FocusFlag['target'], onFocus: () => void): () => void {
   const { name, store } = flagArea();
+  let active = true;
 
   const react = (value: unknown) => {
     const flag = value as Partial<FocusFlag> | null | undefined;
-    if (!flag || flag.target !== target) return;
+    if (!active || !flag || flag.target !== target) return;
     if (Date.now() - (flag.ts || 0) > FOCUS_MAX_AGE_MS) return;
     onFocus();
   };
 
-  store.get(FOCUS_STORAGE_KEY, (result: Record<string, unknown>) => react(result[FOCUS_STORAGE_KEY]));
-  chrome.storage.onChanged.addListener((changes, area) => {
+  const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
     if (area !== name) return;
     const change = changes[FOCUS_STORAGE_KEY];
     if (change && change.newValue) react(change.newValue);
-  });
+  };
+
+  store.get(FOCUS_STORAGE_KEY, (result: Record<string, unknown>) => react(result[FOCUS_STORAGE_KEY]));
+  chrome.storage.onChanged.addListener(onChanged);
+  return () => {
+    active = false; // also silences the initial read, if it has not answered yet
+    chrome.storage.onChanged.removeListener(onChanged);
+  };
 }

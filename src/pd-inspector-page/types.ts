@@ -1,5 +1,5 @@
 // The PD Inspector's data model, shared by the page-side engine
-// (src/pd-inspector) and the DevTools panel (src/devtools/pd-inspector).
+// (src/pd-inspector-page) and the DevTools panel (src/devtools/pd-inspector).
 
 // ---- the wire format: compiled Page Designer configs --------------------------
 

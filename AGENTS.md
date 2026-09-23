@@ -44,20 +44,22 @@ src/
     ui/                      modal frame, modal lock, toast, styles, theme, hover overlay
     utils/                   dom + clipboard helpers
 
-  pd-inspector/              content script on published /pages/*
-    index.ts                 entry
+  pd-inspector-page/         content script on published /pages/* (built to dist/pd-inspector.js)
+    index.ts                 entry: starts PdEngine
     engine.ts                PdEngine: answers the PD Inspector panel; inspect mode
     config.ts                fetches page/shell/component compiled configs
     component-tree.ts        the component-nesting tree (config only, exact)
     tree.ts                  normalised config-node tree + visibility
     resolve.ts               Resolver: DOM element -> owning config node (className anchors)
-    highlight.ts             Highlighter: on-page highlight overlay (shadow DOM)
+    highlight.ts             Highlighter: on-page highlight overlay (shadow DOM, ns() host id)
     types.ts                 config, tree and engine data shapes
 
   devtools/
     devtools.html            DevTools page shell
-    devtools-page.ts         entry: registers the two panels on allowed sites
+    devtools-page.ts         entry: starts PanelRegistrar
+    panel-registrar.ts       PanelRegistrar: registers the two panels on allowed sites
     inspected.ts             evalInPage(): run an expression in the inspected page
+    view.ts                  el() + FocusFlash: DOM helpers shared by both panels
     ad-network/              "AD Network" panel
       panel.html, panel.ts   entry: starts AdNetworkPanel
       network-panel.ts       AdNetworkPanel: the table, capture, row actions, wiring
@@ -69,12 +71,12 @@ src/
       pending-capture.ts     PendingCapture: fetch/XHR wrapper for in-flight requests
       extract.ts             classifyChainUrl + body parser (pure)
       format.ts              HAR reading and formatting (pure)
-      view.ts                small DOM builders
+      view.ts                icon buttons, flashes, key/value grid
       json-tree.ts           collapsible JSON view
       types.ts               HarEntry, MethodSummary, Row, …
     pd-inspector/            "PD Inspector" panel
       panel.html, panel.ts   entry: starts PdInspectorPanel
-      inspector-panel.ts     PdInspectorPanel; talks to src/pd-inspector via background
+      inspector-panel.ts     PdInspectorPanel; talks to src/pd-inspector-page via background
 
   background/
     index.ts                 entry: wires listeners, PD relay, focus commands
@@ -84,6 +86,8 @@ src/
 ```
 
 Designer features (`src/designer/features/`): `title-updater` (tab title), `keyboard` (shortcuts), `run-test` (Run Test lookup + click), `json-editor` (JSON modal: extractor, sync engine, type adapters), `output-copy` (hover copy icon), `textarea-editor` (shared hover overlay + lazy CodeMirror modal), `curl-autofill` (autofill from the AD Network panel; started directly by `ad-content.ts`), `settings` (the always-on ⚙ button, shortcuts and settings modal).
+
+The page-side PD Inspector folder is `pd-inspector-page/` and the DevTools panel folder is `devtools/pd-inspector/`: the first runs inside the published page, the second is the panel UI. The page-side bundle keeps its output name `dist/pd-inspector.js`, which `background/content-scripts.ts` registers.
 
 **HTML pages live next to their script** but ship at the root of the packaged extension: `scripts/pack.mjs` copies `src/devtools/devtools.html`, `src/devtools/ad-network/panel.html`, `src/devtools/pd-inspector/panel.html` and `src/options/options.html` to `devtools.html`, `panel.html`, `panel-pd.html` and `options.html`. Keep that placement: Chromium resolves a DevTools panel page path against the extension root and Firefox against the devtools page, and they agree only when all of them sit together at the root.
 
@@ -107,7 +111,7 @@ A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see
 
 ## Testing
 
-- **Unit tests: `bun test`.** They live in `tests/`, mirroring `src/`. `tests/setup.ts` (preloaded via `bunfig.toml`) installs a happy-dom DOM and the in-memory `chrome` API from `tests/fakes/chrome.ts` before any source module loads. `tests/fixtures/ad-inputs.ts` renders a minimal Automation Designer Inputs step for the JSON editor tests. `tests/build/bundle.test.ts` runs the real build and fails if the editor becomes part of the page-load bundle, or if that bundle passes 100 KB. CI (`.github/workflows/test.yml`) runs the type-check, the unit tests and the build on every push.
+- **Unit tests: `bun test`.** They live in `tests/`, mirroring `src/`. `tests/setup.ts` (preloaded via `bunfig.toml`) installs a happy-dom DOM and the in-memory `chrome` API from `tests/fakes/chrome.ts` before any source module loads. `tests/fixtures/ad-inputs.ts` renders a minimal Automation Designer Inputs step for the JSON editor tests. `tests/build/bundle.test.ts` runs the real build and fails if the editor becomes part of the page-load bundle, if that bundle passes 100 KB, or if the JSON editor (marker: its "Edit Input JSON" title) reaches `pd-content.js`'s static-import closure. CI (`.github/workflows/test.yml`) runs the type-check, the unit tests and the build on every push.
 - **Never `expect()` a value that holds DOM nodes.** When such an assertion fails, bun's failure printer walks the whole happy-dom object graph and allocates without limit: one did reach ~10 GB and got the terminal killed by the out-of-memory killer. Compare plain fields, or identities with `expect(a === b).toBe(true)`. As a backstop, `tests/memory-guard-worker.ts` kills the test run at 1 GB (`BELZ_TEST_MEMORY_LIMIT_MB` to change it).
 - **End-to-end: `bun run test:e2e`** (`tests/e2e/run.mjs`). It builds, copies both packaged trees, and changes only their manifests: a static content script on a local page, plus access to 127.0.0.1. Then it loads the shipped files in headless Chromium (DevTools protocol) and Firefox (WebDriver BiDi), on `tests/e2e/page.html`. The page drives itself: the content script runs, the editor is not loaded until clicked, the overlay appears (including on a disabled, "published" textarea), the editor opens with the text and detects SQL, and the lazily loaded editor and the eager shortcut share one modal lock. A browser that is not installed is skipped. Match patterns in the patched manifest carry no port: Firefox rejects a pattern with one.
 - **Modules that act on import** (the panels, the options page, `background/index.ts`) are thin wiring. Their logic lives in importable modules (`shared/hosts.ts`, `background/content-scripts.ts`, `json-editor/values.ts`, `textarea-editor/language.ts`, …) so it can be tested.
@@ -124,16 +128,17 @@ Code that holds state or has a lifecycle is a class; pure helpers stay functions
 
 - **`Feature`** (`core/feature.ts`): `start()` / `stop()`. Each toggleable feature is a class implementing it: `TitleUpdater`, `KeyboardShortcuts`, `JsonEditor`, `OutputCopy`, `TextareaEditor`. Both must be safe to call twice, and `stop()` must undo everything `start()` did (listeners, timers, observer subscriptions, injected DOM; a feature that owns a modal calls its `dispose()`). Event handlers are arrow-function properties so `removeEventListener` gets the same function. `SettingsLauncher` is not a Feature: it is always on, for the life of the page.
 - **Dependencies are passed in**, not imported, where a feature would otherwise drag code into the wrong bundle: `KeyboardShortcuts` takes the JSON editor's `open` as a constructor argument, which only `ad-content.ts` passes, so PD pages do not bundle the JSON editor.
-- **`Rearm`** (`core/rearm.ts`) re-registers page listeners a few times while the host SPA boots (listeners attached too early were observed to go dead). `HoverOverlay` and `KeyboardShortcuts` use it.
+- **`Rearm`** (`core/rearm.ts`) re-registers page listeners a few times while the host SPA boots (listeners attached too early were observed to go dead), at `TIMINGS.rearmDelays`. `HoverOverlay` and `KeyboardShortcuts` use it. `KeyboardShortcuts` also re-attaches its keydown listener on every page change through `pageObserver.subscribe` (unsubscribed in `stop()`): without that self-healing, a listener the page dropped after boot left the shortcuts silently dead until a settings toggle.
 - **Page-wide singletons**: one instance per page, exported next to the class. `settings` (`SettingsStore`, with its storage injected: `chromeSettingsStorage()` in the extension, an in-memory one in tests), `pageObserver` (`PageObserver`), `modalLock` (`ModalLock`), `toast` (`Toast`), and the three modals: `jsonEditorModal`, `settingsModal`, `textareaEditorModal`. They are shared by several features and by the lazily loaded editor chunk, which is why each must be bundled once (see "Content-script module graph").
 - **`HoverOverlay`** (`ui/hover-overlay.ts`) is a class the features own an instance of: `OutputCopy` and `TextareaEditor` each create one.
-- **The other worlds follow the same rule.** The PD Inspector content script is `PdEngine` with a `Resolver` and a `Highlighter`; it drops a build that a newer route change has overtaken. The AD Network panel is `AdNetworkPanel`, composed of `InspectedSite`, `MethodCache`, `MethodResolver`, `MethodNames`, `ResolveQueue`, `DetailPane` and `PendingCapture`. The PD Inspector panel is `PdInspectorPanel`; the DevTools page is a `PanelRegistrar`. Each entry file (`panel.ts`, `index.ts`) only constructs and starts its class, so the class can be tested without side effects (`tests/devtools/ad-network-panel.test.ts` drives the real panel markup).
+- **The other worlds follow the same rule.** The PD Inspector content script is `PdEngine` with a `Resolver` and a `Highlighter`; it drops a build that a newer route change has overtaken. The AD Network panel is `AdNetworkPanel`, composed of `InspectedSite`, `MethodCache`, `MethodResolver`, `MethodNames`, `ResolveQueue`, `DetailPane` and `PendingCapture`. The PD Inspector panel is `PdInspectorPanel`; the DevTools page is a `PanelRegistrar` (`panel-registrar.ts`). Each entry file (`panel.ts`, `index.ts`, `devtools-page.ts`) only constructs and starts its class, so the class can be tested without side effects (`tests/devtools/ad-network-panel.test.ts` drives the real panel markup, and calls `stop()` in `afterAll` so no timer outlives it).
+- **Same lifecycle contract everywhere.** `PdEngine`, `Highlighter`, `AdNetworkPanel`, `DetailPane`, `PendingCapture`, `ResolveQueue`, `PdInspectorPanel` and `PanelRegistrar` all have `start()` / `stop()` (ResolveQueue: `stop()` only), safe to call twice, with `stop()` removing every listener, interval and timer `start()` added. Constructors only store references: `AdNetworkPanel` reads the inspected origin, site list and cache in `start()`, `DetailPane` wires its buttons in `start()`, `Highlighter` listens to scroll/resize only between `start()` and `stop()`, and `PdEngine` starts it only after its page-context check. Watchers return their unsubscribe function (`watchFocusFlag`, `InspectedSite.watchSiteConfig`). Async work that can outlive a `stop()` carries a generation check (`PendingCapture.poll`, `ResolveQueue.flush`, the panels' loads). `PanelRegistrar.stop()` stops watching only: DevTools cannot remove a panel.
 
 ### Settings, selectors, timings: one place each
 
 - **Settings.** `src/config/settings.ts` is the only list of settings. Each entry gives its label, description, default, allowed values and the settings-modal section (`features`, `editor`, `advanced`). The `Settings` type, `DEFAULT_SETTINGS`, validation (`sanitizeSetting`) and the modal's rows are all derived from it. To add a setting, add one entry there. `designer/core/settings.ts` only holds the page's live copy and keeps it in step with `chrome.storage`.
 - **Host-page selectors.** Every selector that reads the designers' own markup is in `src/config/selectors.ts`, grouped by area (`HEADER`, `AD`, `PD`, `AD_INPUTS`, `AD_WIDGETS`). A list means "try in order, first match wins" (`firstMatch()` in `designer/utils/dom.ts`). The extension's own ids and classes are not there: they are built with `ns()` next to the code that creates them.
-- **Host-page timings.** Waits tuned against the designers' rendering (widget polls, pauses after clicks, first-try delays) are in `src/config/timings.ts`. Timings of the extension's own UI (hover grace, Esc Esc window) stay next to their code.
+- **Host-page timings.** Waits tuned against the designers' rendering (widget polls, pauses after clicks, first-try delays, `rearmDelays`, `pdRoutePoll`) are in `src/config/timings.ts`. Timings of the extension's own UI (hover grace, Esc Esc window) stay next to their code, except `panelFocusFlash`, which both DevTools panels share (through `FocusFlash` in `devtools/view.ts`).
 
 ### Logging
 
@@ -147,7 +152,8 @@ All console output goes through `createLogger(scope)` from `src/shared/logger.ts
 4. `chrome.runtime.onStartup` / `onInstalled` also trigger reconcile so the registrations are restored on browser start / extension update.
 5. Revoke reverses everything: `chrome.scripting.unregisterContentScripts` → `chrome.permissions.remove` → storage delete.
 6. **Seeding.** Uninstalling an extension clears its storage, and a Firefox temporary add-on is uninstalled on every reload — so the host list would be lost on each rebuild. If a `sites.default.json` is present in the extension root (gitignored; see `sites.default.json.example`, copied into both trees by `pack.mjs`), `chrome.runtime.onInstalled` restores the list from it when storage has no host key at all. An explicitly emptied list stores `{hosts: []}` and is therefore never re-seeded.
-7. **Grant state is read from the browser, not storage.** Seeded entries are written `enabled:false, seeded:true` — a permission cannot be restored without a user gesture. `options.ts` calls `chrome.permissions.contains` for every host on each render and reconciles the stored `enabled` flag against it, so a host revoked outside the page (or a list carried into a different profile) shows a **Grant** button rather than a stale Revoke. It also subscribes to `chrome.permissions.onAdded` / `onRemoved` to repaint on out-of-band changes.
+7. **Entries must carry a boolean `enabled`.** `readHosts()` drops any stored entry without a string `host` and a boolean `enabled` (the legacy shape without the flag is gone).
+8. **Grant state is read from the browser, not storage.** Seeded entries are written `enabled:false, seeded:true` — a permission cannot be restored without a user gesture. `options.ts` calls `chrome.permissions.contains` for every host on each render and reconciles the stored `enabled` flag against it, so a host revoked outside the page (or a list carried into a different profile) shows a **Grant** button rather than a stale Revoke. It also subscribes to `chrome.permissions.onAdded` / `onRemoved` to repaint on out-of-band changes.
 
 ## JSON sync engine (the most fragile piece)
 
@@ -194,7 +200,7 @@ Answers one question on a published page: *which Page Designer components are on
 
 - **Component tree — exact.** `config.ts` fetches the page's compiled config from the deployable endpoint, then every PD component it embeds, recursively. A component reference is a childless `isSymbol` node. `component-tree.ts` assembles the nesting from configs alone, never the DOM, so it is always right. A page can render inside an **app shell**: a separate PAGE, looked up by the first path segment, whose layout contains a `router-outlet` node. The shell is where navbar and sidebar come from. When one exists, the content page is spliced in at the outlet. Only the config's outlet counts: the rendered page also contains Angular's own `<router-outlet>` elements.
 - **Inspect mode — anchored, not guessed.** The runtime does not mark component boundaries in the DOM, but a config node's static `props.className` survives onto its rendered element. `resolve.ts` pins elements to config nodes by className: one node and one element is exact; several of each are paired in document order only when the counts agree, and refused otherwise, because a wrong anchor shadows the right one further up. Hovering an element climbs to the nearest anchored ancestor. The panel shows how many nodes were anchored.
-- **Wiring.** The panel (`PdInspectorPanel`, `devtools/pd-inspector/inspector-panel.ts`) calls the engine through the background relay, because Firefox gives DevTools panels no `chrome.tabs`. The engine pushes inspect-mode picks back with `chrome.runtime.sendMessage`. All messages carry `ns: 'pd'`. Published pages are SPAs, so the engine rebuilds when the path changes (polled every `TIMINGS.pdRoutePoll`). Page Designer's config vocabulary (outlet, form-field and button node names) is in `PD_CONFIG_NODES` in `config/selectors.ts`.
+- **Wiring.** The panel (`PdInspectorPanel`, `devtools/pd-inspector/inspector-panel.ts`) calls the engine through the background relay, because Firefox gives DevTools panels no `chrome.tabs`. The engine pushes messages back with `chrome.runtime.sendMessage` (`PdPushMessage` in `shared/messages.ts`): inspect-mode picks, and `routeChanged`. The panel ignores pushes from other tabs. All messages carry `ns: 'pd'`. Published pages are SPAs, so the engine polls the path every `TIMINGS.pdRoutePoll`; on a change it leaves inspect mode, drops any in-flight build (the generation is bumped even when the new path is not a published page, which then reports an error state instead of the old model), and pushes `routeChanged`, on which the panel resets its Inspect button and reloads. Page Designer's config vocabulary (outlet, form-field and button node names) is in `PD_CONFIG_NODES` in `config/selectors.ts`.
 
 ## Textarea overlay (performance-critical)
 
@@ -226,7 +232,7 @@ How it fits together:
 
 **The rule that must not be broken: one `--splitting` call, never a separate build for the editor.** `modal.ts` imports `core/settings`, `ui/modal-lock`, `ui/toast` and the settings modal — module-level singletons. Built separately, the chunk gets its own copies. That was tested deliberately in both browsers: the editor still opens and looks perfect, but `Ctrl+Shift+Enter` fires Run Test *behind the open editor*, because the shortcut checks a different copy of the modal lock. One graph makes the shared modules shared chunks, loaded once per page.
 
-**This rule is enforced.** `scripts/check-singletons.mjs` runs at the end of every build and fails it if any stateful module is bundled more than once into the designer content scripts. Each stateful module starts with a marker, `/*! belz-singleton: designer/core/settings */`. It is a "legal" comment, so the minifier keeps it and it travels with the module into whichever output file holds it. Each marker must then appear in exactly one designer output file. The check also scans `src/designer/`, `src/config/` and `src/shared/` for top-level state (`let`/`var`, or a top-level object built with `new`: a `Set`/`Map` or a class instance such as `export const settings = new SettingsStore(…)`) and fails on any such module that has no marker, so a new stateful module can't slip past unprotected. When it fails, the message names the module and files, or the exact marker line to add. It was verified against five ways of breaking the rule: the editor added as a standalone entry, a separate bundle dropped into `dist/modules`, a marker stripped from the output, a marker deleted from the source, and a new unmarked module. All five fail the build, including through `pack.mjs`. Output files that run in a different JavaScript world (background, options, DevTools pages, `pd-inspector.js`) are excluded by an explicit, reasoned list in the script. Do not add a file there to make the check pass.
+**This rule is enforced.** `scripts/check-singletons.mjs` runs at the end of every build and fails it if any stateful module is bundled more than once into the designer content scripts. Each stateful module starts with a marker, `/*! belz-singleton: designer/core/settings */`. It is a "legal" comment, so the minifier keeps it and it travels with the module into whichever output file holds it. Each marker must then appear in exactly one designer output file. The check also scans `src/designer/`, `src/config/` and `src/shared/` for top-level state (`let`/`var`, or a top-level object built with `new`: a `Set`/`Map` or a class instance such as `export const settings = new SettingsStore(…)`) and fails on any such module that has no marker, so a new stateful module can't slip past unprotected. When it fails, the message names the module and files, or the exact marker line to add. It was verified against five ways of breaking the rule: the editor added as a standalone entry, a separate bundle dropped into `dist/modules`, a marker stripped from the output, a marker deleted from the source, and a new unmarked module. All five fail the build, including through `pack.mjs`. Output files that run in a different JavaScript world (background, options, DevTools pages, `pd-inspector.js` from `src/pd-inspector-page/`) are excluded by an explicit, reasoned list in the script. Do not add a file there to make the check pass.
 
 To lazy-load something else, just use `import()` inside a module in this graph; the bundler handles the rest. Anything reached by a **static** import is eager. To check what a page load costs, walk the static-import closure of `dist/modules/ad-content.js`, not file sizes.
 

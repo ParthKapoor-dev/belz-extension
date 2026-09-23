@@ -66,7 +66,7 @@ for (const name of splitEntries) {
 
 // ---- 2. everything else: standalone bundles --------------------------------
 const standalone = [
-  { src: 'src/pd-inspector/index.ts', out: 'pd-inspector.js' },
+  { src: 'src/pd-inspector-page/index.ts', out: 'pd-inspector.js' },
   { src: 'src/background/index.ts', out: 'background.js' },
   { src: 'src/options/index.ts', out: 'options.js' },
   { src: 'src/devtools/devtools-page.ts', out: 'devtools-page.js' },

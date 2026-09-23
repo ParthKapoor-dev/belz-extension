@@ -6,7 +6,8 @@
 // found, a date not committed), these are the numbers to revisit.
 //
 // Timings of the extension's own UI (hover grace periods, the Esc Esc
-// window, toast duration) are not here: they stay next to their code.
+// window, toast duration) are not here: they stay next to their code. The
+// one exception is `panelFocusFlash`, which two DevTools panels share.
 
 export const TIMINGS = {
   /** First try at adding the settings button, and the debounce after page changes. */
@@ -39,6 +40,18 @@ export const TIMINGS = {
   /** After clicking away to commit the time. */
   afterTimeCommit: 40,
 
+  /**
+   * Rearm: when to re-attach page listeners, in ms after a feature starts,
+   * spanning a slow SPA bootstrap (see designer/core/rearm.ts).
+   */
+  rearmDelays: [1000, 3000, 6000],
+
   /** PD Inspector: how often to check a published page for a route change. */
-  pdRoutePoll: 1500
+  pdRoutePoll: 1500,
+
+  /**
+   * DevTools panels: how long the focus shortcut (Ctrl+Shift+A / P) pulses
+   * the panel. Shared by both panels, so it lives here rather than in either.
+   */
+  panelFocusFlash: 900
 } as const;

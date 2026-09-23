@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { buildTree, getVisibility, KIND, summarize } from '../../src/pd-inspector/tree';
-import { collectChildRefs, isSymbolRef } from '../../src/pd-inspector/config';
-import { buildComponentTree, componentNames } from '../../src/pd-inspector/component-tree';
+import { buildTree, getVisibility, KIND, summarize } from '../../src/pd-inspector-page/tree';
+import { collectChildRefs, isSymbolRef } from '../../src/pd-inspector-page/config';
+import { buildComponentTree, componentNames } from '../../src/pd-inspector-page/component-tree';
 
 const symbol = (name: string) => ({ name, isSymbol: true });
 const layout = (...children: any[]) => ({ name: 'exp-layout', children });

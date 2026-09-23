@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildConfigIndex, Resolver } from '../../src/pd-inspector/resolve';
+import { buildConfigIndex, Resolver } from '../../src/pd-inspector-page/resolve';
 
 // The resolver maps DOM elements to config nodes. Results hold DOM elements,
 // so assertions below compare plain fields (see tests/memory-guard-worker.ts).

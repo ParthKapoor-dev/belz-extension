@@ -26,6 +26,18 @@ export interface PdPickMessage {
 }
 
 /**
+ * Pushed by the engine when the published page's route changed: it has left
+ * inspect mode and is rebuilding, so the panel reloads.
+ */
+export interface PdRouteChangedMessage {
+  ns: 'pd';
+  type: 'routeChanged';
+}
+
+/** Everything the engine pushes to the panel. */
+export type PdPushMessage = PdPickMessage | PdRouteChangedMessage;
+
+/**
  * Sent to the background relay, because Firefox gives DevTools panels no
  * chrome.tabs: `cmd` forwards a command to the inspected tab, `open` opens a
  * URL in a new tab.
@@ -42,6 +54,11 @@ export function isPdCommand(msg: unknown): msg is PdCommand {
 export function isPdPick(msg: unknown): msg is PdPickMessage {
   const m = msg as Partial<PdPickMessage> | null;
   return Boolean(m) && m!.ns === 'pd' && m!.type === 'pick' && Array.isArray(m!.chain);
+}
+
+export function isPdRouteChanged(msg: unknown): msg is PdRouteChangedMessage {
+  const m = msg as Partial<PdRouteChangedMessage> | null;
+  return Boolean(m) && m!.ns === 'pd' && m!.type === 'routeChanged';
 }
 
 export function isPdRelay(msg: unknown): msg is PdRelayMessage {

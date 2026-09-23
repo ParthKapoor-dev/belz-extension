@@ -29,24 +29,28 @@ import {
   errorText,
   formatBytes,
   harKey,
+  lookupFailure,
+  shortUuid,
   shortUuidFromUrl,
   startedAt,
   statusGroup,
   transferSize,
   typeOf
 } from './format';
-import { el, flashOk, flashText, iconButton, ICON_COPY, ICON_LINK, ICON_OPEN } from './view';
+import { flashOk, flashText, iconButton, ICON_COPY, ICON_LINK, ICON_OPEN } from './view';
+import { el, FocusFlash } from '../view';
 import { AUTOFILL_PARAM } from '../../config/endpoints';
 import { required } from '../../shared/dom';
 import { watchFocusFlag } from '../../shared/focus-flag';
+import { createLogger } from '../../shared/logger';
 import type { HarEntry, MethodSummary, PendingEntry, Row } from './types';
 
 const MAX_ROWS = 300;
 const TOAST_MS = 3000;
 /** Pause between two queued "open in draft" tabs. */
 const OPEN_QUEUE_GAP_MS = 150;
-/** How long the focus shortcut highlights the newest row. */
-const FOCUS_FLASH_MS = 900;
+
+const log = createLogger('ad-network');
 
 /** The panel's elements, from panel.html. */
 function panelElements() {
@@ -79,11 +83,14 @@ export class AdNetworkPanel {
   private readonly cache = new MethodCache();
   private readonly resolver = new MethodResolver(this.site, this.cache);
   private readonly names = new MethodNames((uuid) => this.repaint(uuid));
-  /** Settles once origin, site config and cache are loaded. */
-  private readonly ready: Promise<void>;
-  private readonly queue: ResolveQueue;
+  /** Settles once origin, site config and cache are loaded; made anew by each start(). */
+  private ready: Promise<void> = Promise.resolve();
+  private readonly queue = new ResolveQueue(this.resolver, this.names, () => this.ready, (failed, reason) =>
+    this.setOffline(failed, reason)
+  );
   private readonly detail: DetailPane;
   private readonly pending = new PendingCapture((entries) => this.updatePending(entries));
+  private readonly flash = new FocusFlash();
 
   /** Chronological (oldest first by start time); mirrors the DOM order. */
   private readonly rows: Row[] = [];
@@ -94,57 +101,108 @@ export class AdNetworkPanel {
   /** "Open in draft" requests, processed one at a time. */
   private readonly openQueue: Row[] = [];
   private openProcessing = false;
+  private openTimer: ReturnType<typeof setTimeout> | null = null;
   private nextId = 1;
   private recording = true;
   private preserveLog = false;
   private filterText = '';
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
+  private started = false;
+  /** Bumped per start and stop, so async work from an earlier run is dropped. */
+  private runId = 0;
+  private unwatchFocus: (() => void) | null = null;
+  private unwatchSite: (() => void) | null = null;
 
+  /** Only keeps references: nothing is read or wired until start(). */
   constructor(private readonly els: PanelElements = panelElements()) {
-    this.ready = (async () => {
-      await Promise.all([this.site.detect(), this.site.loadSiteConfig(), this.cache.hydrate()]);
-      this.site.watchSiteConfig();
-    })();
-    this.queue = new ResolveQueue(this.resolver, this.names, this.ready, (failed, reason) =>
-      this.setOffline(failed, reason)
-    );
     this.detail = new DetailPane(els.detail, this.names, this.site, () => this.markSelected(null));
   }
 
   start(): void {
-    this.wireToolbar();
+    if (this.started) return;
+    this.started = true;
+    const runId = ++this.runId;
+    this.ready = (async () => {
+      await Promise.all([this.site.detect(), this.site.loadSiteConfig(), this.cache.hydrate()]);
+      if (runId === this.runId) this.unwatchSite = this.site.watchSiteConfig();
+    })();
+
+    const { record, clear, preserve, filter } = this.els;
+    record.addEventListener('click', this.onRecordClick);
+    clear.addEventListener('click', this.clearAll);
+    preserve.addEventListener('change', this.onPreserveChange);
+    filter.addEventListener('input', this.onFilterInput);
     document.addEventListener('keydown', this.onArrowKey);
-    chrome.devtools.network.onRequestFinished.addListener((req) => this.onRequest(req as unknown as HarEntry));
-    chrome.devtools.network.onNavigated.addListener(() => {
-      this.site.detect();
-      if (!this.preserveLog) this.clearAll();
-    });
+    chrome.devtools.network.onRequestFinished.addListener(this.onRequestFinished);
+    chrome.devtools.network.onNavigated.addListener(this.onNavigated);
+    this.detail.start();
     this.pending.start();
     // Ctrl+Shift+A: scroll to the newest row, pulse it, and focus the filter.
-    watchFocusFlag('ad', () => this.focusNewest());
+    this.unwatchFocus = watchFocusFlag('ad', this.focusNewest);
     // Origin, site list and cache must be in place before the first resolve,
     // so backfill waits for them: a warm cache then paints names on the very
     // first frame instead of after a round-trip.
-    this.ready.then(() => this.backfillFromHar());
+    void this.ready.then(() => {
+      if (runId === this.runId) this.backfillFromHar();
+    });
   }
 
-  private wireToolbar(): void {
+  /** Undo start(): every listener, timer, poll and watcher. The rows stay. */
+  stop(): void {
+    if (!this.started) return;
+    this.started = false;
+    this.runId++;
+
     const { record, clear, preserve, filter } = this.els;
-    record.addEventListener('click', () => {
-      this.recording = !this.recording;
-      record.classList.toggle('on', this.recording);
-      const label = record.querySelector('.dot')?.nextSibling;
-      if (label) label.textContent = this.recording ? ' Recording' : ' Paused';
-    });
-    clear.addEventListener('click', () => this.clearAll());
-    preserve.addEventListener('change', () => {
-      this.preserveLog = preserve.checked;
-    });
-    filter.addEventListener('input', () => {
-      this.filterText = filter.value.trim().toLowerCase();
-      for (const row of this.rows) this.applyRowFilter(row);
-    });
+    record.removeEventListener('click', this.onRecordClick);
+    clear.removeEventListener('click', this.clearAll);
+    preserve.removeEventListener('change', this.onPreserveChange);
+    filter.removeEventListener('input', this.onFilterInput);
+    document.removeEventListener('keydown', this.onArrowKey);
+    chrome.devtools.network.onRequestFinished.removeListener(this.onRequestFinished);
+    chrome.devtools.network.onNavigated.removeListener(this.onNavigated);
+    this.detail.stop();
+    this.pending.stop();
+    this.queue.stop();
+    this.unwatchFocus?.();
+    this.unwatchFocus = null;
+    this.unwatchSite?.();
+    this.unwatchSite = null;
+    this.flash.cancel();
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toastTimer = null;
+    if (this.openTimer) clearTimeout(this.openTimer);
+    this.openTimer = null;
+    this.openQueue.length = 0;
   }
+
+  // ---- toolbar and browser events -------------------------------------------
+
+  private readonly onRecordClick = (): void => {
+    const record = this.els.record;
+    this.recording = !this.recording;
+    record.classList.toggle('on', this.recording);
+    const label = record.querySelector('.dot')?.nextSibling;
+    if (label) label.textContent = this.recording ? ' Recording' : ' Paused';
+  };
+
+  private readonly onPreserveChange = (): void => {
+    this.preserveLog = this.els.preserve.checked;
+  };
+
+  private readonly onFilterInput = (): void => {
+    this.filterText = this.els.filter.value.trim().toLowerCase();
+    for (const row of this.rows) this.applyRowFilter(row);
+  };
+
+  private readonly onRequestFinished = (req: chrome.devtools.network.Request): void => {
+    this.onRequest(req as unknown as HarEntry);
+  };
+
+  private readonly onNavigated = (): void => {
+    void this.site.detect();
+    if (!this.preserveLog) this.clearAll();
+  };
 
   // ---- capture -------------------------------------------------------------
 
@@ -154,11 +212,16 @@ export class AdNetworkPanel {
   // otherwise be lost. getHAR() reads the same log the built-in Network tab
   // uses, so this closes the gap and matches the Network tab's ordering.
   private backfillFromHar(): void {
-    chrome.devtools.network.getHAR((harLog) => {
-      if (!harLog || !Array.isArray(harLog.entries)) return;
-      const sorted = (harLog.entries as HarEntry[]).slice().sort((a, b) => startedAt(a) - startedAt(b));
-      for (const har of sorted) this.onRequest(har);
-    });
+    try {
+      chrome.devtools.network.getHAR((harLog) => {
+        if (!this.started || !harLog || !Array.isArray(harLog.entries)) return;
+        const sorted = (harLog.entries as HarEntry[]).slice().sort((a, b) => startedAt(a) - startedAt(b));
+        for (const har of sorted) this.onRequest(har);
+      });
+    } catch (err) {
+      // getHAR unavailable: the live listener still catches everything from now on.
+      log.warn('cannot backfill from the HAR log:', err);
+    }
   }
 
   onRequest(har: HarEntry): void {
@@ -205,7 +268,6 @@ export class AdNetworkPanel {
     const isAppend = insertAt === this.rows.length;
     this.rows.splice(insertAt, 0, row);
     this.renderRow(row, insertAt);
-    this.renumberRows();
     if (atBottom && isAppend) pane.scrollTop = pane.scrollHeight;
 
     // Name: definition fetches carry it in their body — read it instantly.
@@ -234,6 +296,8 @@ export class AdNetworkPanel {
       old.rowEl?.remove();
       if (this.detail.selected === old) this.detail.close();
     }
+    // After the trim, so the numbers start at 1 even once rows were dropped.
+    this.renumberRows();
     this.els.count.textContent = String(this.rows.length);
   }
 
@@ -253,7 +317,7 @@ export class AdNetworkPanel {
     });
   }
 
-  private clearAll(): void {
+  private readonly clearAll = (): void => {
     this.rows.length = 0;
     this.seen.clear();
     this.els.rows.replaceChildren();
@@ -262,7 +326,7 @@ export class AdNetworkPanel {
     this.els.count.textContent = '0';
     this.els.empty.classList.remove('hidden');
     this.detail.close();
-  }
+  };
 
   // ---- rows ----------------------------------------------------------------
 
@@ -409,15 +473,12 @@ export class AdNetworkPanel {
     target.rowEl?.scrollIntoView({ block: 'nearest' });
   };
 
-  private focusNewest(): void {
+  private readonly focusNewest = (): void => {
     this.els.listPane.scrollTop = this.els.listPane.scrollHeight;
     const row = this.rows[this.rows.length - 1]?.rowEl;
-    if (row) {
-      row.classList.add('focus-flash');
-      setTimeout(() => row.classList.remove('focus-flash'), FOCUS_FLASH_MS);
-    }
+    if (row) this.flash.show(row);
     this.els.filter.focus();
-  }
+  };
 
   // ---- in-flight rows ------------------------------------------------------
   // chrome.devtools.network only fires onRequestFinished — a slow or hung
@@ -459,7 +520,7 @@ export class AdNetworkPanel {
   private async copySlackLink(row: Row, btn: HTMLButtonElement): Promise<void> {
     try {
       const { summary, url } = await this.summaryFor(row);
-      const name = summary?.name || this.names.name(row.uuid) || row.uuid.slice(0, 8) + '…';
+      const name = summary?.name || this.names.name(row.uuid) || shortUuid(row.uuid);
       const category = summary?.category || this.names.category(row.uuid) || '';
       const label = [category, name].filter(Boolean).join('::');
       const html = '<a href="' + url + '">' + label + '</a>';
@@ -478,7 +539,7 @@ export class AdNetworkPanel {
       this.showToast('copied link · ' + label);
     } catch (err) {
       this.setOffline(true, errorText(err));
-      this.showToast('could not copy link — ' + (errorText(err) || 'lookup failed'));
+      this.showToast('could not copy link — ' + lookupFailure(err));
     }
   }
 
@@ -487,7 +548,7 @@ export class AdNetworkPanel {
   private enqueueOpen(row: Row): void {
     this.openQueue.push(row);
     this.showToast(
-      'queued ' + (this.names.name(row.uuid) || row.uuid.slice(0, 8) + '…') +
+      'queued ' + (this.names.name(row.uuid) || shortUuid(row.uuid)) +
         ' · ' + this.openQueue.length + ' in queue'
     );
     this.processOpenQueue();
@@ -503,15 +564,20 @@ export class AdNetworkPanel {
       openInBackgroundTab(withAutofill(url, row.har));
       const remaining = this.openQueue.length;
       this.showToast(
-        'opening ' + (summary?.name || row.uuid.slice(0, 8) + '…') + ' in draft mode' +
+        'opening ' + (summary?.name || shortUuid(row.uuid)) + ' in draft mode' +
           (remaining ? ' · ' + remaining + ' queued' : '')
       );
     } catch (err) {
       this.setOffline(true, errorText(err));
-      this.showToast('could not open ' + row.uuid.slice(0, 8) + '… — ' + (errorText(err) || 'lookup failed'));
+      this.showToast('could not open ' + shortUuid(row.uuid) + ' — ' + lookupFailure(err));
     } finally {
       this.openProcessing = false;
-      if (this.openQueue.length) setTimeout(() => this.processOpenQueue(), OPEN_QUEUE_GAP_MS);
+      if (this.openQueue.length) {
+        this.openTimer = setTimeout(() => {
+          this.openTimer = null;
+          void this.processOpenQueue();
+        }, OPEN_QUEUE_GAP_MS);
+      }
     }
   }
 
@@ -558,8 +624,20 @@ function withAutofill(url: string, har: HarEntry): string {
 }
 
 function openInBackgroundTab(url: string): void {
-  if (chrome.tabs?.create) chrome.tabs.create({ url, active: false });
-  else window.open(url, '_blank');
+  try {
+    if (chrome.tabs?.create) {
+      chrome.tabs.create({ url, active: false });
+      return;
+    }
+  } catch (err) {
+    // Firefox DevTools pages have no chrome.tabs; fall through to window.open.
+    log.debug('chrome.tabs.create failed, using window.open:', err);
+  }
+  try {
+    window.open(url, '_blank');
+  } catch (err) {
+    log.warn('cannot open a tab:', err);
+  }
 }
 
 function renderPendingRow(entry: PendingEntry): HTMLTableRowElement {

@@ -168,15 +168,15 @@ On a fresh install they're restored automatically. You still need to click **Gra
 
 ```
 src/
-  designer/       content scripts on Automation Designer and Page Designer pages
-  pd-inspector/   the PD Inspector engine, on published pages
-  devtools/       the AD Network and PD Inspector DevTools panels
-  background/     site registration, shortcuts, message relay
-  options/        the Allowed sites page
-  config/         settings schema, host-page selectors and timings, constants
-  shared/         helpers shared by all of the above
-tests/            unit tests (mirroring src/), e2e/ for real browsers
-scripts/          build, per-browser packaging, dev watcher
+  designer/           content scripts on Automation Designer and Page Designer pages
+  pd-inspector-page/  the PD Inspector engine, on published pages
+  devtools/           the AD Network and PD Inspector DevTools panels
+  background/         site registration, shortcuts, message relay
+  options/            the Allowed sites page
+  config/             settings schema, host-page selectors and timings, constants
+  shared/             helpers shared by all of the above
+tests/                unit tests (mirroring src/), e2e/ for real browsers
+scripts/              build, per-browser packaging, dev watcher
 ```
 
 ### Releasing

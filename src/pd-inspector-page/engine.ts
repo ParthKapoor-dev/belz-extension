@@ -19,7 +19,7 @@ import {
 import { buildComponentTree, componentNames } from './component-tree';
 import { buildConfigIndex, Resolver } from './resolve';
 import { Highlighter } from './highlight';
-import { isPdCommand, type PdCommand, type PdPickMessage } from '../shared/messages';
+import { isPdCommand, type PdCommand, type PdPushMessage } from '../shared/messages';
 import { TIMINGS } from '../config/timings';
 import { createLogger } from '../shared/logger';
 import type {
@@ -34,6 +34,18 @@ import type {
 const log = createLogger('pd-inspector');
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** Tell the DevTools panel something; it may not be open, which is fine. */
+function pushToPanel(message: PdPushMessage): void {
+  try {
+    // No receiver rejects the returned promise (Chromium): nothing to report.
+    const sent = chrome.runtime.sendMessage(message) as Promise<unknown> | undefined;
+    if (sent && typeof sent.catch === 'function') sent.catch(() => {});
+  } catch (err) {
+    // Throws once the extension was reloaded under the page.
+    log.debug('cannot reach the panel:', err);
+  }
+}
 
 /** Drop the heavy `raw` config object from a node tree before messaging. */
 function stripNodeTree(node: TreeNode | null): SerializedTreeNode | null {
@@ -71,25 +83,51 @@ export class PdEngine {
   private inspecting = false;
   /** Bumped per build, so a slow build for an old route cannot overwrite a newer one. */
   private generation = 0;
-  private lastPath = location.pathname;
+  private lastPath = '';
+  private routeTimer: ReturnType<typeof setInterval> | null = null;
 
   /** Build for the current page, answer the panel, and follow route changes. */
   start(): void {
+    if (this.routeTimer) return;
     const ctx = getPageContext();
     if (!ctx) return;
+    this.lastPath = location.pathname;
+    this.highlighter.start();
     this.rebuild(ctx);
     chrome.runtime.onMessage.addListener(this.onMessage);
     // Published pages are SPAs — rebuild when the route changes.
-    setInterval(() => this.checkRoute(), TIMINGS.pdRoutePoll);
+    this.routeTimer = setInterval(this.checkRoute, TIMINGS.pdRoutePoll);
   }
 
-  private checkRoute(): void {
+  /** Undo start(): stop polling and answering, leave inspect mode, drop the overlay. */
+  stop(): void {
+    if (this.routeTimer) clearInterval(this.routeTimer);
+    this.routeTimer = null;
+    chrome.runtime.onMessage.removeListener(this.onMessage);
+    this.setInspect(false);
+    this.highlighter.stop();
+    this.generation++; // an in-flight build is dropped
+    this.resolver = null;
+    this.state = { status: 'loading' };
+  }
+
+  private readonly checkRoute = (): void => {
     if (location.pathname === this.lastPath) return;
     this.lastPath = location.pathname;
     this.setInspect(false);
     const next = getPageContext();
-    if (next) this.rebuild(next);
-  }
+    if (next) {
+      this.rebuild(next);
+    } else {
+      // Not a published page any more: drop any in-flight build for the old
+      // route, and the old route's model with it.
+      this.generation++;
+      this.resolver = null;
+      this.state = { status: 'error', error: 'not a published page (…/pages/…)' };
+    }
+    // The panel still shows the old route's tree, and inspect mode as on.
+    pushToPanel({ ns: 'pd', type: 'routeChanged' });
+  };
 
   private rebuild(ctx: PageContext): void {
     const generation = ++this.generation;
@@ -184,8 +222,7 @@ export class PdEngine {
     if (!hit) return;
     e.preventDefault();
     e.stopPropagation();
-    const pick: PdPickMessage = { ns: 'pd', type: 'pick', chain: hit.chain, nodeName: hit.node.name };
-    chrome.runtime.sendMessage(pick);
+    pushToPanel({ ns: 'pd', type: 'pick', chain: hit.chain, nodeName: hit.node.name });
   };
 
   // ---- panel commands ------------------------------------------------------

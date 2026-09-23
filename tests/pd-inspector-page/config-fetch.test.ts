@@ -3,7 +3,7 @@ import {
   fetchComponentGraph,
   fetchPageConfig,
   fetchShellConfig
-} from '../../src/pd-inspector/config';
+} from '../../src/pd-inspector-page/config';
 
 const ctx = { host: 'app.test', path: 'lt-261/9f2c/details', env: 'app' };
 const realFetch = globalThis.fetch;

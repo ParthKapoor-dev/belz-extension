@@ -118,3 +118,9 @@ export function shortUuidFromUrl(url: string): string | null {
 
 export const errorText = (err: unknown): string =>
   err instanceof Error ? err.message : err ? String(err) : '';
+
+/** Why a method lookup failed, for a toast: never empty. */
+export const lookupFailure = (err: unknown): string => errorText(err) || 'lookup failed';
+
+/** A uuid shortened for toasts and link labels. */
+export const shortUuid = (uuid: string): string => uuid.slice(0, 8) + '…';

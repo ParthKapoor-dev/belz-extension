@@ -4,6 +4,8 @@
 //     reachable from the content-script entries only through a dynamic
 //     import(), never a static one.
 //  2. The build still passes its own singleton check (it fails otherwise).
+//  3. The JSON editor (AD only) is not in the PD content script at all: only
+//     ad-content.ts passes it to KeyboardShortcuts.
 //
 // Runs scripts/build.mjs, so it takes about a second.
 import { beforeAll, describe, expect, test } from 'bun:test';
@@ -17,6 +19,8 @@ const modules = path.join(root, 'dist/modules');
 const EAGER_BUDGET = 100 * 1024;
 /** A string only the editor module carries (its CodeMirror theme). */
 const EDITOR_MARKER = '.cm-scroller';
+/** A string only the JSON editor carries (its modal title). */
+const JSON_EDITOR_MARKER = 'Edit Input JSON';
 
 let buildLog = '';
 
@@ -34,6 +38,11 @@ function staticClosure(entry: string): string[] {
   visit(entry);
   return [...seen];
 }
+/** The concatenated code of an entry's static-import closure. */
+const closureCode = (entry: string) =>
+  staticClosure(entry)
+    .map((f) => readFileSync(path.join(modules, f), 'utf8'))
+    .join('\n');
 const sizeOf = (files: string[]) =>
   files.reduce((sum, f) => sum + readFileSync(path.join(modules, f)).length, 0);
 
@@ -56,13 +65,16 @@ describe('build output', () => {
     });
   }
 
+  test('pd-content.js does not bundle the JSON editor; ad-content.js does', () => {
+    expect(closureCode('pd-content.js').includes(JSON_EDITOR_MARKER)).toBe(false);
+    // The marker is live: without this, a renamed title would pass silently.
+    expect(closureCode('ad-content.js').includes(JSON_EDITOR_MARKER)).toBe(true);
+  });
+
   test('the editor exists as a lazily loaded chunk', () => {
     const chunks = readdirSync(modules).filter((f) =>
       readFileSync(path.join(modules, f), 'utf8').includes(EDITOR_MARKER));
     expect(chunks).toHaveLength(1);
-    const adEntry = staticClosure('ad-content.js')
-      .map((f) => readFileSync(path.join(modules, f), 'utf8'))
-      .join('\n');
-    expect(adEntry).toContain(`import("./${chunks[0]}")`);
+    expect(closureCode('ad-content.js')).toContain(`import("./${chunks[0]}")`);
   });
 });

@@ -37,9 +37,18 @@ describe('host storage', () => {
     expect(await readHosts()).toEqual([]);
   });
 
-  test('drops entries without a host, keeps order', async () => {
+  test('drops entries without a host or an enabled flag, keeps order', async () => {
     await fakeChrome.storage.local.set({
-      [HOSTS_STORAGE_KEY]: { hosts: [{ host: 'b.test' }, null, { enabled: true }, { host: 'a.test' }] }
+      [HOSTS_STORAGE_KEY]: {
+        hosts: [
+          { host: 'b.test', enabled: false },
+          null,
+          { enabled: true },
+          { host: 'legacy.test' },
+          { host: 'bad.test', enabled: 'yes' },
+          { host: 'a.test', enabled: true }
+        ]
+      }
     });
     expect((await readHosts()).map((h: any) => h.host)).toEqual(['b.test', 'a.test']);
   });

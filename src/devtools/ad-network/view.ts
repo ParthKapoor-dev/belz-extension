@@ -1,21 +1,7 @@
-// Small DOM builders for the AD Network panel.
+// Small DOM builders for the AD Network panel. `el` itself is shared by both
+// panels, in ../view.ts.
 
-type Kid = Node | string | number | null | undefined;
-
-/** A new element with `props` assigned and `kids` appended (strings as text). */
-export function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  props?: Partial<HTMLElementTagNameMap[K]> | null,
-  ...kids: Kid[]
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (props) Object.assign(node, props);
-  for (const k of kids) {
-    if (k == null) continue;
-    node.append(typeof k === 'object' ? k : document.createTextNode(String(k)));
-  }
-  return node;
-}
+import { el } from '../view';
 
 /** How long a button shows its "done" state. */
 const FLASH_MS = 700;

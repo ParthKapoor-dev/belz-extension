@@ -58,10 +58,11 @@ export function originPattern(host: string): string {
 }
 
 function isHostEntry(value: unknown): value is HostEntry {
-  return Boolean(value) && typeof (value as HostEntry).host === 'string';
+  const entry = value as Partial<HostEntry> | null;
+  return Boolean(entry) && typeof entry!.host === 'string' && typeof entry!.enabled === 'boolean';
 }
 
-/** Every stored entry with a usable `host`, in stored order. */
+/** Every stored entry with a usable `host` and an `enabled` flag, in stored order. */
 export async function readHosts(): Promise<HostEntry[]> {
   const result = await chrome.storage.local.get(HOSTS_STORAGE_KEY);
   const raw = result[HOSTS_STORAGE_KEY] as Partial<StoredHosts> | undefined;

@@ -97,13 +97,16 @@ const POLL_INTERVAL_MS = 500;
 /** Reports the inspected page's in-flight chain requests while started. */
 export class PendingCapture {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  /** Bumped per start, so a poll answered after a stop (and restart) is dropped. */
+  private generation = 0;
 
   constructor(private readonly onUpdate: (entries: PendingEntry[]) => void) {}
 
   start(): void {
     if (this.pollTimer) return;
+    this.generation++;
     // The timer first: install() and poll() only act while started.
-    this.pollTimer = setInterval(() => this.poll(), POLL_INTERVAL_MS);
+    this.pollTimer = setInterval(this.poll, POLL_INTERVAL_MS);
     this.install();
     this.poll();
     chrome.devtools.network.onNavigated.addListener(this.install);
@@ -112,6 +115,7 @@ export class PendingCapture {
   stop(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = null;
+    this.generation++;
     chrome.devtools.network.onNavigated.removeListener(this.install);
   }
 
@@ -121,9 +125,11 @@ export class PendingCapture {
     if (this.pollTimer) void evalInPage(WRAPPER_SCRIPT);
   };
 
-  private async poll(): Promise<void> {
+  private readonly poll = async (): Promise<void> => {
+    const generation = this.generation;
     const result = await evalInPage(READ_SCRIPT);
-    if (!this.pollTimer) return; // stopped while waiting
+    // Stopped while waiting, or stopped and started again: this answer is stale.
+    if (!this.pollTimer || generation !== this.generation) return;
     this.onUpdate(Array.isArray(result) ? (result as PendingEntry[]) : []);
-  }
+  };
 }

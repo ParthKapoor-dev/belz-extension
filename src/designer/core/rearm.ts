@@ -8,8 +8,7 @@
 // covers it without depending on why. `attach` must be idempotent: remove,
 // then add.
 
-/** When to re-attach, in ms after start: spanning a slow SPA bootstrap. */
-const REARM_DELAYS_MS = [1000, 3000, 6000];
+import { TIMINGS } from '../../config/timings';
 
 export class Rearm {
   private readonly timers: Array<ReturnType<typeof setTimeout>> = [];
@@ -20,7 +19,7 @@ export class Rearm {
   start(): void {
     if (this.active) return;
     this.active = true;
-    for (const delay of REARM_DELAYS_MS) this.timers.push(setTimeout(this.run, delay));
+    for (const delay of TIMINGS.rearmDelays) this.timers.push(setTimeout(this.run, delay));
     window.addEventListener('load', this.run);
     window.addEventListener('pageshow', this.run);
   }

@@ -45,6 +45,13 @@ const cellText = (row: HTMLTableRowElement, i: number) => row.children[i]!.textC
 const send = (entry: HarEntry) => fakeChrome.devtools.network.onRequestFinished.dispatch(entry);
 
 let panel: AdNetworkPanel;
+/** Listener counts before the panel started: stop() must return to them. */
+let baseline: number[] = [];
+const listenerCounts = () => [
+  fakeChrome.devtools.network.onRequestFinished.listeners.length,
+  fakeChrome.devtools.network.onNavigated.listeners.length,
+  fakeChrome.storage.onChanged.listeners.length
+];
 
 beforeAll(() => {
   const html = readFileSync(join(import.meta.dir, '../../src/devtools/ad-network/panel.html'), 'utf8');
@@ -58,9 +65,12 @@ beforeAll(() => {
     json: async () => ({ name: 'Resolved', metadata: { service: { name: 'Cat' }, state: 'DRAFT' } })
   })) as unknown as typeof fetch;
   panel = new AdNetworkPanel();
+  baseline = listenerCounts();
   panel.start();
 });
 afterAll(() => {
+  // Removes every listener and timer the panel started, so none outlives the file.
+  panel.stop();
   globalThis.fetch = realFetch;
 });
 beforeEach(() => {
@@ -140,5 +150,19 @@ describe('AD Network panel', () => {
     $('#clear').click();
     expect(rows().length).toBe(0);
     expect($('#count').textContent).toBe('0');
+  });
+
+  test('start() is idempotent; stop() removes what it added; it restarts', async () => {
+    await sleep(20); // the site-list watcher is added once loading settles
+    const running = listenerCounts();
+    panel.start(); // already started: adds nothing
+    expect(listenerCounts()).toEqual(running);
+    panel.stop();
+    expect(listenerCounts()).toEqual(baseline);
+    send(har(UUID_A));
+    expect(rows().length).toBe(0);
+    panel.start();
+    send(har(UUID_A));
+    expect(rows().length).toBe(1);
   });
 });

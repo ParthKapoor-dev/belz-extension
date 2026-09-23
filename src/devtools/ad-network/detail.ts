@@ -3,7 +3,8 @@
 // active tab's content.
 
 import { createJsonView } from './json-tree';
-import { el, kvGrid } from './view';
+import { el } from '../view';
+import { kvGrid } from './view';
 import { headerRows, headersToObj, prettyMaybeJson } from './format';
 import type { MethodNames } from './names';
 import type { InspectedSite } from './origin';
@@ -42,6 +43,9 @@ export class DetailPane {
   private tab: DetailTab = 'headers';
   /** What Copy puts on the clipboard: the active tab's content, no headings. */
   private copyText = '';
+  private started = false;
+  private copiedTimer: ReturnType<typeof setTimeout> | null = null;
+  private responseTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** `onClosed`: the pane was closed, so the table can drop its selection. */
   constructor(
@@ -49,17 +53,40 @@ export class DetailPane {
     private readonly names: MethodNames,
     private readonly site: InspectedSite,
     private readonly onClosed: () => void
-  ) {
-    els.close.addEventListener('click', () => this.close());
-    els.copy.addEventListener('click', () => this.copy());
-    for (const tab of els.tabs) {
-      tab.addEventListener('click', () => {
-        this.tab = (tab.dataset.tab as DetailTab | undefined) ?? 'headers';
-        for (const t of els.tabs) t.classList.toggle('active', t === tab);
-        this.render();
-      });
-    }
+  ) {}
+
+  /** Wire the close, copy and tab buttons. */
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+    this.els.close.addEventListener('click', this.onCloseClick);
+    this.els.copy.addEventListener('click', this.onCopyClick);
+    for (const tab of this.els.tabs) tab.addEventListener('click', this.onTabClick);
   }
+
+  /** Undo start(), and close the pane. */
+  stop(): void {
+    this.started = false;
+    this.els.close.removeEventListener('click', this.onCloseClick);
+    this.els.copy.removeEventListener('click', this.onCopyClick);
+    for (const tab of this.els.tabs) tab.removeEventListener('click', this.onTabClick);
+    if (this.copiedTimer) clearTimeout(this.copiedTimer);
+    if (this.responseTimer) clearTimeout(this.responseTimer);
+    this.copiedTimer = null;
+    this.responseTimer = null;
+    this.close();
+  }
+
+  private readonly onCloseClick = (): void => this.close();
+
+  private readonly onCopyClick = (): void => this.copy();
+
+  private readonly onTabClick = (e: Event): void => {
+    const tab = e.currentTarget as HTMLButtonElement;
+    this.tab = (tab.dataset.tab as DetailTab | undefined) ?? 'headers';
+    for (const t of this.els.tabs) t.classList.toggle('active', t === tab);
+    this.render();
+  };
 
   /** The row shown, if the pane is open. */
   get selected(): Row | null {
@@ -89,7 +116,9 @@ export class DetailPane {
     navigator.clipboard.writeText(this.copyText || '').then(() => {
       button.classList.add('ok');
       button.textContent = 'Copied';
-      setTimeout(() => {
+      if (this.copiedTimer) clearTimeout(this.copiedTimer);
+      this.copiedTimer = setTimeout(() => {
+        this.copiedTimer = null;
         button.classList.remove('ok');
         button.textContent = 'Copy';
       }, COPIED_MS);
@@ -216,7 +245,11 @@ export class DetailPane {
       settle(null);
       return;
     }
-    setTimeout(() => settle(null), RESPONSE_TIMEOUT_MS);
+    if (this.responseTimer) clearTimeout(this.responseTimer);
+    this.responseTimer = setTimeout(() => {
+      this.responseTimer = null;
+      settle(null);
+    }, RESPONSE_TIMEOUT_MS);
   }
 
   private showResponseBody(body: string): void {

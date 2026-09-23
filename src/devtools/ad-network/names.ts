@@ -66,15 +66,19 @@ export class ResolveQueue {
   private readonly pending = new Set<string>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Bumped by stop(), so a flush already running delivers nothing after it. */
+  private generation = 0;
 
   /**
-   * @param ready Settles once the origin, site list and cache are loaded.
+   * @param ready The promise that settles once the origin, site list and
+   *   cache are loaded; asked for at each flush, since the panel makes a new
+   *   one per start().
    * @param onOutcome Told after each batch whether names are unavailable, and why.
    */
   constructor(
     private readonly resolver: MethodResolver,
     private readonly names: MethodNames,
-    private readonly ready: Promise<void>,
+    private readonly ready: () => Promise<void>,
     private readonly onOutcome: (failed: boolean, reason: string) => void
   ) {}
 
@@ -87,8 +91,20 @@ export class ResolveQueue {
     }, RESOLVE_DEBOUNCE_MS);
   }
 
+  /** Drop everything queued and every timer. The queue can be used again. */
+  stop(): void {
+    this.generation++;
+    this.pending.clear();
+    if (this.timer) clearTimeout(this.timer);
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.timer = null;
+    this.retryTimer = null;
+  }
+
   private async flush(): Promise<void> {
-    await this.ready;
+    const generation = this.generation;
+    await this.ready();
+    if (generation !== this.generation) return;
     const uuids = [...this.pending].filter((uuid) => this.names.isIncomplete(uuid));
     this.pending.clear();
     if (uuids.length === 0) return;
@@ -114,6 +130,7 @@ export class ResolveQueue {
       }
     };
     await Promise.all(Array.from({ length: Math.min(RESOLVE_CONCURRENCY, uuids.length) }, worker));
+    if (generation !== this.generation) return; // stopped meanwhile
 
     this.onOutcome(failed.length > 0, errorText(lastError));
     for (const uuid of failed) {

@@ -83,10 +83,12 @@ export class InspectedSite {
     }
   }
 
-  /** Keep the mapping live while the panel is open. */
-  watchSiteConfig(): void {
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (isHostsChange(changes, areaName)) this.loadSiteConfig();
-    });
+  /** Keep the mapping live while the panel is open. Returns the function that stops. */
+  watchSiteConfig(): () => void {
+    const onChanged = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+      if (isHostsChange(changes, areaName)) void this.loadSiteConfig();
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
   }
 }

@@ -9,6 +9,10 @@
 // the overlay remembers its current target and re-derives those coords on
 // every scroll / resize (rAF-throttled).
 
+import { EXTENSION_OWNED_ATTR, ns } from '../config/namespace';
+
+const HOST_ID = ns('PdInspectorHighlight');
+
 const CSS = `
 :host { all: initial; }
 .box {
@@ -39,9 +43,13 @@ export class Highlighter {
   private current: Element[] | null = null;
   private rafPending = false;
 
+  private started = false;
+
+  /** Builds the overlay detached; nothing touches the page until start(). */
   constructor() {
     this.host = document.createElement('div');
-    this.host.id = 'pdi-highlight-host';
+    this.host.id = HOST_ID;
+    this.host.setAttribute(EXTENSION_OWNED_ATTR, '');
     this.host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483646;';
     this.root = this.host.attachShadow({ mode: 'open' });
     const style = document.createElement('style');
@@ -52,15 +60,31 @@ export class Highlighter {
     this.label.className = 'label';
     this.label.style.display = 'none';
     this.root.appendChild(this.label);
+  }
 
+  /** Follow scroll and resize, so a shown highlight stays on its element. */
+  start(): void {
+    if (this.started) return;
+    this.started = true;
     // Capture-phase scroll catches scrolling inside any nested scroll
     // container, not just the document.
     window.addEventListener('scroll', this.onViewportChange, true);
     window.addEventListener('resize', this.onViewportChange);
   }
 
+  /** Undo start(), and take the overlay off the page. */
+  stop(): void {
+    this.started = false;
+    window.removeEventListener('scroll', this.onViewportChange, true);
+    window.removeEventListener('resize', this.onViewportChange);
+    this.hide();
+    if (this.mounted) this.host.remove();
+    this.mounted = false;
+  }
+
   /** Outline one or more elements, with a bright title and a dim subtitle. */
   show(elements: Element[], title: string, subtitle?: string): void {
+    if (!this.started) return;
     this.ensureMounted();
     const els = elements.filter(Boolean);
     if (!els.length) {
@@ -86,14 +110,6 @@ export class Highlighter {
     this.current = null;
     for (const b of this.boxes) b.style.display = 'none';
     this.label.style.display = 'none';
-  }
-
-  destroy(): void {
-    window.removeEventListener('scroll', this.onViewportChange, true);
-    window.removeEventListener('resize', this.onViewportChange);
-    if (this.mounted) this.host.remove();
-    this.mounted = false;
-    this.current = null;
   }
 
   private ensureMounted(): void {
