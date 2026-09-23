@@ -3,15 +3,26 @@
 # Trigger: push a tag like `v1.2.3`.
 #
 # What it does:
-#   1. Builds per-browser extension trees (scripts/pack.mjs).
-#   2. Packs a signed Chromium CRX (key from the CHROME_CRX_KEY secret).
-#   3. Signs a Firefox XPI via the Mozilla AMO API (unlisted channel).
-#   4. Generates the update manifests (updates.xml / updates.json).
-#   5. Attaches the CRX + XPI to the GitHub Release and publishes the update
+#   1. Type-checks and runs the unit tests: nothing is built from a tag that fails them.
+#   2. Builds per-browser extension trees (scripts/pack.mjs).
+#   3. Packs a signed Chromium CRX (key from the CHROME_CRX_KEY secret).
+#   4. Signs a Firefox XPI via the Mozilla AMO API (unlisted channel).
+#   5. Generates the update manifests (updates.xml / updates.json).
+#   6. Attaches the CRX + XPI to the GitHub Release and publishes the update
 #      manifests to GitHub Pages at a stable URL.
 #
 # Force-installed browsers auto-update from the Pages-hosted manifests whenever
 # a new `v*` tag is pushed.
+#
+# Supply chain: every action is pinned to a full commit SHA (the tag it came
+# from is in the comment), Bun to an exact version, and the signing tools (crx3,
+# web-ext) to the exact devDependency versions in package.json and bun.lock,
+# installed with the rest by `bun install --frozen-lockfile`. To update one,
+# change the SHA and its comment together.
+#
+# Secrets: the CRX key exists on disk only inside the step that signs, and is
+# shredded by an always() step even if signing fails. The AMO credentials are
+# given to the one step that uses them, as environment variables.
 #
 # Required repository secrets:
 #   CHROME_CRX_KEY    PEM private key for CRX signing. Generate ONCE and never
@@ -46,11 +57,11 @@ jobs:
     environment:
       name: github-pages
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.2.20
 
       - name: Resolve version from tag
         id: ver
@@ -58,6 +69,12 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Type-check
+        run: bun run typecheck
+
+      - name: Unit tests
+        run: bun test
 
       - name: Build per-browser extension trees
         run: node scripts/pack.mjs --version "${{ steps.ver.outputs.version }}"
@@ -67,11 +84,14 @@ jobs:
         env:
           CHROME_CRX_KEY: ${{ secrets.CHROME_CRX_KEY }}
         run: |
+          umask 077
           printf '%s' "$CHROME_CRX_KEY" > key.pem
           mkdir -p dist-pack
-          npx --yes crx3 -k key.pem \
+          # -p is crx3's key option; with any other flag it signs with a new,
+          # random key and the extension ID changes.
+          ./node_modules/.bin/crx3 -p key.pem \
             -o "dist-pack/belz-extension-${{ steps.ver.outputs.version }}.crx" \
-            build/chrome
+            build/chrome < /dev/null
           # Derive the deterministic Chrome extension ID from the public key.
           ID=$(node -e '
             const {execSync}=require("child_process");const crypto=require("crypto");
@@ -84,7 +104,11 @@ jobs:
           if [ -z "$ID" ]; then echo "::error::could not derive the Chrome extension ID from CHROME_CRX_KEY"; exit 1; fi
           echo "id=$ID" >> "$GITHUB_OUTPUT"
           echo "Chrome extension ID: $ID"
-          rm -f key.pem
+
+      - name: Remove the CRX key
+        if: always()
+        run: |
+          if [ -f key.pem ]; then shred -u key.pem 2>/dev/null || rm -f key.pem; fi
 
       - name: Sign Firefox XPI via AMO
         id: xpi
@@ -92,7 +116,7 @@ jobs:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
-          npx --yes web-ext@latest sign \
+          ./node_modules/.bin/web-ext sign \
             --source-dir=build/firefox \
             --channel=unlisted \
             --api-key="$AMO_JWT_ISSUER" \
@@ -147,7 +171,7 @@ jobs:
           gh release upload "$TAG" "dist-pack/belz-extension-${{ steps.ver.outputs.version }}.crx" "${{ steps.xpi.outputs.xpi }}" --clobber
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: pages
 
@@ -162,4 +186,4 @@ jobs:
       id-token: write
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
