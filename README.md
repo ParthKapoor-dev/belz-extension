@@ -73,6 +73,7 @@ Repeat for each environment you use (dev, QA, and so on). To remove access, clic
 | Feature | How to use it |
 |---|---|
 | **Large text editor** | Hover over any text box and click **⤢** (top-right corner). Opens a full-screen editor with line numbers, search (`Ctrl+F`) and syntax highlighting. It detects the language automatically: SQL, SpEL, JavaScript, JSON, Java, Python or plain text. `Ctrl+S` saves the text back into the box. On published methods, the editor opens read-only. |
+| **`#{variable}` intellisense** | In the large editor, type `#{` to pick from the method's inputs, internal variables and step outputs. Hover a name to see where it comes from. Unknown names, outputs of steps that run later, and an unclosed `#{` are underlined. Variables are read from the page each time the editor opens, so unsaved edits (a step you just added) are included. The footer shows the current step and how many variables it can use. |
 | **Copy a text box** | Hover over a text box and click **⧉**. |
 | **Edit inputs as JSON** | Click the **JSON** button next to a method's **Inputs** heading, or press `Shift+J`. Edit every input as one JSON document. Your changes go back into each input field with the correct type, including dates, booleans and structured data. |
 | **Copy an output** | Hover over an output and click **⧉**. |
@@ -82,7 +83,7 @@ Repeat for each environment you use (dev, QA, and so on). To remove access, clic
 
 ### In Page Designer
 
-The tab title updates to `PD: <page name>`, and the text-editor, copy and settings tools work the same as in Automation Designer.
+The tab title updates to `PD: <page name>`, and the text-editor, copy and settings tools work the same as in Automation Designer (without the `#{variable}` intellisense, which is AD-only).
 
 ### DevTools: AD Network
 
@@ -106,7 +107,7 @@ Open a **published** page (a `/pages/...` URL) on an allowed site, open DevTools
 
 ### Settings
 
-Click the **⚙** button next to the page title in AD or PD, or press `Alt+Shift+S`. Here you can switch any feature on or off and set the editor's default font size and line wrapping. Under **Advanced**, **Debug Logging** prints the extension's step-by-step messages to the browser console. Changes apply immediately and are shared across all your sites.
+Click the **⚙** button next to the page title in AD or PD, or press `Alt+Shift+S`. Here you can switch any feature on or off, set the editor's default font size and line wrapping, and turn the editor's **Variable Intellisense** on or off. Under **Advanced**, **Debug Logging** prints the extension's step-by-step messages to the browser console. Changes apply immediately and are shared across all your sites.
 
 ---
 

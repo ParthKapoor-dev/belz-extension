@@ -85,7 +85,7 @@ src/
     options.html, index.ts
 ```
 
-Designer features (`src/designer/features/`): `title-updater` (tab title), `keyboard` (shortcuts), `run-test` (Run Test lookup + click), `json-editor` (JSON modal: extractor, sync engine, type adapters), `output-copy` (hover copy icon), `textarea-editor` (shared hover overlay + lazy CodeMirror modal), `curl-autofill` (autofill from the AD Network panel; started directly by `ad-content.ts`), `settings` (the always-on ⚙ button, shortcuts and settings modal).
+Designer features (`src/designer/features/`): `title-updater` (tab title), `keyboard` (shortcuts), `run-test` (Run Test lookup + click), `json-editor` (JSON modal: extractor, sync engine, type adapters), `output-copy` (hover copy icon), `textarea-editor` (shared hover overlay + lazy CodeMirror modal, with `#{variable}` completion/hover/lint), `ad-scope` (AD-only scanner of the `#{variables}` in scope, injected into `textarea-editor`), `curl-autofill` (autofill from the AD Network panel; started directly by `ad-content.ts`), `settings` (the always-on ⚙ button, shortcuts and settings modal).
 
 The page-side PD Inspector folder is `pd-inspector-page/` and the DevTools panel folder is `devtools/pd-inspector/`: the first runs inside the published page, the second is the panel UI. The page-side bundle keeps its output name `dist/pd-inspector.js`, which `background/content-scripts.ts` registers.
 
@@ -111,9 +111,9 @@ A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see
 
 ## Testing
 
-- **Unit tests: `bun test`.** They live in `tests/`, mirroring `src/`. `tests/setup.ts` (preloaded via `bunfig.toml`) installs a happy-dom DOM and the in-memory `chrome` API from `tests/fakes/chrome.ts` before any source module loads. `tests/fixtures/ad-inputs.ts` renders a minimal Automation Designer Inputs step for the JSON editor tests. `tests/build/bundle.test.ts` runs the real build and fails if the editor becomes part of the page-load bundle, if that bundle passes 100 KB, or if the JSON editor (marker: its "Edit Input JSON" title) reaches `pd-content.js`'s static-import closure. CI (`.github/workflows/test.yml`) runs the type-check, the unit tests and the build on every push.
+- **Unit tests: `bun test`.** They live in `tests/`, mirroring `src/`. `tests/setup.ts` (preloaded via `bunfig.toml`) installs a happy-dom DOM and the in-memory `chrome` API from `tests/fakes/chrome.ts` before any source module loads. `tests/fixtures/ad-inputs.ts` renders a minimal Automation Designer Inputs step for the JSON editor tests. `tests/build/bundle.test.ts` runs the real build and fails if the editor becomes part of the page-load bundle, if that bundle passes 100 KB, or if the JSON editor (marker: its "Edit Input JSON" title) or the AD variable scanner (marker: its `"ad-scope"` logger scope) reaches `pd-content.js`'s static-import closure. CI (`.github/workflows/test.yml`) runs the type-check, the unit tests and the build on every push.
 - **Never `expect()` a value that holds DOM nodes.** When such an assertion fails, bun's failure printer walks the whole happy-dom object graph and allocates without limit: one did reach ~10 GB and got the terminal killed by the out-of-memory killer. Compare plain fields, or identities with `expect(a === b).toBe(true)`. As a backstop, `tests/memory-guard-worker.ts` kills the test run at 1 GB (`BELZ_TEST_MEMORY_LIMIT_MB` to change it).
-- **End-to-end: `bun run test:e2e`** (`tests/e2e/run.mjs`). It builds, copies both packaged trees, and changes only their manifests: a static content script on a local page, plus access to 127.0.0.1. Then it loads the shipped files in headless Chromium (DevTools protocol) and Firefox (WebDriver BiDi), on `tests/e2e/page.html`. The page drives itself: the content script runs, the editor is not loaded until clicked, the overlay appears (including on a disabled, "published" textarea), the editor opens with the text and detects SQL, and the lazily loaded editor and the eager shortcut share one modal lock. A browser that is not installed is skipped. Match patterns in the patched manifest carry no port: Firefox rejects a pattern with one.
+- **End-to-end: `bun run test:e2e`** (`tests/e2e/run.mjs`). It builds, copies both packaged trees, and changes only their manifests: a static content script on a local page, plus access to 127.0.0.1. Then it loads the shipped files in headless Chromium (DevTools protocol) and Firefox (WebDriver BiDi), on `tests/e2e/page.html`. The page drives itself: the content script runs, the editor is not loaded until clicked, the overlay appears (including on a disabled, "published" textarea), the editor opens with the text and detects SQL, the AD variable scanner ran (footer status), and the lazily loaded editor and the eager shortcut share one modal lock. A browser that is not installed is skipped. Match patterns in the patched manifest carry no port: Firefox rejects a pattern with one.
 - **Modules that act on import** (the panels, the options page, `background/index.ts`) are thin wiring. Their logic lives in importable modules (`shared/hosts.ts`, `background/content-scripts.ts`, `json-editor/values.ts`, `textarea-editor/language.ts`, …) so it can be tested.
 
 ## Feature flow (AD/PD)
@@ -127,7 +127,7 @@ A `v*` tag pushed to the remote triggers `.github/workflows/release.yml` — see
 Code that holds state or has a lifecycle is a class; pure helpers stay functions.
 
 - **`Feature`** (`core/feature.ts`): `start()` / `stop()`. Each toggleable feature is a class implementing it: `TitleUpdater`, `KeyboardShortcuts`, `JsonEditor`, `OutputCopy`, `TextareaEditor`. Both must be safe to call twice, and `stop()` must undo everything `start()` did (listeners, timers, observer subscriptions, injected DOM; a feature that owns a modal calls its `dispose()`). Event handlers are arrow-function properties so `removeEventListener` gets the same function. `SettingsLauncher` is not a Feature: it is always on, for the life of the page.
-- **Dependencies are passed in**, not imported, where a feature would otherwise drag code into the wrong bundle: `KeyboardShortcuts` takes the JSON editor's `open` as a constructor argument, which only `ad-content.ts` passes, so PD pages do not bundle the JSON editor.
+- **Dependencies are passed in**, not imported, where a feature would otherwise drag code into the wrong bundle: `KeyboardShortcuts` takes the JSON editor's `open` as a constructor argument, which only `ad-content.ts` passes, so PD pages do not bundle the JSON editor. Likewise `TextareaEditor` takes an optional `ScopeProvider` (`textarea-editor/scope.ts`), which only `ad-content.ts` passes (`ad-scope/scan.ts`), so PD pages do not bundle the variable scanner.
 - **`Rearm`** (`core/rearm.ts`) re-registers page listeners a few times while the host SPA boots (listeners attached too early were observed to go dead), at `TIMINGS.rearmDelays`. `HoverOverlay` and `KeyboardShortcuts` use it. `KeyboardShortcuts` also re-attaches its keydown listener on every page change through `pageObserver.subscribe` (unsubscribed in `stop()`): without that self-healing, a listener the page dropped after boot left the shortcuts silently dead until a settings toggle.
 - **Page-wide singletons**: one instance per page, exported next to the class. `settings` (`SettingsStore`, with its storage injected: `chromeSettingsStorage()` in the extension, an in-memory one in tests), `pageObserver` (`PageObserver`), `modalLock` (`ModalLock`), `toast` (`Toast`), and the three modals: `jsonEditorModal`, `settingsModal`, `textareaEditorModal`. They are shared by several features and by the lazily loaded editor chunk, which is why each must be bundled once (see "Content-script module graph").
 - **`HoverOverlay`** (`ui/hover-overlay.ts`) is a class the features own an instance of: `OutputCopy` and `TextareaEditor` each create one.
@@ -137,7 +137,7 @@ Code that holds state or has a lifecycle is a class; pure helpers stay functions
 ### Settings, selectors, timings: one place each
 
 - **Settings.** `src/config/settings.ts` is the only list of settings. Each entry gives its label, description, default, allowed values and the settings-modal section (`features`, `editor`, `advanced`). The `Settings` type, `DEFAULT_SETTINGS`, validation (`sanitizeSetting`) and the modal's rows are all derived from it. To add a setting, add one entry there. `designer/core/settings.ts` only holds the page's live copy and keeps it in step with `chrome.storage`.
-- **Host-page selectors.** Every selector that reads the designers' own markup is in `src/config/selectors.ts`, grouped by area (`HEADER`, `AD`, `PD`, `AD_INPUTS`, `AD_WIDGETS`). A list means "try in order, first match wins" (`firstMatch()` in `designer/utils/dom.ts`). The extension's own ids and classes are not there: they are built with `ns()` next to the code that creates them.
+- **Host-page selectors.** Every selector that reads the designers' own markup is in `src/config/selectors.ts`, grouped by area (`HEADER`, `AD`, `PD`, `AD_INPUTS`, `AD_WIDGETS`, `AD_SCOPE`). A list means "try in order, first match wins" (`firstMatch()` in `designer/utils/dom.ts`). The extension's own ids and classes are not there: they are built with `ns()` next to the code that creates them.
 - **Host-page timings.** Waits tuned against the designers' rendering (widget polls, pauses after clicks, first-try delays, `rearmDelays`, `pdRoutePoll`) are in `src/config/timings.ts`. Timings of the extension's own UI (hover grace, Esc Esc window) stay next to their code, except `panelFocusFlash`, which both DevTools panels share (through `FocusFlash` in `devtools/view.ts`).
 
 ### Logging
@@ -214,15 +214,31 @@ Answers one question on a published page: *which Page Designer components are on
 
 Measured node visits per single DOM mutation on a synthetic 40-step method (7,973 nodes, 120 textareas): **2,138,128 → 80**. Idle cost is zero. If you change this file, re-run the benchmark before and after.
 
+## `#{variable}` intellisense (AD only)
+
+The large editor completes, explains and lints `#{variable}` references. It knows which variables exist from the **live page DOM**, never the chain API, so unsaved draft edits (a step just added, a renamed output) count and no auth is needed.
+
+- **Scanner** (`designer/features/ad-scope/scan.ts`, `scanScope(root, textarea)`): pure, AD-only, no state. Two `querySelectorAll` calls, one per group. It runs on **every** editor open (`TextareaEditor.scopeFor`), never cached across opens, never per keystroke, no MutationObserver.
+- **DOM contract** (`AD_SCOPE` in `config/selectors.ts`, verified on a live AD page):
+  - Inputs and internal variables: `#step2 .fieldCode`, text `Field Code: #{name}`. Inside `.INTERNAL_LIST` it is an internal variable, otherwise (`.INPUT_LIST`) a method input.
+  - Steps: `exp-sd-step-three` with id `step3_<index>` (0-based; the UI labels it `3.<index+1>`).
+  - Step outputs: `exp-sd-step-three[id^="step3_"] div._input-value > div.mt1.font-size-smallest`, text `Field Code : #{name}` (space before the colon).
+  - Both texts are parsed with `/Field Code\s*:\s*#\{([^}]+)\}/`.
+  - The edited step is `textarea.closest('exp-sd-step-three[id^="step3_"]')`; none means "outside steps".
+- **Scoping.** Inputs and internal variables are always in scope. Outputs of steps before the edited one are in scope; outputs of the edited step and later ones are not (listed last in completion as `step 3.k (later)`, and linted). Outside any step, everything is in scope. A name is listed once: an output written into a declared variable stays the variable; an output of several steps keeps the earliest. Loop sources are not in the DOM, so `element` is offered after `#{name.` for any known name.
+- **Editor side** (lazy chunk): `textarea-editor/scope.ts` is the type-only contract (`ScopeVariable`, `VariableScope`, `ScopeProvider`). `references.ts` is pure string logic (finding `#{ … }` with nested braces and string literals, lint, hover lookup, labels, footer status). `variables.ts` wires it into CodeMirror: a completion source prepended to every mode's override list (for Java/Python, whose own completion comes from language data, it is added as language data; JSON/plain get an `autocompletion()` with just this source), a `hoverTooltip`, and a `linter` (`@codemirror/lint`). Completion triggers after `#{` (inserting `name}` unless a `}` already follows) and on bare names inside an open `#{ …` (SpEL). The footer shows e.g. `Step 3.4 · 12 variables in scope`.
+- **Lint is conservative.** Only simple `#{name}` / `#{name.path}` forms are checked: unknown root name, output of a later step, plus any unclosed `#{`. Complex SpEL, `T(…)`, `#this`, literals and keywords are left alone, and unknown-name warnings are suppressed when the scan found no variables at all (a page whose markup changed produces no noise).
+- **Setting:** `textareaVariableIntellisense` (editor section, default on). Off, or on PD pages, the editor opens with no scope: no completion, hover, lint or status for variables. Read-only sources get it too (display only; Save stays disabled).
+
 ## Content-script module graph (lazy editor)
 
-The editor modal (`designer/features/textarea-editor/modal.ts`) carries CodeMirror and every language mode, ~590 KB. It used to be ~94% of each content script, parsed on every AD and PD page load. It is now reached only through `import('./modal')` in `textarea-editor/index.ts`, and fetched on the first **Open** click.
+The editor modal (`designer/features/textarea-editor/modal.ts`) carries CodeMirror and every language mode, ~610 KB (with `@codemirror/lint` for the variable linter). It used to be ~94% of each content script, parsed on every AD and PD page load. It is now reached only through `import('./modal')` in `textarea-editor/index.ts`, and fetched on the first **Open** click.
 
 | | Before | After |
 |---|---|---|
 | Parsed on every AD page load | 641 KB | 53 KB |
 | Parsed on every PD page load | 638 KB | 50 KB |
-| Fetched on first Open click | — | 590 KB (then cached; reopen ~50 ms) |
+| Fetched on first Open click | — | 590 KB, now ~610 KB with the variable linter (then cached; reopen ~50 ms) |
 
 How it fits together:
 

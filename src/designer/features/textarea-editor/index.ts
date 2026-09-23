@@ -23,6 +23,8 @@ import {
 } from '../../ui/styles';
 import { createLogger } from '../../../shared/logger';
 import type { Feature } from '../../core/feature';
+import { settings } from '../../core/settings';
+import type { ScopeProvider, VariableScope } from './scope';
 
 const log = createLogger('textarea-editor');
 
@@ -62,6 +64,14 @@ function sizeForTextarea(rect: DOMRect): OverlaySize {
 }
 
 export class TextareaEditor implements Feature {
+  /**
+   * `scopeProvider` reads the `#{variables}` in scope at a textarea, for the
+   * editor's completion, hover and lint. Only ad-content.ts passes one
+   * (designer/features/ad-scope), so PD pages do not bundle the scanner and
+   * their editor simply has no variables.
+   */
+  constructor(private readonly scopeProvider?: ScopeProvider) {}
+
   private readonly overlay = new HoverOverlay({
     id: CONTROLS_ID,
     label: 'textarea overlay',
@@ -136,10 +146,22 @@ export class TextareaEditor implements Feature {
     return this.modal;
   }
 
+  /** The variables in scope at `textarea`, read once per open; null when off or unavailable. */
+  private scopeFor(textarea: HTMLTextAreaElement): VariableScope | null {
+    if (!this.scopeProvider || !settings.get().textareaVariableIntellisense) return null;
+    try {
+      return this.scopeProvider(textarea);
+    } catch (error) {
+      // A page the scanner cannot read still gets its editor, just without variables.
+      log.warn('could not read the variables in scope:', error);
+      return null;
+    }
+  }
+
   private async openEditorFor(textarea: HTMLTextAreaElement): Promise<void> {
     try {
       const { textareaEditorModal } = await this.loadModal();
-      textareaEditorModal.open(textarea);
+      textareaEditorModal.open(textarea, this.scopeFor(textarea));
     } catch (error) {
       log.error('textarea editor failed to load:', error);
       toast.show('Editor failed to load — see console');

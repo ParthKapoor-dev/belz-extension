@@ -7,6 +7,7 @@ import { jsonEditorModal } from './features/json-editor/modal';
 import { startCurlAutofillFeature } from './features/curl-autofill/index';
 import { OutputCopy } from './features/output-copy/index';
 import { TextareaEditor } from './features/textarea-editor/index';
+import { scanScope } from './features/ad-scope/scan';
 import { bootstrap } from './core/bootstrap';
 
 bootstrap({
@@ -14,7 +15,8 @@ bootstrap({
   runTestShortcut: new KeyboardShortcuts(() => jsonEditorModal.open()),
   jsonEditor: new JsonEditor(),
   outputCopy: new OutputCopy(),
-  textareaEditor: new TextareaEditor()
+  // The `#{variables}` in scope, re-read off the live method page on every editor open.
+  textareaEditor: new TextareaEditor((textarea) => scanScope(document, textarea))
 });
 
 // Fill the inputs from the AD Network panel's "open with this request" link.

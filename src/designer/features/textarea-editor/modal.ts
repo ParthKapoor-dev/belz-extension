@@ -36,7 +36,10 @@ import {
 import { LANGUAGE_OPTIONS, detectLanguage, type LanguageMode } from './language';
 import { copyText } from '../../utils/clipboard';
 import type { Extension } from '@codemirror/state';
-import type { CompletionContext, CompletionResult } from '@codemirror/autocomplete';
+import type { CompletionContext, CompletionResult, CompletionSource } from '@codemirror/autocomplete';
+import { variableCompletionSource, variableExtensions } from './variables';
+import { scopeStatus } from './references';
+import type { VariableScope } from './scope';
 
 const OVERLAY_ID = ns('TextareaEditorOverlay');
 const TITLE_ID = ns('TextareaEditorTitle');
@@ -47,6 +50,9 @@ const LANG_SELECT_ID = ns('TextareaEditorLanguage');
 const WRAP_SELECT_ID = ns('TextareaEditorWrapMode');
 const FONT_SIZE_SELECT_ID = ns('TextareaEditorFontSize');
 const EDITOR_SETTINGS_BUTTON_ID = ns('TextareaEditorSettingsButton');
+const STATUS_ID = ns('TextareaEditorStatus');
+
+const DEFAULT_STATUS = 'Syntax highlighting and optional line wrapping.';
 
 const EDITOR_VERTICAL_PADDING_PX = 14;
 const EDITOR_HORIZONTAL_PADDING_PX = 16;
@@ -94,11 +100,17 @@ function spelCompletionSource(context: CompletionContext): CompletionResult | nu
   return { from: word.from, options };
 }
 
-function getAutocompleteExtensionsForMode(mode: LanguageMode): Extension[] {
+/**
+ * Completion for a mode. `variables`, when the page supplied a scope, is
+ * listed first in every mode: prepended to an override list, or added as
+ * language data where the language's own sources come from language data.
+ */
+function getAutocompleteExtensionsForMode(mode: LanguageMode, variables: CompletionSource | null): Extension[] {
+  const extra = variables ? [variables] : [];
   if (mode === 'sql') {
     return [
       autocompletion({
-        override: [keywordCompletionSource(StandardSQL, true)]
+        override: [...extra, keywordCompletionSource(StandardSQL, true)]
       }),
       closeBrackets(),
     ];
@@ -106,26 +118,29 @@ function getAutocompleteExtensionsForMode(mode: LanguageMode): Extension[] {
   if (mode === 'javascript') {
     return [
       autocompletion({
-        override: [localCompletionSource, scopeCompletionSource(globalThis)]
+        override: [...extra, localCompletionSource, scopeCompletionSource(globalThis)]
       }),
       closeBrackets(),
     ];
   }
   if (mode === 'spel') {
     return [
-      autocompletion({ override: [spelCompletionSource] }),
+      autocompletion({ override: [...extra, spelCompletionSource] }),
       closeBrackets(),
     ];
-  }
-  if (mode === 'json') {
-    return [closeBrackets()];
   }
   if (mode === 'java' || mode === 'python') {
     // No override: the language packages register their own completion sources
     // via language data, which the default autocompletion() config picks up.
-    return [autocompletion(), closeBrackets()];
+    return [
+      autocompletion(),
+      closeBrackets(),
+      ...extra.map((source) => EditorState.languageData.of(() => [{ autocomplete: source }]))
+    ];
   }
-  return [];
+  // json and plain have no completion of their own.
+  const completion = extra.length ? [autocompletion({ override: extra })] : [];
+  return mode === 'json' ? [...completion, closeBrackets()] : completion;
 }
 
 const editorTheme = EditorView.theme(
@@ -432,6 +447,10 @@ export class TextareaEditorModal {
   private readonly languageCompartment = new Compartment();
   private readonly wrapCompartment = new Compartment();
   private readonly autocompleteCompartment = new Compartment();
+  /** The variables in scope for this open, read once by the page's scope provider. */
+  private scope: VariableScope | null = null;
+  /** Completion over `scope`, built once per open and reused on mode changes. */
+  private variableSource: CompletionSource | null = null;
   private unsubscribeSettings: (() => void) | null = null;
 
   private destroyView(): void {
@@ -461,7 +480,7 @@ export class TextareaEditorModal {
     this.view.dispatch({
       effects: [
         this.languageCompartment.reconfigure(getLanguageExtensionForMode(mode)),
-        this.autocompleteCompartment.reconfigure(getAutocompleteExtensionsForMode(mode))
+        this.autocompleteCompartment.reconfigure(getAutocompleteExtensionsForMode(mode, this.variableSource))
       ]
     });
   }
@@ -498,7 +517,8 @@ export class TextareaEditorModal {
       editorTheme,
       oneDark,
       this.languageCompartment.of(getLanguageExtensionForMode(initialLanguageMode)),
-      this.autocompleteCompartment.of(getAutocompleteExtensionsForMode(initialLanguageMode)),
+      this.autocompleteCompartment.of(getAutocompleteExtensionsForMode(initialLanguageMode, this.variableSource)),
+      this.scope ? variableExtensions(this.scope) : [],
       this.wrapCompartment.of(getWrapExtensionForMode(selectedWrapMode)),
       EditorView.updateListener.of((update) => {
         if (!update.docChanged || !this.view) return;
@@ -571,6 +591,8 @@ export class TextareaEditorModal {
     if (!this.overlay || this.overlay.style.display === 'none') return;
     this.overlay.style.display = 'none';
     this.source = null;
+    this.scope = null;
+    this.variableSource = null;
     this.destroyView();
     modalLock.unlock();
   }
@@ -635,6 +657,9 @@ export class TextareaEditorModal {
     saveBtn.disabled = readOnly;
     saveBtn.style.opacity = readOnly ? '0.45' : '1';
     saveBtn.style.cursor = readOnly ? 'not-allowed' : 'pointer';
+
+    const status = byId<HTMLElement>(STATUS_ID);
+    if (status) status.textContent = this.scope ? scopeStatus(this.scope) : DEFAULT_STATUS;
 
     syncEditorControlValuesFromSettings();
     this.createView(sourceEl);
@@ -868,7 +893,8 @@ export class TextareaEditorModal {
     Object.assign(footer.style, MODAL_FOOTER);
 
     const helper = document.createElement('div');
-    helper.textContent = 'Syntax highlighting and optional line wrapping.';
+    helper.id = STATUS_ID;
+    helper.textContent = DEFAULT_STATUS;
     Object.assign(helper.style, {
       color: T.fgFaint,
       fontSize: '12px'
@@ -925,12 +951,18 @@ export class TextareaEditorModal {
     return this.overlay;
   }
 
-  open(sourceEl: HTMLTextAreaElement): void {
+  /**
+   * Edit `sourceEl`. `scope`, when given, turns on `#{variable}` completion,
+   * hover and lint for this open (AD pages only; see scope.ts).
+   */
+  open(sourceEl: HTMLTextAreaElement, scope: VariableScope | null = null): void {
     if (!sourceEl) return;
 
     const modal = this.ensureOverlay();
     const wasOpen = modal.style.display === 'flex';
     this.source = sourceEl;
+    this.scope = scope;
+    this.variableSource = scope ? variableCompletionSource(scope) : null;
     this.showSource(sourceEl);
     modal.style.display = 'flex';
     if (!wasOpen) {

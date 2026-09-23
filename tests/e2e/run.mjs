@@ -36,6 +36,7 @@ const EXPECTED = {
   editorOpened: true,
   contentMatches: true,
   detected: 'sql',
+  variableStatus: 'Outside steps · 2 variables in scope',
   runTestWhileEditorOpen: 0,
   editorClosed: true,
   runTestAfterClose: 1,

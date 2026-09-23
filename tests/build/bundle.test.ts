@@ -6,6 +6,8 @@
 //  2. The build still passes its own singleton check (it fails otherwise).
 //  3. The JSON editor (AD only) is not in the PD content script at all: only
 //     ad-content.ts passes it to KeyboardShortcuts.
+//  4. Nor is the AD `#{variable}` scanner: only ad-content.ts passes it to
+//     TextareaEditor.
 //
 // Runs scripts/build.mjs, so it takes about a second.
 import { beforeAll, describe, expect, test } from 'bun:test';
@@ -21,6 +23,8 @@ const EAGER_BUDGET = 100 * 1024;
 const EDITOR_MARKER = '.cm-scroller';
 /** A string only the JSON editor carries (its modal title). */
 const JSON_EDITOR_MARKER = 'Edit Input JSON';
+/** A string only the AD variable scanner carries (its logger scope). */
+const SCOPE_SCANNER_MARKER = '"ad-scope"';
 
 let buildLog = '';
 
@@ -69,6 +73,11 @@ describe('build output', () => {
     expect(closureCode('pd-content.js').includes(JSON_EDITOR_MARKER)).toBe(false);
     // The marker is live: without this, a renamed title would pass silently.
     expect(closureCode('ad-content.js').includes(JSON_EDITOR_MARKER)).toBe(true);
+  });
+
+  test('pd-content.js does not bundle the AD variable scanner; ad-content.js does', () => {
+    expect(closureCode('pd-content.js').includes(SCOPE_SCANNER_MARKER)).toBe(false);
+    expect(closureCode('ad-content.js').includes(SCOPE_SCANNER_MARKER)).toBe(true);
   });
 
   test('the editor exists as a lazily loaded chunk', () => {

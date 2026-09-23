@@ -65,6 +65,11 @@ export const SETTINGS = {
     default: 13,
     options: FONT_SIZES.map((value) => ({ value, label: `${value}px` }))
   }),
+  textareaVariableIntellisense: toggle(
+    'editor',
+    'Variable Intellisense',
+    'Complete, explain and check #{variables} in the large editor (Automation Designer)'
+  ),
 
   debugLogging: toggle(
     'advanced',

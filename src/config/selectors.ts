@@ -132,3 +132,24 @@ export const AD_WIDGETS = {
     ampmToggle: 'exp-svg-icon.chevron, .chevron'
   }
 } as const;
+
+/**
+ * The variables an AD method declares, read from the live page by the large
+ * editor's `#{variable}` intellisense (designer/features/ad-scope). The live
+ * DOM, not the chain API, so unsaved draft edits (a step just added) count.
+ */
+export const AD_SCOPE = {
+  /** Inputs and internal variables: "Field Code: #{name}", inside the Inputs step. */
+  declaredFieldCodes: '#step2 .fieldCode',
+  /** A declared field code inside this is a method input… */
+  inputList: '.INPUT_LIST',
+  /** …and inside this, an internal variable. */
+  internalList: '.INTERNAL_LIST',
+  /** One step; its id is `step3_<index>` (0-based, labelled "3.<index + 1>" in the UI). */
+  step: 'exp-sd-step-three[id^="step3_"]',
+  stepIdPrefix: 'step3_',
+  /** A step output's field code: "Field Code : #{name}" (note the space before the colon). */
+  stepOutputFieldCodes: 'exp-sd-step-three[id^="step3_"] div._input-value > div.mt1.font-size-smallest',
+  /** The name in either field-code text. */
+  fieldCodeText: /Field Code\s*:\s*#\{([^}]+)\}/
+} as const;

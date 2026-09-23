@@ -14,6 +14,13 @@
 <textarea id="ta">select id from guardian where account_id = '#{userId}'</textarea>
 <!-- A PUBLISHED method renders its steps as disabled fields. -->
 <textarea id="published" disabled>select 1 from dual</textarea>
+<!-- Just enough method markup for the #{variable} scanner: one input, one step output. -->
+<exp-sd-step-two id="step2" hidden>
+  <div class="INPUT_LIST"><div class="fieldCode">Field Code: #{userId}</div></div>
+</exp-sd-step-two>
+<exp-sd-step-three id="step3_0" hidden>
+  <div class="_input-value"><div class="mt1 font-size-smallest">Field Code : #{guardians}</div></div>
+</exp-sd-step-three>
 <exp-button id="runTest"><button id="runTestInner" type="button">Run Test</button></exp-button>
 <script>
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -64,6 +71,8 @@ const overlayShown = () => {
     r.editorOpened = !!editor;
     r.contentMatches = editor ? $('.cm-content').textContent === ta.value : false;
     r.detected = ($('#sdExtensionTextareaEditorLanguage') || {}).value || null;
+    // The AD scanner ran on open; this textarea is outside any step.
+    r.variableStatus = ($('#sdExtensionTextareaEditorStatus') || {}).textContent || null;
 
     // The lazily loaded editor and the eagerly loaded shortcut must share ONE
     // modal lock: with the editor open, Run Test must not fire.
