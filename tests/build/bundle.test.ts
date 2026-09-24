@@ -11,6 +11,8 @@
 //  5. The IDE's formatter (sql-formatter) is its own lazily loaded chunk:
 //     not parsed on page load, nor when the IDE opens, only on the first
 //     Format.
+//  6. So is Vim mode (@replit/codemirror-vim): not parsed on page load, nor
+//     when the IDE opens, only while the IDE Vim Mode setting is on.
 //
 // Runs scripts/build.mjs, so it rewrites dist/ and takes a few seconds.
 import { beforeAll, describe, expect, test } from 'bun:test';
@@ -22,8 +24,12 @@ const root = path.resolve(import.meta.dir, '../..');
 const modules = path.join(root, 'dist/modules');
 /** Page-load budget per designer page, in bytes. It was 656 KB before the lazy IDE. */
 const EAGER_BUDGET = 100 * 1024;
-/** A string only the IDE module carries (its CodeMirror theme). */
+/** A string only CodeMirror carries: the IDE and the CodeMirror chunk it shares with Vim mode. */
 const EDITOR_MARKER = '.cm-scroller';
+/** The IDE modal's own singleton marker: it is in exactly one output file. */
+const IDE_MODAL_MARKER = 'belz-singleton: designer/features/ide/modal';
+/** A string only @replit/codemirror-vim carries (its block-cursor layer's class). */
+const VIM_MARKER = 'cm-vimCursorLayer';
 /** A string only the JSON editor carries (its modal title). */
 const JSON_EDITOR_MARKER = 'Edit Input JSON';
 /** A string only the AD variable scanner carries (its logger scope). */
@@ -52,6 +58,9 @@ const closureCode = (entry: string) =>
   staticClosure(entry)
     .map((f) => readFileSync(path.join(modules, f), 'utf8'))
     .join('\n');
+/** The output files that contain `marker`. */
+const chunksWith = (marker: string) => readdirSync(modules).filter((f) =>
+  readFileSync(path.join(modules, f), 'utf8').includes(marker));
 const sizeOf = (files: string[]) =>
   files.reduce((sum, f) => sum + readFileSync(path.join(modules, f)).length, 0);
 
@@ -86,23 +95,36 @@ describe('build output', () => {
   });
 
   test('the IDE exists as a lazily loaded chunk', () => {
-    const chunks = readdirSync(modules).filter((f) =>
-      readFileSync(path.join(modules, f), 'utf8').includes(EDITOR_MARKER));
+    const chunks = chunksWith(IDE_MODAL_MARKER);
     expect(chunks).toHaveLength(1);
     expect(closureCode('ad-content.js')).toContain(`import("./${chunks[0]}")`);
+    expect(closureCode(chunks[0]!).includes(EDITOR_MARKER)).toBe(true);
   });
 
   test('the formatter is a chunk of its own, loaded by the IDE on the first Format', () => {
-    const chunkWith = (marker: string) => readdirSync(modules).filter((f) =>
-      readFileSync(path.join(modules, f), 'utf8').includes(marker));
-    const formatter = chunkWith(SQL_FORMATTER_MARKER);
+    const formatter = chunksWith(SQL_FORMATTER_MARKER);
     expect(formatter).toHaveLength(1);
-    const [ide] = chunkWith(EDITOR_MARKER);
+    const [ide] = chunksWith(IDE_MODAL_MARKER);
     for (const entry of ['ad-content.js', 'pd-content.js', ide!]) {
       expect(closureCode(entry).includes(SQL_FORMATTER_MARKER)).toBe(false);
     }
     expect(closureCode(ide!)).toContain(`import("./${formatter[0]}")`);
     // Only the PostgreSQL dialect: another dialect's keyword would mean all of them.
     expect(readFileSync(path.join(modules, formatter[0]!), 'utf8').includes('QUALIFY')).toBe(false);
+  });
+
+  test('Vim mode is a chunk of its own, loaded only with IDE Vim Mode on', () => {
+    const vim = chunksWith(VIM_MARKER);
+    expect(vim).toHaveLength(1);
+    // The library and the IDE's Vim wiring travel together.
+    expect(readFileSync(path.join(modules, vim[0]!), 'utf8').includes('belz-singleton: designer/features/ide/vim')).toBe(true);
+    const [ide] = chunksWith(IDE_MODAL_MARKER);
+    for (const entry of ['ad-content.js', 'pd-content.js', ide!]) {
+      expect(closureCode(entry).includes(VIM_MARKER)).toBe(false);
+    }
+    // The IDE loads it (also when the setting is switched on while it is
+    // open); the page prefetches it when an open starts with the setting on.
+    expect(closureCode(ide!)).toContain(`import("./${vim[0]}")`);
+    expect(closureCode('ad-content.js')).toContain(`import("./${vim[0]}")`);
   });
 });

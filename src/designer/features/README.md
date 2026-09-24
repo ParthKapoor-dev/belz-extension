@@ -11,7 +11,7 @@ One folder per designer feature. Each runs in the content script on AD pages, PD
 | [`run-test/`](run-test/) | `runTestAction`: finds and clicks AD's Run Test button (passed to `KeyboardShortcuts` by `ad-content.ts`) | none | AD |
 | [`json-editor/`](json-editor/) | `JsonEditor`: JSON button and modal to edit every test input as one JSON object | `jsonEditor` | AD |
 | [`output-copy/`](output-copy/) | `OutputCopy`: hover copy button on AD's output containers | `outputCopy` | AD |
-| [`ide/`](ide/) | `Ide`: hover Open/Copy buttons on text boxes (textareas), and the lazy CodeMirror IDE with `#{variable}` intellisense | `ide` | AD, PD |
+| [`ide/`](ide/) | `Ide`: hover Open/Copy buttons on text boxes (textareas), and the lazy CodeMirror IDE with `#{variable}` intellisense and an optional Vim mode | `ide` (Vim mode: `ideVim`) | AD, PD |
 | [`ad-scope/`](ad-scope/) | `scanScope()`: reads the `#{variables}` in scope from the AD page, for the IDE | `ideIntellisense` (checked by `Ide`) | AD |
 | [`curl-autofill/`](curl-autofill/) | `startCurlAutofillFeature()`: fills the inputs with the request body the AD Network panel handed over ("Open in draft") | none, always on | AD |
 | [`settings/`](settings/) | `SettingsLauncher` (⚙ button, Ctrl+, / Alt+, and the Alt+Shift+S browser command) and the in-page Settings modal | none, always on | AD, PD |

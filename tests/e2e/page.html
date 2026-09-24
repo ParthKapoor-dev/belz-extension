@@ -73,6 +73,8 @@ const overlayShown = () => {
     r.detected = ($('#belzIdeLanguage') || {}).value || null;
     // The AD scanner ran on open; this textarea is outside any step.
     r.variableStatus = ($('#belzIdeStatus') || {}).textContent || null;
+    // IDE Vim Mode is off by default: Vim mode's chunk has not run.
+    r.vimWhileOff = !!$('.cm-vimCursorLayer');
 
     // The lazily loaded IDE and the eagerly loaded shortcut must share ONE
     // modal lock: with the IDE open, Run Test must not fire.
@@ -109,6 +111,33 @@ const overlayShown = () => {
     $('#belzTextareaControls').style.display = 'none';
     hover($('#published'), document.body);
     r.publishedOverlay = !!(await waitFor(overlayShown, 2000));
+
+    // IDE Vim Mode, switched on in the Settings modal (Alt+,): the next open
+    // loads Vim mode's chunk (its block-cursor layer appears) and the footer
+    // shows the mode. Esc in insert mode goes back to normal mode and keeps
+    // the IDE open; Esc in normal mode closes it.
+    document.body.dispatchEvent(new KeyboardEvent('keydown',
+      { key: ',', code: 'Comma', altKey: true, bubbles: true, cancelable: true }));
+    const vimToggle = await waitFor(() => $('input[data-belz-setting-key="ideVim"]'), 2000);
+    if (vimToggle) vimToggle.click();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await sleep(100);
+    $('#belzTextareaControls').style.display = 'none';
+    hover(ta);
+    const vimLauncher = await waitFor(() => overlayShown() && $('.belzTextareaLauncher'), 2000);
+    if (vimLauncher) vimLauncher.click();
+    const status = () => ($('#belzIdeStatus') || {}).textContent || '';
+    r.vimChunkLoaded = !!(await waitFor(() => $('.cm-vimCursorLayer'), 5000));
+    r.vimNormal = !!(await waitFor(() => status().startsWith('-- NORMAL --'), 2000));
+    const key = (init) => $('.cm-content').dispatchEvent(new KeyboardEvent('keydown',
+      { bubbles: true, cancelable: true, ...init }));
+    key({ key: 'i', code: 'KeyI' });
+    r.vimInsert = !!(await waitFor(() => status().startsWith('-- INSERT --'), 2000));
+    key({ key: 'Escape', code: 'Escape' });
+    r.vimEscToNormal = !!(await waitFor(() => status().startsWith('-- NORMAL --'), 2000))
+      && $('#belzIdeOverlay').style.display !== 'none';
+    key({ key: 'Escape', code: 'Escape' });
+    r.vimEscClosed = !!(await waitFor(() => $('#belzIdeOverlay').style.display === 'none', 2000));
   } catch (e) {
     r.error = String(e && e.stack || e);
   }

@@ -80,6 +80,12 @@ export const SETTINGS = {
     'IDE Autocomplete',
     'Complete, explain and check #{variables} in the IDE (Automation Designer)'
   ),
+  ideVim: toggle(
+    'ide',
+    'IDE Vim Mode',
+    'Vim keys in the IDE: Esc to normal mode, :w writes, :q closes, yanks also go to the clipboard',
+    false
+  ),
 
   debugLogging: toggle(
     'advanced',

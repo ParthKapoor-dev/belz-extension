@@ -1,12 +1,15 @@
 // The IDE footer's status line, with one owner for what it shows.
 //
-// Three things want the line: the open's own text (the variable scope, or a
-// default), a short message after a Format, and the discard prompt after Esc
-// or a click outside with unsaved changes. The prompt wins while it is armed,
-// then a message still within its time, then the open's own text. Each of
-// the first two expires on its own timer, and the line then shows whatever
-// is next: a Format message never replaces an armed prompt (it waits under
-// it), and the prompt's window closing puts the line back by itself.
+// Four things want the line: the open's own text (the variable scope, or a
+// default), a short message after a Format, the discard prompt after Esc or
+// a click outside with unsaved changes, and, with Vim mode on, the Vim mode
+// line (`-- NORMAL --`, `-- INSERT --`, … plus keys typed so far). The
+// prompt wins while it is armed, alone; otherwise the Vim mode line, when
+// there is one, comes first, followed by a message still within its time or
+// else the open's own text. The prompt and the message expire on their own
+// timers, and the line then shows whatever is next: a Format message never
+// replaces an armed prompt (it waits under it), and the prompt's window
+// closing puts the line back by itself.
 
 /** Shown after Esc or a click outside with unsaved changes; either again within the window discards them. */
 export const DISCARD_PROMPT = 'Unsaved changes: press Esc or click outside again to discard them, or Ctrl+S to save.';
@@ -22,6 +25,8 @@ export const FOOTER_TIMES: FooterTimes = { discardMs: 3000, messageMs: 4000 };
 
 export class FooterStatus {
   private base = '';
+  /** The Vim mode line; empty with Vim mode off. */
+  private mode = '';
   private message: { text: string; warning: boolean } | null = null;
   private messageTimer: ReturnType<typeof setTimeout> | null = null;
   /** Set while the discard prompt is armed: the prompt's window. */
@@ -37,6 +42,13 @@ export class FooterStatus {
   reset(base: string): void {
     this.clear();
     this.base = base;
+    this.render();
+  }
+
+  /** The Vim mode line, or '' for none. */
+  setMode(line: string): void {
+    if (line === this.mode) return;
+    this.mode = line;
     this.render();
   }
 
@@ -84,8 +96,11 @@ export class FooterStatus {
   }
 
   private render(): void {
-    if (this.discardTimer) this.show(DISCARD_PROMPT, true);
-    else if (this.message) this.show(this.message.text, this.message.warning);
-    else this.show(this.base, false);
+    if (this.discardTimer) {
+      this.show(DISCARD_PROMPT, true);
+      return;
+    }
+    const [text, warning] = this.message ? [this.message.text, this.message.warning] : [this.base, false];
+    this.show(this.mode ? `${this.mode} · ${text}` : text, warning);
   }
 }

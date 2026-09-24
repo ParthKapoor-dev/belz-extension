@@ -37,6 +37,10 @@ The page (`page.html`) waits past the overlay's first re-arm, then records:
 | `formatKeyReachedPage` | `false` | The page's own `keydown` listener never saw `Shift+Alt+F`. |
 | `ideClosed`, `runTestAfterClose` | `true`, `1` | `Esc` closes the IDE (twice: the formatted text is an unsaved change, so the first only asks), after which the shortcut works again. |
 | `publishedOverlay` | `true` | The overlay also appears over a `disabled` (published) textarea, whose hover the browser retargets to its parent. |
+| `vimWhileOff` | `false` | With IDE Vim Mode at its default (off), the first open ran no Vim code (no `.cm-vimCursorLayer`). |
+| `vimChunkLoaded`, `vimNormal` | `true` | After switching IDE Vim Mode on in the Settings modal (`Alt+,`), the next open loads Vim mode's chunk (its block-cursor layer appears) and the footer starts with `-- NORMAL --`. |
+| `vimInsert`, `vimEscToNormal` | `true` | `i` shows `-- INSERT --`; `Esc` goes back to `-- NORMAL --` with the IDE still open. |
+| `vimEscClosed` | `true` | `Esc` in normal mode, with nothing changed, closes the IDE. |
 
 ## Prerequisites
 

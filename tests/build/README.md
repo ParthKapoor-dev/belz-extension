@@ -25,11 +25,12 @@ Per browser: Chromium has a `service_worker` background and no `browser_specific
 ## What is covered: bundle
 
 1. **The singleton check passed.** The build log contains `singleton check: N stateful modules, each bundled once` (printed by [`scripts/check-singletons.mjs`](../../scripts/check-singletons.mjs)).
-2. **The IDE is not loaded with the page.** For `ad-content.js` and `pd-content.js`, no file in the static-import closure contains `.cm-scroller` (a string only the CodeMirror editor carries), and the closure is under 100 KB (`EAGER_BUDGET`).
-3. **The IDE exists as exactly one lazy chunk**, and `ad-content.js`'s closure reaches it through `import("./chunk-...")`.
+2. **The IDE is not loaded with the page.** For `ad-content.js` and `pd-content.js`, no file in the static-import closure contains `.cm-scroller` (a string only CodeMirror carries), and the closure is under 100 KB (`EAGER_BUDGET`).
+3. **The IDE exists as exactly one lazy chunk**: exactly one file carries the IDE modal's singleton marker, `ad-content.js`'s closure reaches it through `import("./chunk-...")`, and its own static closure holds CodeMirror (which sits in a chunk the IDE shares with Vim mode, so `.cm-scroller` is in two files).
 4. **The JSON editor is AD-only.** Its modal title, `Edit Input JSON`, is in `ad-content.js`'s closure and not in `pd-content.js`'s.
 5. **The `#{variable}` scanner is AD-only.** Its logger scope, `"ad-scope"`, is likewise only in `ad-content.js`'s closure.
 6. **The formatter is a chunk of its own.** Exactly one file carries sql-formatter's `expressionWidth` option name; it is in neither content script's static closure nor the IDE chunk's, the IDE chunk reaches it through `import("./chunk-...")`, and it holds no dialect but PostgreSQL (no `QUALIFY` keyword).
+7. **Vim mode is a chunk of its own.** Exactly one file carries `@replit/codemirror-vim`'s `cm-vimCursorLayer` class, together with the `designer/features/ide/vim` singleton marker; it is in neither content script's static closure nor the IDE chunk's, and both the IDE chunk and `ad-content.js`'s closure (the prefetch when an open starts with the setting on) reach it only through `import("./chunk-...")`.
 
 Checks 4 and 5 also assert the marker *is* in the AD bundle, so a renamed title or scope fails the test instead of passing silently.
 

@@ -92,18 +92,32 @@ The tab title updates to `PD: <page name>`, and the IDE (with its **⧉** copy b
 
 ### IDE
 
-The IDE is a full-screen CodeMirror editor that opens for the page text box you clicked **⤢** on: language modes, autocomplete, hover help and checks.
+The IDE is a full-screen CodeMirror editor that opens for the page text box you clicked **⤢** on: language modes, autocomplete, hover help and checks, and an optional Vim mode.
 
 - **Save:** `Ctrl+S` (`Command+S` on Mac) or **Save** writes the text back into the text box and closes the IDE.
 - **Cancel** and **×** close without saving, and without asking.
 - **Esc** or a **click outside** the IDE closes it. `Esc` first closes whatever CodeMirror has open: the autocomplete list or the search panel. If you changed the text, the first `Esc` or click outside only asks, in the footer; press `Esc` or click outside again within 3 seconds to discard your changes. Typing in between cancels the question. Formatting a read-only text box doesn't count as a change.
 - **Search:** `Ctrl+F` (`Command+F`) opens the search panel.
 - **Format:** **Format** in the header, or `Shift+Alt+F` (`Shift+Option+F` on Mac), lays out SQL and JSON so a one-line query is readable: SQL keywords upper case, data types lower case (`::text[]` stays as it is), names as you wrote them, one clause per line, two-space indents, a blank line between statements; JSON indented by two spaces. With text selected, only the selection is formatted, and it keeps the indentation of the line it starts on. `#{…}` placeholders and `:name` parameters are kept exactly as written, and in JSON numbers keep all their digits. One `Ctrl+Z` puts the original back. If the text cannot be parsed (invalid JSON, an unclosed `#{`, SQL that doesn't start with a statement such as `SELECT` or `WITH`), nothing changes and the footer says why, with the line. Other languages have no formatter: the button is greyed out and says so. On a read-only (published) text box you can still format it to read it; nothing is written back.
-- The keys the IDE handles (`Ctrl/Command+S`, `Ctrl/Command+F`, `Shift+Alt+F`, `Esc`) are kept from the page and the browser: `Ctrl+S` never opens the browser's Save page dialog.
+- The keys the IDE handles (`Ctrl/Command+S`, `Ctrl/Command+F`, `Shift+Alt+F`, `Esc`) are kept from the page and the browser: `Ctrl+S` never opens the browser's Save page dialog. Other keys typed in the IDE don't reach the page's own shortcuts either.
 - **Autocomplete:** suggestions appear as you type (`Ctrl+Space` asks for them). `↑`/`↓` choose, `Enter` accepts, `Esc` closes the list.
 - **Language:** detected from the text (SQL, SpEL, JavaScript, JSON, Java, Python or plain text). The language dropdown in the header overrides it for this editing session only.
 - **Wrap and font size:** the two dropdowns next to it change the **IDE Wrap** and **IDE Font Size** settings, so the choice applies everywhere, not just to this text box.
 - **⚙** opens the Settings modal over the IDE, and **Copy** copies the IDE's text.
+- **Vim mode:** turn on **IDE Vim Mode** in Settings (it can be switched while the IDE is open). See [Vim mode](#vim-mode) below.
+
+#### Vim mode
+
+With **IDE Vim Mode** on, the IDE edits like Vim (the [`@replit/codemirror-vim`](https://github.com/replit/codemirror-vim) key set). It opens in normal mode, and the footer starts with the mode (`-- NORMAL --`, `-- INSERT --`, `-- VISUAL --`, `-- VISUAL LINE --`, `-- VISUAL BLOCK --`, `-- REPLACE --`) followed by any keys typed so far, such as a count or an operator (`-- NORMAL --  2d`).
+
+- **Esc** belongs to Vim first: it closes the autocomplete list or a hover tooltip, closes the `:` or `/` prompt, leaves insert, replace or visual mode, and cancels keys typed so far. Only in normal mode with nothing pending does `Esc` close the IDE, asking first if you changed the text, as without Vim.
+- **Ex commands:** `:w` writes the text back into the text box and keeps the IDE open; `:q` closes (asks first if the text changed since it was opened or last written; `:q` or `Esc` again within 3 seconds discards); `:q!` closes and drops your changes; `:wq` writes and closes; `:x` writes and closes if the text changed, and just closes otherwise. On a read-only (published) text box `:w`, `:wq` and `:x` write nothing and say so, like **Save**.
+- **Clipboard:** as with Vim's `clipboard=unnamedplus`, every yank, delete and change that doesn't name a register (`yy`, `yiw`, `y` in visual mode, `dd`, `x`, `cw`, `s`, …) and `:yank` also copies its text to the system clipboard. The black hole register (`"_dd`) and named registers (`"ayy`) don't. Replacing a visual selection with `p` doesn't copy what it replaced. `p` pastes from Vim's own register, so pasting never needs the browser's clipboard permission; to paste from the system clipboard, use `Ctrl+V` (`Command+V`) in insert mode. `"+y` copies to the clipboard and `"+p` pastes from it the way the Vim library does, and `"+p` reads the clipboard through the browser, which may ask for permission first (Firefox shows a **Paste** button).
+- **Search** is Vim's `/`, `?`, `n` and `N`; `Ctrl+F` is left to Vim (page down in normal mode) and does not open the search panel.
+- `Ctrl+S` (`Command+S`) saves and closes, and `Shift+Alt+F` formats, in every mode. Vim's own `Ctrl` keys (`Ctrl+V` visual block, `Ctrl+R` redo, `Ctrl+D` / `Ctrl+U`, `Ctrl+O`, …) reach Vim.
+- Autocomplete works in insert mode as usual: while its list is open, `↑`/`↓`, `Enter` and `Esc` are the list's.
+- On a read-only (published) text box, normal-mode moves, search and yanks work; editing commands do nothing.
+- Vim mode is loaded only when it is on: with the setting off, none of its code is fetched.
 
 ### DevTools: AD Network
 
@@ -144,6 +158,7 @@ The **Settings modal** is on the AD and PD pages themselves (it is not the optio
 | **IDE Wrap** | Wrap long lines in the IDE: **Wrap** or **No Wrap** | Wrap |
 | **IDE Font Size** | The IDE's font size: 12, 13, 14, 16 or 18 px | 13 px |
 | **IDE Autocomplete** | `#{variable}` completion, hover and checks in the IDE (AD only) | on |
+| **IDE Vim Mode** | Vim keys in the IDE: modes, `:w` / `:q`, yanks also copied to the clipboard (see [Vim mode](#vim-mode)) | off |
 | **Debug Logging** (under **Advanced**) | Prints the extension's step-by-step messages to the browser console | off |
 
 The **Keyboard Shortcuts** switch covers exactly those four keys. It does not affect the Settings shortcut (`Alt+,` / `Ctrl+,`) or the IDE's keys, which are always on, nor the browser-level shortcuts (`Alt+Shift+S`, `Ctrl+Shift+A`, `Ctrl+Shift+P`), which the browser handles.
@@ -161,11 +176,12 @@ The **Keyboard Shortcuts** switch covers exactly those four keys. It does not af
 | `Alt+Shift+S` | Open the Settings modal | AD, PD |
 | `Alt+,` or `Ctrl+,` | Open the Settings modal (`Ctrl+,` is taken by Firefox and Zen) | AD, PD |
 | `Ctrl+S` (`Command+S`) | Save and close | IDE |
-| `Ctrl+F` (`Command+F`) | Search | IDE |
+| `Ctrl+F` (`Command+F`) | Search (with **IDE Vim Mode** on: Vim's page down; search is `/`) | IDE |
 | `Shift+Alt+F` (`Shift+Option+F` on Mac) | Format SQL or JSON (only the selection, if there is one) | IDE |
 | `Ctrl+Space` | Show autocomplete suggestions | IDE |
 | `↑` / `↓`, `Enter` | Choose / accept a suggestion | IDE, autocomplete list open |
-| `Esc` | Close the autocomplete list or search panel, else close the IDE (asks first with unsaved changes) | IDE |
+| `Esc` | Close the autocomplete list or search panel, else close the IDE (asks first with unsaved changes). With **IDE Vim Mode** on, Vim's first: back to normal mode, and closes the IDE only from normal mode | IDE |
+| `:w`, `:q`, `:q!`, `:wq`, `:x` | Write; close (asks first with unsaved changes); close discarding; write and close; write if changed and close | IDE, **IDE Vim Mode** on |
 | `Ctrl+Shift+A` (`Command+Shift+A` on Mac) | Jump to the newest entry in AD Network | DevTools open |
 | `Ctrl+Shift+P` (`Command+Shift+P` on Mac) | Refresh PD Inspector | DevTools open |
 

@@ -157,6 +157,10 @@ export class Ide implements Feature {
   }
 
   private async openIdeFor(textarea: HTMLTextAreaElement): Promise<void> {
+    // With IDE Vim Mode on, fetch the Vim chunk alongside the IDE's rather
+    // than after it: the modal's own import('./vim') then finds it loaded.
+    // Off, it is never requested. A failed load is the modal's to report.
+    if (settings.get().ideVim) import('./vim').catch(() => {});
     try {
       const { ideModal } = await this.loadModal();
       ideModal.open(textarea, this.scopeFor(textarea));

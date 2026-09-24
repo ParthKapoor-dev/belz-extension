@@ -19,6 +19,19 @@ function makeFooter(discardMs: number, messageMs: number): FooterStatus {
 afterEach(() => footer.clear());
 
 describe('FooterStatus', () => {
+  test('the Vim mode line leads the line, gives way to an armed prompt, and goes with Vim mode', () => {
+    makeFooter(5000, 5000);
+    footer.setMode('-- NORMAL --');
+    expect(line()).toBe('-- NORMAL -- · base');
+    footer.showMessage('Already formatted', false);
+    expect(line()).toBe('-- NORMAL -- · Already formatted');
+    footer.armDiscard();
+    expect(line()).toBe(DISCARD_PROMPT);
+    footer.disarmDiscard();
+    footer.setMode('');
+    expect(line()).toBe('Already formatted');
+  });
+
   test('the discard prompt ends by itself: the window closes and the line comes back', async () => {
     makeFooter(30, 1000);
     footer.armDiscard();

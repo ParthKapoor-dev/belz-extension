@@ -2,7 +2,7 @@
 // Holds module-level state, so it must be bundled exactly once;
 // the build fails otherwise. See scripts/check-singletons.mjs.
 import { Compartment, EditorState } from '@codemirror/state';
-import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+import { EditorView, keymap, lineNumbers, highlightActiveLine, hasHoverTooltips, closeHoverTooltips } from '@codemirror/view';
 import { defaultKeymap, indentWithTab, history } from '@codemirror/commands';
 import { search, searchKeymap, openSearchPanel, searchPanelOpen } from '@codemirror/search';
 import { sql, keywordCompletionSource, StandardSQL } from '@codemirror/lang-sql';
@@ -11,7 +11,7 @@ import { json } from '@codemirror/lang-json';
 import { java } from '@codemirror/lang-java';
 import { python } from '@codemirror/lang-python';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { autocompletion, closeBrackets, completionKeymap, completionStatus } from '@codemirror/autocomplete';
+import { autocompletion, closeBrackets, closeCompletion, completionKeymap, completionStatus } from '@codemirror/autocomplete';
 import { settings } from '../../core/settings';
 import {
   SETTINGS,
@@ -42,6 +42,7 @@ import { variableCompletionSource, variableExtensions } from './variables';
 import { scopeStatus } from './references';
 import type { VariableScope } from './scope';
 import { FooterStatus } from './footer';
+import type { VimHost } from './vim';
 
 const OVERLAY_ID = ns('IdeOverlay');
 const TITLE_ID = ns('IdeTitle');
@@ -59,6 +60,9 @@ const log = createLogger('ide');
 
 /** The formatter chunk (format.ts), loaded on the first Format. */
 type FormatModule = typeof import('./format');
+
+/** Vim mode (vim.ts): loaded when the IDE opens or the setting turns on, only while IDE Vim Mode is on. */
+type VimModule = typeof import('./vim');
 
 const DEFAULT_STATUS = 'Syntax highlighting and optional line wrapping.';
 
@@ -496,6 +500,24 @@ export class IdeModal {
   private readOnly = false;
   /** The formatter chunk, once asked for; a failed load is forgotten. */
   private formatter: Promise<FormatModule> | null = null;
+  /** Holds Vim mode (vim.ts) while it is on in this view, else nothing. First in the view's extensions. */
+  private readonly vimCompartment = new Compartment();
+  /** The Vim chunk, once asked for; a failed load is forgotten. */
+  private vimLoad: Promise<VimModule> | null = null;
+  /** The Vim chunk, once loaded. */
+  private vimModule: VimModule | null = null;
+  /** Vim mode is on in the current view. */
+  private vimActive = false;
+  /** What Vim mode calls back: its ex commands, yanks for the clipboard, the mode line. */
+  private readonly vimHost: VimHost = {
+    write: () => this.writeAndStay(),
+    quit: () => this.closeOrAskFirst(),
+    quitDiscarding: () => this.close(),
+    writeQuit: () => this.save(),
+    exit: () => (this.hasUnsavedChanges ? this.save() : this.close()),
+    copy: (text) => this.copyToClipboard(text),
+    modeChanged: (line) => this.footer.setMode(line)
+  };
 
   private destroyView(): void {
     if (!this.view) return;
@@ -554,6 +576,8 @@ export class IdeModal {
     this.syncFormatButton();
 
     const extensions = [
+      // Vim mode first: the library needs its keys before any other keymap.
+      this.vimCompartment.of(this.vimExtension()),
       lineNumbers(),
       history(),
       highlightActiveLine(),
@@ -583,6 +607,7 @@ export class IdeModal {
     this.destroyView();
     this.openedText = textValue;
     this.edited = false;
+    this.vimActive = this.vimModule !== null && settings.get().ideVim;
     this.view = new EditorView({
       state: EditorState.create({
         doc: textValue,
@@ -593,6 +618,57 @@ export class IdeModal {
     });
 
     this.applyFontSize(getSelectedFontSize());
+    // The first open with Vim on, before its chunk is in: it goes in once loaded.
+    this.syncVim();
+  }
+
+  /** Vim mode for a new view: on when the setting is and its chunk is loaded. */
+  private vimExtension(): Extension {
+    return this.vimModule && settings.get().ideVim ? this.vimModule.vimExtension(this.vimHost) : [];
+  }
+
+  private loadVim(): Promise<VimModule> {
+    this.vimLoad ??= import('./vim').then(
+      (module) => (this.vimModule = module),
+      (error: unknown) => {
+        this.vimLoad = null;
+        throw error;
+      }
+    );
+    return this.vimLoad;
+  }
+
+  /**
+   * Turn Vim mode on or off in the open view to follow the IDE Vim Mode
+   * setting, loading its chunk the first time it is wanted. Never loads it
+   * while the setting is off.
+   */
+  private syncVim(): void {
+    const view = this.view;
+    if (!view) return;
+    const wanted = settings.get().ideVim;
+    if (wanted === this.vimActive) return;
+    if (!wanted) {
+      this.vimActive = false;
+      view.dispatch({ effects: this.vimCompartment.reconfigure([]) });
+      return;
+    }
+    if (this.vimModule) {
+      this.vimActive = true;
+      view.dispatch({ effects: this.vimCompartment.reconfigure(this.vimModule.vimExtension(this.vimHost)) });
+      return;
+    }
+    this.loadVim().then(
+      () => {
+        // Closed, reopened or switched off while the chunk loaded: the next
+        // open or setting change takes it from there.
+        if (this.view === view) this.syncVim();
+      },
+      (error: unknown) => {
+        log.debug('could not load Vim mode', error);
+        if (this.view === view) this.footer.showMessage('Could not load Vim mode', true);
+      }
+    );
   }
 
   private onLanguagePicked(): void {
@@ -628,6 +704,7 @@ export class IdeModal {
     // header — so a settings change never touches it.
     this.setWrapMode(next.ideWrap);
     this.applyFontSize(next.ideFontSize);
+    this.syncVim();
   }
 
   private followSettings(): void {
@@ -647,6 +724,7 @@ export class IdeModal {
     this.variableSource = null;
     this.footer.clear();
     this.destroyView();
+    this.vimActive = false;
     modalLock.unlock(this);
   }
 
@@ -783,12 +861,29 @@ export class IdeModal {
     toast.show(copied ? 'Copied IDE text' : 'Failed to copy');
   }
 
+  /** Save (and Ctrl/Cmd+S, `:wq`): write the text back and close. */
   private save(): void {
+    if (this.writeBack()) this.close();
+  }
+
+  /** Vim's `:w`: write the text back and stay open; what was written is no longer an unsaved change. */
+  private writeAndStay(): void {
+    if (!this.writeBack()) return;
+    this.openedText = this.text();
+    this.edited = false;
+    this.footer.disarmDiscard();
+  }
+
+  /**
+   * Write the IDE's text into the source textarea. False, after a toast that
+   * says why, for a read-only source.
+   */
+  private writeBack(): boolean {
     const sourceEl = this.source;
     const saveBtn = byId<HTMLButtonElement>(SAVE_BTN_ID);
 
     if (!sourceEl || !saveBtn || !this.view) {
-      return;
+      return false;
     }
 
     // Read-only sources reach this path: a published AD method opens here
@@ -797,12 +892,34 @@ export class IdeModal {
     // swallowing the keystroke.
     if (saveBtn.disabled) {
       toast.show('Read-only field — nothing was written back');
-      return;
+      return false;
     }
 
     syncSourceTextarea(sourceEl, this.text());
     toast.show('Text box updated');
-    this.close();
+    return true;
+  }
+
+  /**
+   * A Vim yank, delete or change, for the system clipboard (see vim.ts for
+   * which ones). Called from inside Vim's key handling, so the copy starts
+   * once that has finished, still within the key press's user activation.
+   * copyText() uses the Clipboard API; its fallback copies through a scratch
+   * textarea, which takes the focus, so the editor gets it back.
+   */
+  private copyToClipboard(text: string): void {
+    const view = this.view;
+    const hadFocus = !!view?.hasFocus;
+    queueMicrotask(() => {
+      void copyText(text).then((copied) => {
+        if (!view || this.view !== view) return;
+        if (!copied) {
+          log.debug('Vim register not copied to the clipboard');
+          this.footer.showMessage('Could not copy to the clipboard', true);
+        }
+        if (hadFocus && !view.hasFocus) view.focus();
+      });
+    });
   }
 
   private showSource(sourceEl: HTMLTextAreaElement): void {
@@ -841,10 +958,11 @@ export class IdeModal {
     if (event.defaultPrevented || !modalLock.isTopmost(this)) return;
 
     if (event.key === 'Escape') {
+      const view = this.view;
+      if (view && this.vimActive && this.escapeBelongsToVim(view, event)) return;
       // CodeMirror's own popups close first, with its own Esc: the
       // completion list and the search panel. This listener runs before
       // CodeMirror's, so it steps aside while one is open.
-      const view = this.view;
       if (view && (completionStatus(view.state) !== null || searchPanelOpen(view.state))) return;
       consume(event);
       this.closeOrAskFirst();
@@ -867,7 +985,8 @@ export class IdeModal {
       return;
     }
 
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+    // With Vim mode on, Ctrl+F is Vim's (page down); search is / n N.
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && !this.vimActive) {
       consume(event);
       const view = this.view;
       if (view) {
@@ -880,6 +999,31 @@ export class IdeModal {
       }
     }
   };
+
+  /**
+   * Esc with Vim mode on: true when it is not the IDE's. An open popup
+   * closes first: the completion list (closed here, so Vim does not also
+   * leave insert mode), a hover tooltip (a variable's or a lint message;
+   * closed here too), the search panel, or Vim's own `:` / `/` prompt. Then
+   * Vim takes it to leave insert, replace or visual mode, or to cancel keys
+   * typed so far (a count, a register, an operator). Only in normal mode with
+   * nothing pending does Esc close the IDE.
+   */
+  private escapeBelongsToVim(view: EditorView, event: KeyboardEvent): boolean {
+    if (completionStatus(view.state) === 'active') {
+      consume(event);
+      closeCompletion(view);
+      return true;
+    }
+    if (hasHoverTooltips(view.state)) {
+      consume(event);
+      view.dispatch({ effects: closeHoverTooltips });
+      return true;
+    }
+    if (searchPanelOpen(view.state)) return true;
+    const vim = this.vimModule?.vimKeyState(view);
+    return !!vim && (vim.prompt || vim.insert || vim.visual || vim.pending);
+  }
 
   private ensureOverlay(): HTMLDivElement {
     // The host app can wipe and re-render the body, taking the modal with it.
@@ -1127,6 +1271,12 @@ export class IdeModal {
     overlay.addEventListener('click', (event) => {
       if (event.target === overlay) this.closeOrAskFirst();
     });
+    // Keys typed in the IDE are the IDE's: the ones the editor leaves alone
+    // (typed text, or keys Vim mode does not use) stop here rather than
+    // bubbling on to the page's own shortcuts.
+    for (const type of ['keydown', 'keypress', 'keyup'] as const) {
+      overlay.addEventListener(type, (event) => event.stopPropagation());
+    }
 
     document.body.appendChild(overlay);
     this.overlay = overlay;

@@ -43,7 +43,13 @@ const EXPECTED = {
   formatKeyReachedPage: false,
   ideClosed: true,
   runTestAfterClose: 1,
-  publishedOverlay: true
+  publishedOverlay: true,
+  vimWhileOff: false,
+  vimChunkLoaded: true,
+  vimNormal: true,
+  vimInsert: true,
+  vimEscToNormal: true,
+  vimEscClosed: true
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
