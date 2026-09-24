@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fakeChrome } from '../fakes/chrome';
 import { AdNetworkPanel } from '../../src/devtools/ad-network/network-panel';
-import { UNINSTALL_SCRIPT, WRAPPER_SCRIPT } from '../../src/devtools/ad-network/pending-capture';
+import { UNINSTALL_SCRIPT, wrapperScript } from '../../src/devtools/ad-network/pending-capture';
 import { AUTOFILL_FRAGMENT_PARAM } from '../../src/config/namespace';
 import { AD_CACHE_STORAGE_KEY, AUTOFILL_HANDOFF_KEY_PREFIX } from '../../src/config/storage-keys';
 import { writeHosts } from '../../src/shared/hosts';
@@ -193,7 +193,7 @@ describe('AD Network panel', () => {
   });
 
   test('on an allowed site the page\'s fetch/XHR is wrapped for in-flight rows', () => {
-    expect(evaluated().includes(WRAPPER_SCRIPT)).toBe(true);
+    expect(evaluated().includes(wrapperScript(ORIGIN))).toBe(true);
   });
 
   test('"Open in draft" hands the body over through extension storage, never in the URL', async () => {
@@ -213,6 +213,7 @@ describe('AD Network panel', () => {
   });
 
   test('on a site that is not allowed: no lookups, no fetch wrapper, and the old site\'s auth is gone', async () => {
+    const wrapsAny = () => evaluated().includes(wrapperScript(ORIGIN)) || evaluated().includes(wrapperScript('https://evil.test'));
     send(har(UUID_A, { execute: true })); // on nsm.test: its Authorization header is learned
     await navigate('https://evil.test');
     expect(evaluated().includes(UNINSTALL_SCRIPT)).toBe(true);
@@ -222,12 +223,12 @@ describe('AD Network panel', () => {
     send(har(UUID_B, { execute: true, origin: 'https://evil.test' }));
     await sleep(600); // more than twice the resolve debounce: nothing may be asked
     expect(fetches).toEqual([]);
-    expect(evaluated().includes(WRAPPER_SCRIPT)).toBe(false);
+    expect(wrapsAny()).toBe(false);
     expect(evaluated().some((e) => e.includes('authToken'))).toBe(false);
     expect($('#offline').textContent).toContain('not on an allowed site');
 
     await navigate(ORIGIN);
-    expect(evaluated().includes(WRAPPER_SCRIPT)).toBe(true);
+    expect(evaluated().includes(wrapperScript(ORIGIN))).toBe(true);
     expect($('#offline').classList.contains('hidden')).toBe(true);
 
     // The header learned before leaving is gone: a lookup now goes without it.
@@ -263,13 +264,13 @@ describe('AD Network panel', () => {
       send(har(uuid, { liveBody: JSON.stringify({ name: 'tooEarly' }) }));
       await sleep(600); // more than twice the resolve debounce: nothing may be asked
       expect(fetches).toEqual([]);
-      expect(evaluated().includes(WRAPPER_SCRIPT)).toBe(false);
+      expect(evaluated().includes(wrapperScript(ORIGIN))).toBe(false);
       expect(cellText(rows()[0]!, 1)).not.toBe('tooEarly');
 
       answerOrigin!();
       await ready();
       await waitFor(() => fetches.some((f) => f.url.includes(uuid)), 'the lookup once the page is known');
-      expect(evaluated().includes(WRAPPER_SCRIPT)).toBe(true);
+      expect(evaluated().includes(wrapperScript(ORIGIN))).toBe(true);
     } finally {
       inspectedWindow.eval = realEval;
     }

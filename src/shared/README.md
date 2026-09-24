@@ -13,7 +13,8 @@ Worlds share data only through `chrome.storage` and messages, and this folder de
 | [`messages.ts`](messages.ts) | Every message shape that crosses worlds (`PdCommand`, `PdPushMessage`, `PdRelayMessage`, `OpenSettingsMessage`, `HostsEdit`, `TakeAutofillMessage`, `FocusFlag`), their full-shape guards, and the sender checks `isFromExtension()` / `isFromExtensionPage()` / `isFromOptionsPage()`. |
 | [`autofill-handoff.ts`](autofill-handoff.ts) | The "Open in draft" handoff: `storeHandoff()` (panel side), `takeHandoff()` (background side), `isHandoffId()`, `HANDOFF_TTL_MS`. |
 | [`rich-link.ts`](rich-link.ts) | `escapeHtml()`, `richLink()` and `copyRichLink()`: a link that pastes as a clickable label, with the label escaped. |
-| [`errors.ts`](errors.ts) | `errorText(err)`: an error's message for people, `''` when there is nothing to say. `isTransientStatus(status)`: 408, 429 or 5xx, the HTTP answers worth retrying. |
+| [`errors.ts`](errors.ts) | `errorText(err)`: an error's message for people, `''` when there is nothing to say. |
+| [`retry.ts`](retry.ts) | `isTransientStatus(status)`: 408, 429 or 5xx, the HTTP answers worth retrying (the AD Network lookups and the PD Inspector's config fetches). |
 | [`dom.ts`](dom.ts) | `required(selector)`: an element the extension's own page HTML must contain; throws if missing. |
 | [`focus-flag.ts`](focus-flag.ts) | `writeFocusFlag()` (background side) and `watchFocusFlag()` (panel side) for the `Ctrl+Shift+A` / `Ctrl+Shift+P` shortcuts. |
 
@@ -63,9 +64,13 @@ Worlds share data only through `chrome.storage` and messages, and this folder de
   and the designer settings and autofill features ([`designer/`](../designer/)).
   `autofill-handoff.ts` by the AD Network panel ([`devtools/ad-network/`](../devtools/ad-network/)) and
   the background relay. `rich-link.ts` by the AD Network panel and the Shift+L shortcut. `dom.ts` by the
-  options page and both DevTools panels. `focus-flag.ts` by the background and both panels.
+  options page and both DevTools panels. `focus-flag.ts` by the background and both panels. `retry.ts`
+  by the AD Network panel's lookups and the PD Inspector's config fetches
+  ([`pd-inspector-page/`](../pd-inspector-page/)).
 - **Depends on:** [`config/storage-keys.ts`](../config/storage-keys.ts),
-  [`config/namespace.ts`](../config/namespace.ts) (message keys) and the `chrome.storage` API.
+  [`config/namespace.ts`](../config/namespace.ts) (message keys),
+  [`config/extension-files.ts`](../config/extension-files.ts) (`OPTIONS_PAGE`) and the `chrome.storage`
+  API.
 
 ## Conventions
 

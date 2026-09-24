@@ -9,7 +9,7 @@
 import { AUTOFILL_FRAGMENT_PARAM } from '../../config/namespace';
 import { storeHandoff } from '../../shared/autofill-handoff';
 import { createLogger } from '../../shared/logger';
-import type { HarEntry } from './types';
+import type { HarEntry, Row } from './types';
 
 const log = createLogger('ad-network');
 
@@ -17,36 +17,33 @@ const log = createLogger('ad-network');
 const OPEN_GAP_MS = 150;
 
 /**
- * Opens queued items one after another. `open(item, isCurrent)` handles one
- * item and never rejects; `isCurrent()` turns false once stop() has run, and
- * `open` then does nothing more.
+ * Opens queued rows one after another, OPEN_GAP_MS apart. `open(row,
+ * isCurrent)` handles one row and never rejects; `isCurrent()` turns false
+ * once stop() has run, and `open` then does nothing more.
  */
-export class OpenQueue<T> {
-  private readonly items: T[] = [];
+export class OpenQueue {
+  private readonly rows: Row[] = [];
   private busy = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** Bumped by stop(), so an open still running does nothing after it. */
   private generation = 0;
 
-  constructor(
-    private readonly open: (item: T, isCurrent: () => boolean) => Promise<void>,
-    private readonly gapMs = OPEN_GAP_MS
-  ) {}
+  constructor(private readonly open: (row: Row, isCurrent: () => boolean) => Promise<void>) {}
 
-  /** Items waiting, not counting the one being opened. */
+  /** Rows waiting, not counting the one being opened. */
   get size(): number {
-    return this.items.length;
+    return this.rows.length;
   }
 
-  add(item: T): void {
-    this.items.push(item);
+  add(row: Row): void {
+    this.rows.push(row);
     void this.next();
   }
 
   /** Drop everything queued and the pending gap timer. The queue can be used again. */
   stop(): void {
     this.generation++;
-    this.items.length = 0;
+    this.rows.length = 0;
     this.busy = false;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
@@ -54,23 +51,23 @@ export class OpenQueue<T> {
 
   private async next(): Promise<void> {
     if (this.busy || this.timer) return;
-    const item = this.items.shift();
-    if (item === undefined) return;
+    const row = this.rows.shift();
+    if (!row) return;
     const generation = this.generation;
     const isCurrent = (): boolean => generation === this.generation;
     this.busy = true;
     try {
-      await this.open(item, isCurrent);
+      await this.open(row, isCurrent);
     } catch (err) {
       log.warn('opening in draft failed:', err);
     }
     if (!isCurrent()) return;
     this.busy = false;
-    if (this.items.length) {
+    if (this.rows.length) {
       this.timer = setTimeout(() => {
         this.timer = null;
         void this.next();
-      }, this.gapMs);
+      }, OPEN_GAP_MS);
     }
   }
 }

@@ -4,7 +4,7 @@ import {
   PendingCapture,
   READ_SCRIPT,
   UNINSTALL_SCRIPT,
-  WRAPPER_SCRIPT
+  wrapperScript
 } from '../../src/devtools/ad-network/pending-capture';
 import { PAGE_GLOBALS } from '../../src/config/namespace';
 import type { PendingEntry } from '../../src/devtools/ad-network/types';
@@ -16,6 +16,9 @@ import { waitFor } from '../wait';
 // them through the fake inspectedWindow.eval, against the same window.
 
 const CHAIN_URL = 'https://nsm.test/rest/api/automation/chain/execute/' + 'a'.repeat(32);
+/** The test page's own origin: the one the wrapper is installed for. */
+const ORIGIN = location.origin;
+const WRAPPER_SCRIPT = wrapperScript(ORIGIN);
 const page = window as unknown as Record<string, unknown> & { fetch: typeof fetch };
 const runInPage = (script: string): unknown => (0, eval)(script);
 const state = () => page[PAGE_GLOBALS.capture] as { pending: Map<number, { url: string }> } | undefined;
@@ -54,6 +57,12 @@ describe('the page-side wrapper', () => {
     release();
     await done;
     expect(pending()!.size).toBe(0);
+  });
+
+  test('it installs only on the https page of the origin it is for', () => {
+    expect(runInPage(wrapperScript('https://other.test'))).toBe(false);
+    expect(page.fetch === pageFetch).toBe(true);
+    expect(state() === undefined).toBe(true);
   });
 
   test('installing twice wraps once', () => {
@@ -126,7 +135,7 @@ describe('PendingCapture', () => {
   });
 
   test('a wrapper that retired itself is installed again by the next poll', async () => {
-    capture.start();
+    capture.start(ORIGIN);
     await waitFor(() => page.fetch !== pageFetch, 'the wrapper');
     runInPage(UNINSTALL_SCRIPT); // what the page does after STALE_MS without a poll
     expect(page.fetch === pageFetch).toBe(true);
@@ -138,8 +147,17 @@ describe('PendingCapture', () => {
     await done;
   });
 
+  test('a poll after the page moved to another origin does not wrap the new page', async () => {
+    // Started for another site: as when the tab navigated and a poll ran
+    // before the panel heard of it (onNavigated).
+    capture.start('https://other.test');
+    await waitFor(() => fakeChrome.devtools.inspectedWindow.evaluated.filter((e) => e === READ_SCRIPT).length >= 2, 'a poll');
+    expect(page.fetch === pageFetch).toBe(true);
+    expect(state() === undefined).toBe(true);
+  });
+
   test('stop() puts the page\'s fetch back and reports no rows', async () => {
-    capture.start();
+    capture.start(ORIGIN);
     await waitFor(() => page.fetch !== pageFetch, 'the wrapper');
     capture.stop();
     await waitFor(() => page.fetch === pageFetch, 'the page\'s own fetch');

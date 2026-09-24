@@ -17,7 +17,7 @@ export type HarEntry = Entry & {
 export interface MethodSummary {
   name: string | null;
   category: string | null;
-  /** 'DRAFT' or 'PUBLISHED'. */
+  /** 'DRAFT' or 'PUBLISHED'; null when the platform did not say. */
   state: string | null;
   /** For a published method: the uuid of its linked draft. */
   referenceId: string | null;

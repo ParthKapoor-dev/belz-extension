@@ -32,7 +32,8 @@ import type { InspectedSite } from './origin';
 import type { MethodCache } from './cache';
 import { asObject, definitionOf, firstString, nameFromDefinition } from './extract';
 import { evalInPage } from '../inspected';
-import { errorText, isTransientStatus } from '../../shared/errors';
+import { errorText } from '../../shared/errors';
+import { isTransientStatus } from '../../shared/retry';
 import { createLogger } from '../../shared/logger';
 import type { MethodSummary } from './types';
 
@@ -116,7 +117,7 @@ function summaryFromV2(raw: unknown): MethodSummary | null {
   return {
     name,
     category,
-    state: firstString(metadata?.state) || 'DRAFT',
+    state: firstString(metadata?.state),
     referenceId: firstString(metadata?.referenceId)
   };
 }
@@ -131,7 +132,7 @@ function summaryFromV1(raw: unknown): MethodSummary | null {
   return {
     name,
     category,
-    state: firstString(doc.automationState) || 'DRAFT',
+    state: firstString(doc.automationState),
     referenceId: firstString(doc.referenceId)
   };
 }
@@ -179,8 +180,16 @@ function originOf(url: unknown): string | null {
   }
 }
 
-/** True when a summary can route to the designer: it has a category and a state. */
-const isComplete = (summary: MethodSummary): boolean => Boolean(summary.category && summary.state);
+/**
+ * Why buildDesignerUrl() has no URL for `summary`, for people: the method is
+ * unknown, has no category, or its state does not say which draft to open.
+ */
+export function noDesignerUrlReason(summary: MethodSummary | null): string {
+  if (!summary) return 'method not found on this instance';
+  if (!summary.category) return 'the method has no category to open it under';
+  if (summary.state === 'PUBLISHED') return 'the published method names no draft to open';
+  return 'the platform did not say whether the method is a draft';
+}
 
 /**
  * Resolves AD method uuids to their name, category and designer URL, for the
@@ -240,10 +249,9 @@ export class MethodResolver {
     if (!origin || !this.site.isAllowed) {
       throw new ApiError('this page is not on an allowed site', undefined, false, true);
     }
-    const hit = this.cache.read(origin, uuid);
-    // An entry without a category or state cannot route to the designer, so
-    // it is asked for again rather than served.
-    const cached = hit && isComplete(hit.data) ? hit : null;
+    // Every entry is what a lookup answered, a missing category or state
+    // included: served as it is, not asked for again.
+    const cached = this.cache.read(origin, uuid);
 
     if (cached && !cached.stale) return cached.data;
 
@@ -272,16 +280,19 @@ export class MethodResolver {
 
   /**
    * Build the designer URL for a method. The AD UI addresses methods by
-   * category and DRAFT uuid; a published method opens its linked draft
-   * (referenceId). Null when the summary cannot route there: no summary, no
-   * category, or the designer origin is unknown. Nothing is guessed.
+   * category and DRAFT uuid: a draft opens by its own uuid, a published
+   * method by its linked draft (referenceId). Null when the summary cannot
+   * route there: no summary, no category, a state that is neither a draft
+   * nor a published method with a referenceId (the platform did not say),
+   * or the designer origin is unknown. Nothing is guessed; see
+   * noDesignerUrlReason() for why.
    */
   buildDesignerUrl(uuid: string, summary: MethodSummary | null): string | null {
     const origin = this.site.designerOrigin;
     if (!summary?.category || !origin) return null;
     const draftUuid =
-      summary.state === 'PUBLISHED' && summary.referenceId ? summary.referenceId : uuid;
-    return origin + designerPath(summary.category, draftUuid);
+      summary.state === 'DRAFT' ? uuid : summary.state === 'PUBLISHED' ? summary.referenceId : null;
+    return draftUuid ? origin + designerPath(summary.category, draftUuid) : null;
   }
 
   private revalidate(

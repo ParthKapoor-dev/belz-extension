@@ -25,6 +25,12 @@
 // (a hidden panel can poll as rarely as once a minute). Installing is
 // idempotent per page context: on a page that still has a retired wrapper it
 // wraps again whatever retiring put back, and switches it on.
+//
+// Every install is for the origin the panel found allowed when it started
+// the capture, and the install script itself checks the page it runs in
+// (location.origin, in the same evaluation) against it: https, and that very
+// origin. A poll answered after a navigation committed but before the panel
+// heard of it (onNavigated) therefore installs nothing on the new page.
 
 import { evalInPage } from '../inspected';
 import { PAGE_GLOBALS } from '../../config/namespace';
@@ -37,14 +43,16 @@ const POLL_INTERVAL_MS = 500;
 const STALE_MS = 10_000;
 
 /**
- * The IIFE injected into the inspected page. Runs at page scope, so we cannot
- * reference any module state from here — everything the wrapper needs must be
- * inline. The CHAIN_RE mirrors CHAIN_PATH_RE in src/config/endpoints.ts
- * deliberately: keeping it inline avoids a second inspectedWindow.eval to sync
- * regex state.
+ * The IIFE injected into the inspected page, for a page on `origin` only: on
+ * any other page (or not https) it installs nothing and returns false. Runs
+ * at page scope, so we cannot reference any module state from here —
+ * everything the wrapper needs must be inline. The CHAIN_RE mirrors
+ * CHAIN_PATH_RE in src/config/endpoints.ts deliberately: keeping it inline
+ * avoids a second inspectedWindow.eval to sync regex state.
  */
-export const WRAPPER_SCRIPT = `
+export const wrapperScript = (origin: string): string => `
 (function () {
+  if (location.protocol !== 'https:' || location.origin !== ${JSON.stringify(origin)}) return false;
   var state = window[${CAPTURE}];
   if (state) { state.revive(); return true; }
   var XHR = window.XMLHttpRequest;
@@ -131,7 +139,7 @@ export const WRAPPER_SCRIPT = `
 })();
 `;
 
-/** Undoes WRAPPER_SCRIPT (see `retire` there). Runs in the page. */
+/** Undoes wrapperScript() (see `retire` there). Runs in the page. */
 export const UNINSTALL_SCRIPT = `
 (function () {
   var state = window[${CAPTURE}];
@@ -162,6 +170,8 @@ export class PendingCapture {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   /** Bumped per start, so a poll answered after a stop (and restart) is dropped. */
   private generation = 0;
+  /** The install script for the origin this capture was started for. */
+  private install = '';
 
   constructor(private readonly onUpdate: (entries: PendingEntry[]) => void) {}
 
@@ -169,14 +179,18 @@ export class PendingCapture {
     return this.pollTimer !== null;
   }
 
-  /** Wrap the page's fetch/XHR and start polling. A no-op while running. */
-  start(): void {
+  /**
+   * Wrap the page's fetch/XHR and start polling, on the allowed page at
+   * `origin` only (the install script checks). A no-op while running.
+   */
+  start(origin: string): void {
     if (this.pollTimer) return;
     this.generation++;
+    this.install = wrapperScript(origin);
     this.pollTimer = setInterval(this.poll, POLL_INTERVAL_MS);
     // A null answer means the page blocked the eval, or is not there yet: the
     // next poll tries again.
-    void evalInPage(WRAPPER_SCRIPT);
+    void evalInPage(this.install);
     void this.poll();
   }
 
@@ -199,8 +213,9 @@ export class PendingCapture {
       this.onUpdate(result as PendingEntry[]);
       return;
     }
-    // No active wrapper (a new document, or it retired itself): wrap again.
+    // No active wrapper (a new document, or it retired itself): wrap again,
+    // if the page is still the one this capture is for.
     this.onUpdate([]);
-    void evalInPage(WRAPPER_SCRIPT);
+    void evalInPage(this.install);
   };
 }

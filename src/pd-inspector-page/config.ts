@@ -10,7 +10,7 @@
 import { PD_DEPLOYABLE_PATH as DEPLOYABLE } from '../config/endpoints';
 import { PAGES_ROUTE_PREFIX } from '../config/routes';
 import { PD_CONFIG_NODES } from '../config/selectors';
-import { isTransientStatus } from '../shared/errors';
+import { isTransientStatus } from '../shared/retry';
 import { createLogger } from '../shared/logger';
 import type {
   ComponentConfig,

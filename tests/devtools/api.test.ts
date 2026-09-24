@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { fakeChrome } from '../fakes/chrome';
 import { InspectedSite } from '../../src/devtools/ad-network/origin';
 import { MethodCache } from '../../src/devtools/ad-network/cache';
-import { ApiError, MethodResolver } from '../../src/devtools/ad-network/api';
+import { ApiError, MethodResolver, noDesignerUrlReason } from '../../src/devtools/ad-network/api';
 import { writeHosts } from '../../src/shared/hosts';
 import type { MethodSummary } from '../../src/devtools/ad-network/types';
 
@@ -91,6 +91,11 @@ describe('resolveSummary', () => {
     });
     expect(await resolver.resolveSummary(UUID)).toMatchObject({ name: 'old', category: 'Legacy', state: 'DRAFT' });
     expect(calls).toHaveLength(2);
+  });
+
+  test('a document that does not give the state leaves it unknown, never "DRAFT"', async () => {
+    serve({ [V2]: () => found() });
+    expect(await resolver.resolveSummary(UUID)).toEqual({ name: 'getUser', category: 'Users', state: null, referenceId: null });
   });
 
   test('a 401 is reported as "not signed in" without trying v1', async () => {
@@ -230,16 +235,26 @@ describe('buildDesignerUrl', () => {
     site.forget();
     expect(resolver.buildDesignerUrl('u1', summary({ category: 'C' }))).toBeNull();
   });
+
+  test('only a known draft opens its own uuid: an unknown state, or a published method without a draft, has no url', () => {
+    const unknown = summary({ category: 'C', state: null });
+    const orphan = summary({ category: 'C', state: 'PUBLISHED' });
+    expect(resolver.buildDesignerUrl('u1', unknown)).toBeNull();
+    expect(resolver.buildDesignerUrl('u1', orphan)).toBeNull();
+    expect(noDesignerUrlReason(unknown)).toBe('the platform did not say whether the method is a draft');
+    expect(noDesignerUrlReason(orphan)).toBe('the published method names no draft to open');
+    expect(noDesignerUrlReason(summary({}))).toBe('the method has no category to open it under');
+    expect(noDesignerUrlReason(null)).toBe('method not found on this instance');
+  });
 });
 
 describe('the cache', () => {
-  test('an entry without a category is not a hit: the platform is asked', async () => {
-    cache.write(ORIGIN, UUID, { name: 'from a definition body' });
-    serve({ [V2]: () => [200, { name: 'getUser', metadata: { service: { name: 'Users' }, state: 'PUBLISHED', referenceId: 'd1' } }] });
-    const summary = await resolver.resolveSummary(UUID);
+  test('a method that has no category is cached like any other: it is not asked for again', async () => {
+    serve({ [V2]: () => [200, { name: 'getUser', metadata: { state: 'DRAFT' } }] });
+    const first = await resolver.resolveSummary(UUID);
+    expect(first).toEqual({ name: 'getUser', category: null, state: 'DRAFT', referenceId: null });
+    expect(await resolver.resolveSummary(UUID)).toMatchObject({ name: 'getUser', category: null });
     expect(calls).toHaveLength(1);
-    expect(summary).toEqual({ name: 'getUser', category: 'Users', state: 'PUBLISHED', referenceId: 'd1' });
-    expect(resolver.buildDesignerUrl(UUID, summary)).toBe(`${ORIGIN}/automation-designer/Users/d1`);
   });
 
   test('requests refuse to follow a redirect, so auth headers stay on the origin', async () => {

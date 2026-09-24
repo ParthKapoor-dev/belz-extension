@@ -12,14 +12,14 @@ the page's session, only while the inspected page is on an allowed site.
 | [`panel.html`](panel.html) | Panel markup and styles: toolbar, request table, detail pane, toast. Ships as `panel.html` at the extension root and loads `dist/panel.js`. |
 | [`panel.ts`](panel.ts) | Entry: constructs and starts an `AdNetworkPanel`. |
 | [`network-panel.ts`](network-panel.ts) | `AdNetworkPanel`: captures requests, renders the table, row actions (copy as cURL, copy Slack link, Open in draft), filter, preserve log, pending rows, and what the panel may do on the inspected site. |
-| [`open-draft.ts`](open-draft.ts) | "Open in draft": `OpenQueue` (clicks handled one at a time, dropped by `stop()`), `withAutofill()` (the handoff URL) and `openInBackgroundTab()`. |
+| [`open-draft.ts`](open-draft.ts) | "Open in draft": `OpenQueue` (rows opened one at a time, 150 ms apart, dropped by `stop()`), `withAutofill()` (the handoff URL) and `openInBackgroundTab()`. |
 | [`status.ts`](status.ts) | `PanelStatus`: the toast and the offline pill. |
 | [`detail.ts`](detail.ts) | `DetailPane`: Headers, Payload, Response and Timing tabs for the selected row, and a Copy button. |
 | [`names.ts`](names.ts) | `MethodNames` (names and categories learned so far) and `ResolveQueue` (debounced, batched lookups with backed-off, capped retries; `RetryPolicy`). |
-| [`api.ts`](api.ts) | `MethodResolver`: the chain-API client. Per-origin auth, V2 then V1, designer URLs. Also `ApiError` and `isRetryableError()`. |
+| [`api.ts`](api.ts) | `MethodResolver`: the chain-API client. Per-origin auth, V2 then V1, designer URLs. Also `ApiError`, `isRetryableError()` and `noDesignerUrlReason()`. |
 | [`cache.ts`](cache.ts) | `MethodCache`: stale-while-revalidate cache of method summaries in `chrome.storage.local`, merged with the stored map on every flush. |
 | [`origin.ts`](origin.ts) | `InspectedSite`: the inspected origin (null while unknown), whether it is an allowed site (`isAllowed`, `isAllowedOrigin()`), `forget()` on navigation, and the designer origin from the site's `designerHost` override. |
-| [`pending-capture.ts`](pending-capture.ts) | `PendingCapture` and the page scripts `WRAPPER_SCRIPT` / `UNINSTALL_SCRIPT` / `READ_SCRIPT`: a fetch/XHR wrapper in the page, polled for in-flight chain requests, and installed again when a poll finds it gone. |
+| [`pending-capture.ts`](pending-capture.ts) | `PendingCapture` and the page scripts `wrapperScript(origin)` / `UNINSTALL_SCRIPT` / `READ_SCRIPT`: a fetch/XHR wrapper in the page, polled for in-flight chain requests, and installed again when a poll finds it gone, only on the page of the origin it was started for. |
 | [`extract.ts`](extract.ts) | Pure: `classifyChainUrl()`, `extractMethodNameFromChainResponse()`, `definitionOf()`, `nameFromDefinition()`, `asObject()`, `firstString()`. |
 | [`format.ts`](format.ts) | Pure: HAR reading and formatting (`statusGroup()`, `buildCurl()`, `harKey()`, `formatBytes()`, `lookupFailure()`, ...). |
 | [`view.ts`](view.ts) | Small DOM builders: `iconButton()`, `flashOk()`, `flashText()`, `kvGrid()`. |
@@ -39,12 +39,12 @@ the page's session, only while the inspected page is on an allowed site.
    (`onNavigated`) the panel at once forgets the origin (`InspectedSite.forget()`: nothing is allowed
    until the new page is known), calls `MethodResolver.forgetAuth()`, and stops `PendingCapture` and
    the lookup queue. Once `detect()` answers for the new page it runs `applySiteAccess()`. On an allowed site (`InspectedSite.isAllowed`: https, and a granted host of
-   the list) it starts `PendingCapture` and queues name lookups. Anywhere else it stops
+   the list) it starts `PendingCapture` for that origin and queues name lookups. Anywhere else it stops
    `PendingCapture` (putting the page's fetch/XHR back), stops the queue, forgets auth, looks nothing up,
    and says "not on an allowed site" in the offline pill. The site list is watched, so granting or
    revoking a site takes effect at once.
-4. **In-flight requests** come from `PendingCapture`. `start()` injects `WRAPPER_SCRIPT` with
-   `evalInPage()`; the wrapper keeps its state, with a map of in-flight chain requests, in the one
+4. **In-flight requests** come from `PendingCapture`. `start(origin)` injects `wrapperScript(origin)`
+   with `evalInPage()`; the wrapper keeps its state, with a map of in-flight chain requests, in the one
    page global `PAGE_GLOBALS.capture` ([`config/namespace.ts`](../../config/namespace.ts)), and the
    panel polls it every 500 ms (`READ_SCRIPT`) to show pending rows. `stop()` runs `UNINSTALL_SCRIPT`,
    which puts back every original the page has not replaced since and switches the wrapper off either
@@ -52,7 +52,10 @@ the page's session, only while the inspected page is on an allowed site.
    panel has not polled it for `STALE_MS` (10 s), as happens when DevTools closes without a `stop()`.
    A poll that finds no active wrapper (a new document, or one retired while a hidden panel's timers
    were throttled) installs it again; over a wrapper that could not put everything back, installing
-   wraps again what was put back and switches it on.
+   wraps again what was put back and switches it on. Every install first checks, in the page and in
+   the same evaluation, that `location.origin` is the https origin the capture was started for, and
+   installs nothing otherwise: a poll answered after a navigation committed but before `onNavigated`
+   reached the panel never wraps the new page.
 5. **Names.** A definition fetch carries the name in its response body; on an allowed site the panel
    reads it with `getContent()` and shows it at once (`MethodNames.learnName()`). That is display
    only: the category and the routing come from the platform, so every row's uuid also goes to
@@ -64,8 +67,8 @@ the page's session, only while the inspected page is on an allowed site.
    failed lookups. Other HTTP errors (a 404 on both endpoints) and `final` errors (not an allowed site)
    are not retried. Failures show in the offline pill.
 6. **`MethodResolver`** refuses outright when the inspected page is not allowed. Otherwise it reads the
-   cache first (an entry without a category or state is not served: it is asked for again); on a
-   miss it calls the V2 chain endpoint, then V1, on the inspected origin, with `redirect: 'error'`
+   cache first (every entry is what a lookup answered, so one without a category or state is served
+   like any other, not asked for again); on a miss it calls the V2 chain endpoint, then V1, on the inspected origin, with `redirect: 'error'`
    so the auth headers never follow a redirect elsewhere. Auth is
    always for the origin it came from, in this order:
    - the `Authorization` / `Expertly-Auth-Token` header seen on an observed chain request to that
@@ -75,14 +78,17 @@ the page's session, only while the inspected page is on an allowed site.
      only used for that origin. A scan that found nothing is not remembered;
    - cookies alone (`credentials: 'include'`).
 
-   A 401/403 with a remembered header or token drops it and tries once more with fresh auth.
+   A 401/403 with a remembered header or token drops it and tries once more with fresh auth. The
+   summary's `state` is what the document says (`DRAFT`, `PUBLISHED`), or null when it says nothing:
+   it is never assumed.
 7. **Row actions.** "Copy Slack link" puts a `category::method` link on the clipboard with
    `copyRichLink()` ([`shared/rich-link.ts`](../../shared/rich-link.ts)), label escaped. "Open in
    draft" builds the designer URL (`buildDesignerUrl()`, on `InspectedSite.designerOrigin`, under the
-   method's category; a published method opens its linked draft, `referenceId`; with no category
-   nothing is guessed and the action reports it) and opens it in a background tab
+   method's category: a draft opens its own uuid, a published method its linked draft, `referenceId`;
+   with no category, an unknown state, or a published method without a `referenceId` there is no URL,
+   nothing is guessed, and the action says why with `noDesignerUrlReason()`) and opens it in a background tab
    (`openInBackgroundTab()`: `chrome.tabs.create`, else `window.open`), one queued click at a time
-   (`OpenQueue`). Both actions check the run id (or the queue's generation) after every wait, so a
+   (`OpenQueue`, 150 ms apart so a burst opens its tabs in order). Both actions check the run id (or the queue's generation) after every wait, so a
    lookup that answers after `stop()` opens nothing and shows nothing. When the request had a body, `withAutofill()` leaves it in extension storage with `storeHandoff()`
    ([`shared/autofill-handoff.ts`](../../shared/autofill-handoff.ts)) and puts only the one-time id in
    the URL's fragment (`#belz-autofill=<id>`). The `curl-autofill` feature in
@@ -108,6 +114,7 @@ The resolution order is also described in [AGENTS.md](../../../AGENTS.md)
   [`shared/hosts.ts`](../../shared/hosts.ts) (allowed sites, designer-host overrides),
   [`shared/autofill-handoff.ts`](../../shared/autofill-handoff.ts),
   [`shared/rich-link.ts`](../../shared/rich-link.ts), [`shared/errors.ts`](../../shared/errors.ts),
+  [`shared/retry.ts`](../../shared/retry.ts) (`isTransientStatus()`),
   [`shared/focus-flag.ts`](../../shared/focus-flag.ts) (`Ctrl+Shift+A` scrolls to and pulses the
   newest row), [`shared/dom.ts`](../../shared/dom.ts), [`../inspected.ts`](../inspected.ts),
   [`../view.ts`](../view.ts), and the `chrome.devtools.network`, `chrome.devtools.inspectedWindow`,
@@ -133,9 +140,10 @@ Tests live in [`tests/devtools/`](../../../tests/devtools/): `ad-network-panel.t
 panel over its real markup (including allowed-site gating, the gap between a navigation and the new
 origin, names from a definition body, the "Open in draft" handoff, the `window.open` fallback, a
 lookup answering after `stop()`, and the cache flush on `stop()`); `api.test.ts` covers per-origin
-auth, the token scan, the 401 rescan, partial cache entries, `redirect: 'error'` and
-`buildDesignerUrl()`; `pending-capture.test.ts` runs the page scripts against the test page's window,
-including a retired wrapper installed again by the next poll; `cache.test.ts`,
+auth, the token scan, the 401 rescan, a method without a category served from the cache, an unknown
+state kept unknown, `redirect: 'error'`, `buildDesignerUrl()` and `noDesignerUrlReason()`;
+`pending-capture.test.ts` runs the page scripts against the test page's window, including a retired
+wrapper installed again by the next poll and no install on a page of another origin; `cache.test.ts`,
 `extract.test.ts`, `format.test.ts` and `names.test.ts` cover those modules. To run the tests, see the
 root [README](../../../README.md#development)'s Development section.
 

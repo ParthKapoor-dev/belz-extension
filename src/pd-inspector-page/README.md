@@ -29,7 +29,7 @@ sends it commands.
    (`fetchShellConfig()`), and fetches every embedded component recursively into one shared graph
    (`fetchComponentGraph()`). A component that fails to fetch becomes a stub with an `error`. Every
    request goes through `fetchJson()`: a network error or a transient status (408, 429, 5xx:
-   `isTransientStatus()` from [`shared/errors.ts`](../shared/errors.ts)) is tried again, three tries
+   `isTransientStatus()` from [`shared/retry.ts`](../shared/retry.ts)) is tried again, three tries
    in all; any other status (a 401, a 404) fails at once.
 3. `buildComponentTree()` assembles the nesting from configs alone, splicing the page in at the
    shell's outlet. A component reference is a childless `isSymbol` node. This half is exact.

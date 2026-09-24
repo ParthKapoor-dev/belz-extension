@@ -183,9 +183,11 @@ Browsers don't let extensions open DevTools or switch its tabs, so `Ctrl+Shift+A
 
 **Nothing appears on the page.** Check that the site is in **Allowed sites** and shows **Revoke**. If it shows **Grant** or `not granted`, click **Grant**. Then reload the tab.
 
-**The DevTools tabs are missing.** They only appear on allowed sites. Close and reopen DevTools after adding a site.
+**The DevTools tabs are missing.** They only appear on allowed sites, and only over https: a plain-http page of the same host doesn't count. Close and reopen DevTools after adding a site.
 
 **AD Network shows UUIDs instead of names.** While a name is being looked up, a row shows the start of its UUID and `…` for the category. If the lookup fails, a red **names unavailable — …** pill in the toolbar says why (hover it for the full message). The usual reason is not being signed in: sign in to the site; the panel retries by itself for about a minute, and again for each new request. **this page is not on an allowed site** means DevTools is on a site you haven't added.
+
+**Open in draft opened nothing.** The toast says why. It opens only a method the platform describes well enough: a draft by its own ID, a published method by its linked draft. A method with no category, a published method without a linked draft, or one whose state the platform doesn't give can't be opened, and nothing is guessed.
 
 **Open in draft didn't fill in the inputs.** The designer host must be an allowed, granted site, and the tab must be opened from the panel: a copied or reopened link fills nothing. If the method's inputs take more than 30 seconds to appear, autofill gives up.
 

@@ -21,7 +21,7 @@
 import { classifyChainUrl, extractMethodNameFromChainResponse } from './extract';
 import { PendingCapture } from './pending-capture';
 import { InspectedSite } from './origin';
-import { MethodResolver } from './api';
+import { MethodResolver, noDesignerUrlReason } from './api';
 import { MethodCache } from './cache';
 import { MethodNames, ResolveQueue } from './names';
 import { DetailPane } from './detail';
@@ -92,7 +92,7 @@ export class AdNetworkPanel {
   private readonly detail: DetailPane;
   private readonly pending = new PendingCapture((entries) => this.updatePending(entries));
   /** "Open in draft" requests, handled one at a time. */
-  private readonly openQueue = new OpenQueue<Row>((row, isCurrent) => this.openInDraft(row, isCurrent));
+  private readonly openQueue = new OpenQueue((row, isCurrent) => this.openInDraft(row, isCurrent));
   private readonly flash = new FocusFlash();
 
   /** Chronological (oldest first by start time); mirrors the DOM order. */
@@ -234,8 +234,8 @@ export class AdNetworkPanel {
    */
   private readonly applySiteAccess = (): void => {
     if (!this.started) return;
-    if (this.site.isAllowed) {
-      this.pending.start();
+    if (this.site.isAllowed && this.site.apiOrigin) {
+      this.pending.start(this.site.apiOrigin);
       this.status.setOffline(false);
       for (const row of this.rows) this.queue.add(row.uuid);
     } else {
@@ -550,15 +550,13 @@ export class AdNetworkPanel {
   /**
    * Look a row's method up (cache first) and build its designer URL. Rejects
    * when it cannot be opened: not an allowed site, unknown on this instance,
-   * or no category to route with.
+   * or no category or draft to route to (noDesignerUrlReason).
    */
   private async lookUp(row: Row): Promise<{ summary: MethodSummary | null; url: string }> {
     await this.ready;
     const summary = await this.resolver.resolveSummary(row.uuid, (fresh) => this.names.apply(row.uuid, fresh));
     const url = this.resolver.buildDesignerUrl(row.uuid, summary);
-    if (!url) {
-      throw new Error(summary ? 'the method has no category to open it under' : 'method not found on this instance');
-    }
+    if (!url) throw new Error(noDesignerUrlReason(summary));
     return { summary, url };
   }
 
