@@ -29,6 +29,7 @@ Per browser: Chromium has a `service_worker` background and no `browser_specific
 3. **The IDE exists as exactly one lazy chunk**, and `ad-content.js`'s closure reaches it through `import("./chunk-...")`.
 4. **The JSON editor is AD-only.** Its modal title, `Edit Input JSON`, is in `ad-content.js`'s closure and not in `pd-content.js`'s.
 5. **The `#{variable}` scanner is AD-only.** Its logger scope, `"ad-scope"`, is likewise only in `ad-content.js`'s closure.
+6. **The formatter is a chunk of its own.** Exactly one file carries sql-formatter's `expressionWidth` option name; it is in neither content script's static closure nor the IDE chunk's, the IDE chunk reaches it through `import("./chunk-...")`, and it holds no dialect but PostgreSQL (no `QUALIFY` keyword).
 
 Checks 4 and 5 also assert the marker *is* in the AD bundle, so a renamed title or scope fails the test instead of passing silently.
 

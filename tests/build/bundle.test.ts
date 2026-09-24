@@ -8,6 +8,9 @@
 //     ad-content.ts passes it to KeyboardShortcuts.
 //  4. Nor is the AD `#{variable}` scanner: only ad-content.ts passes it to
 //     Ide.
+//  5. The IDE's formatter (sql-formatter) is its own lazily loaded chunk:
+//     not parsed on page load, nor when the IDE opens, only on the first
+//     Format.
 //
 // Runs scripts/build.mjs, so it rewrites dist/ and takes a few seconds.
 import { beforeAll, describe, expect, test } from 'bun:test';
@@ -25,6 +28,8 @@ const EDITOR_MARKER = '.cm-scroller';
 const JSON_EDITOR_MARKER = 'Edit Input JSON';
 /** A string only the AD variable scanner carries (its logger scope). */
 const SCOPE_SCANNER_MARKER = '"ad-scope"';
+/** A string only sql-formatter carries (one of its option names). */
+const SQL_FORMATTER_MARKER = 'expressionWidth';
 
 let buildLog = '';
 
@@ -85,5 +90,19 @@ describe('build output', () => {
       readFileSync(path.join(modules, f), 'utf8').includes(EDITOR_MARKER));
     expect(chunks).toHaveLength(1);
     expect(closureCode('ad-content.js')).toContain(`import("./${chunks[0]}")`);
+  });
+
+  test('the formatter is a chunk of its own, loaded by the IDE on the first Format', () => {
+    const chunkWith = (marker: string) => readdirSync(modules).filter((f) =>
+      readFileSync(path.join(modules, f), 'utf8').includes(marker));
+    const formatter = chunkWith(SQL_FORMATTER_MARKER);
+    expect(formatter).toHaveLength(1);
+    const [ide] = chunkWith(EDITOR_MARKER);
+    for (const entry of ['ad-content.js', 'pd-content.js', ide!]) {
+      expect(closureCode(entry).includes(SQL_FORMATTER_MARKER)).toBe(false);
+    }
+    expect(closureCode(ide!)).toContain(`import("./${formatter[0]}")`);
+    // Only the PostgreSQL dialect: another dialect's keyword would mean all of them.
+    expect(readFileSync(path.join(modules, formatter[0]!), 'utf8').includes('QUALIFY')).toBe(false);
   });
 });

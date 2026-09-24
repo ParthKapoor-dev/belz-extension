@@ -11,7 +11,8 @@ This folder is performance-critical. Read "Textarea overlay (opens the IDE)", "I
 | [`index.ts`](index.ts) | `Ide`, the `Feature`: the hover overlay, and the lazy `import('./modal')` | with the page |
 | [`scope.ts`](scope.ts) | Types only: `ScopeVariable`, `VariableScope`, `ScopeProvider` | types, no code |
 | [`modal.ts`](modal.ts) | `IdeModal` and the `ideModal` singleton: CodeMirror, language modes, header controls, save | on first Open |
-| [`language.ts`](language.ts) | `detectLanguage()` and `LANGUAGE_OPTIONS`: picks SQL, SpEL, JavaScript, JSON, Java, Python or plain (pure) | on first Open |
+| [`language.ts`](language.ts) | `detectLanguage()` and `LANGUAGE_OPTIONS`: picks SQL, SpEL, JavaScript, JSON, Java, Python or plain; `isFormattable()` (pure) | on first Open |
+| [`format.ts`](format.ts) | `formatCode()`: SQL (sql-formatter, PostgreSQL dialect, `SQL_FORMAT_OPTIONS`) and JSON, keeping `#{ … }` and `:name` intact; `mapPosition()` for the cursor (pure) | on first Format |
 | [`references.ts`](references.ts) | Finds `#{ … }` expressions, lints them, looks up a name at a position, builds labels and the footer status (pure) | on first Open |
 | [`variables.ts`](variables.ts) | CodeMirror wiring for `#{variables}`: `variableCompletionSource()` and `variableExtensions()` (hover, lint, theme) | on first Open |
 
@@ -27,9 +28,20 @@ This folder is performance-critical. Read "Textarea overlay (opens the IDE)", "I
 
 **IDE.** The language is detected on every open and again as the text changes, until the user picks one in the header's language dropdown, which overrides it for this open only. It is not a setting. The wrap and font-size dropdowns in the header read `settings` and write back to it, so they change the global IDE Wrap and IDE Font Size settings for every IDE on every site. The header's ⚙ button opens the Settings modal over the IDE; **Copy** copies the IDE's text.
 
+**Format.** The header's **Format** button and `Shift+Alt+F` (`event.code === 'KeyF'`, since Option changes the key's character on a Mac) call `IdeModal.format()`:
+
+1. Only in SQL and JSON mode (`isFormattable()`). In any other mode the button is `aria-disabled` (still clickable, so a click can say why) and both it and the key only show `FORMAT_UNAVAILABLE` in the footer.
+2. The first Format loads `./format` with `import()`; `format.ts` and sql-formatter are their own chunk, not part of the IDE chunk. A failed load is forgotten so the next Format retries. If the IDE was closed, reopened or switched mode meanwhile, nothing happens.
+3. It formats the selection, or the whole text when nothing is selected, and applies the result as **one** transaction with `userEvent: 'format'`, so one Ctrl+Z restores the original. Already formatted text dispatches nothing. The cursor stays after the same non-whitespace character (`mapPosition()`); a formatted selection stays selected.
+4. On an error the text is not touched; the footer shows the reason for `FORMAT_STATUS_MS` (4 s) and it is logged with `log.debug`.
+
+How `format.ts` keeps AD's syntax: **SQL**: each `#{ … }` (found with `findExpressions()`, so braces and quotes inside nest correctly) is swapped for an identifier token with a prefix the text does not contain, formatted by sql-formatter's PostgreSQL dialect, and swapped back; every token must come back exactly once, or the result is an error, never a guess. `:name` and `$1` are declared as parameters (`paramTypes`), which also keeps `::type` casts and the jsonb operators intact. An unclosed `#{` is an error. **JSON**: the text is tokenised (strings, bare `#{ … }` placeholders, punctuation, literals), checked with `JSON.parse` with each bare placeholder standing in as `""`, and then re-laid out from its own tokens exactly as `JSON.stringify(value, null, 2)` would, so large numbers, number spellings, escapes and duplicate keys are kept. Both keep the whitespace around the formatted text.
+
+A **read-only** source can be formatted too: reading a published query is the main use. Nothing is written back (Save stays disabled), and the change is not an unsaved change (`hasUnsavedChanges` is false for a read-only source), so Esc closes at once. CodeMirror's undo does not act on a read-only editor; reopen the IDE to see the original.
+
 Keys while open are handled by one `keydown` listener on `window` in the capture phase, and only while the IDE is the topmost modal (`modalLock.isTopmost(this)`), so with the Settings modal over it they belong to that modal. It runs before every listener on the document and below, and before window-capture listeners added after the IDE first opened. A key it handles is consumed (`preventDefault()` and `stopImmediatePropagation()`), so neither the page's own shortcuts nor the browser's Save page / Find act on it:
 
-- Ctrl/Cmd+S saves (and closes); Ctrl/Cmd+F opens search.
+- Ctrl/Cmd+S saves (and closes); Ctrl/Cmd+F opens search; Shift+Alt+F formats.
 - Escape first leaves CodeMirror's own popups to CodeMirror: while the completion list (`completionStatus`) or the search panel (`searchPanelOpen`) is open, the modal does not act, and CodeMirror's Escape closes the popup.
 - Otherwise Escape closes the IDE, unless there are unsaved changes (`hasUnsavedChanges`: the text differs from what was opened). Then the first Escape only shows `DISCARD_PROMPT` in the footer, and a second Escape within `DISCARD_WINDOW_MS` (3 s) discards the changes and closes. Typing after the prompt takes it back. This never uses a browser dialog.
 
@@ -45,10 +57,11 @@ Closing, in one place: **Save** (or Ctrl/Cmd+S) writes the text into the source 
 ## How it connects
 
 - **Used by:** `ad-content.ts` (with `scanScope` from [`../ad-scope/`](../ad-scope/) as the `ScopeProvider`) and `pd-content.ts` (without one).
-- **Depends on:** `ui/hover-overlay.ts`, `ui/modal-lock.ts`, `ui/toast.ts`, `ui/modal.ts`, `ui/styles.ts`, `ui/theme.ts`, `utils/`, `core/settings.ts`, `settings/modal.ts` (the IDE's ⚙ button), `config/settings.ts`, `config/namespace.ts`, and the `@codemirror/*` packages.
+- **Depends on:** `ui/hover-overlay.ts`, `ui/modal-lock.ts`, `ui/toast.ts`, `ui/modal.ts`, `ui/styles.ts`, `ui/theme.ts`, `utils/`, `core/settings.ts`, `settings/modal.ts` (the IDE's ⚙ button), `config/settings.ts`, `config/namespace.ts`, `shared/logger.ts`, the `@codemirror/*` packages, and `sql-formatter` (only in the formatter chunk).
 
 ## Conventions
 
+- **Keep `format.ts` lazy too.** `modal.ts` reaches it only through `import('./format')` (and a type-only `typeof import`). A static import would put sql-formatter (~75 KB) into the IDE chunk; `tests/build/bundle.test.ts` fails if it reaches the IDE chunk's or the page's static closure. Import only `formatDialect` and the `postgresql` dialect, never `format`, which pulls in every dialect.
 - **Keep `modal.ts` lazy.** Reach it only through `import('./modal')`. A static import from page-load code puts CodeMirror (~600 KB) back into every page load; `tests/build/bundle.test.ts` fails if that happens.
 - **One graph.** The IDE chunk shares `settings`, `modalLock`, `toast` and `settingsModal` with the page bundle through shared chunks. Never build it separately (see [AGENTS.md](../../../../AGENTS.md)).
 - **No per-textarea DOM and no rescans.** Use delegation through `HoverOverlay`.
@@ -59,15 +72,17 @@ Closing, in one place: **Save** (or Ctrl/Cmd+S) writes the text into the source 
 ## Testing
 
 - [`tests/designer/features/language.test.ts`](../../../../tests/designer/features/language.test.ts): `detectLanguage()`.
+- [`tests/designer/features/format.test.ts`](../../../../tests/designer/features/format.test.ts): `formatCode()` for SQL (placeholders with spaces, quotes and braces, `:param`, `::jsonb`, jsonb operators, several statements) and JSON (bare and in-string placeholders, big numbers, invalid input), idempotence, and `mapPosition()`.
 - [`tests/designer/features/variables.test.ts`](../../../../tests/designer/features/variables.test.ts): completion, expression finding, lint, hover lookup and footer status.
 - [`tests/designer/ui/hover-overlay.test.ts`](../../../../tests/designer/ui/hover-overlay.test.ts): the overlay.
-- [`tests/designer/features/modal-escape.test.ts`](../../../../tests/designer/features/modal-escape.test.ts): Escape and a click on the backdrop (unchanged text, the discard prompt, the search panel, the Settings modal on top), Ctrl+S under the Settings modal, and that the keys the IDE handles never reach the page's own listeners.
-- [`tests/build/bundle.test.ts`](../../../../tests/build/bundle.test.ts): the IDE stays out of the page-load bundle.
-- [`tests/e2e/`](../../../../tests/e2e/): in real browsers, the overlay (also on a disabled textarea), lazy loading, SQL detection, the footer status, and the shared modal lock.
+- [`tests/designer/features/modal-escape.test.ts`](../../../../tests/designer/features/modal-escape.test.ts): Escape and a click on the backdrop (unchanged text, the discard prompt, the search panel, the Settings modal on top), Ctrl+S under the Settings modal, that the keys the IDE handles never reach the page's own listeners, and Format (one undoable transaction, no-op on formatted text, selection only, errors, Shift+Alt+F, a read-only source).
+- [`tests/build/bundle.test.ts`](../../../../tests/build/bundle.test.ts): the IDE stays out of the page-load bundle, and the formatter out of both it and the IDE chunk.
+- [`tests/e2e/`](../../../../tests/e2e/): in real browsers, the overlay (also on a disabled textarea), lazy loading, SQL detection, the footer status, Format through Shift+Alt+F (the formatter chunk loads), and the shared modal lock.
 
 How to run them is in the Development section of the [root README](../../../../README.md).
 
 ## Adding or changing things
 
 - **A new language mode:** add it to `LanguageMode` and `LANGUAGE_OPTIONS` and teach `detectLanguage()` in `language.ts`, then add its extension to `getLanguageExtensionForMode()` and its completion to `getAutocompleteExtensionsForMode()` in `modal.ts`.
+- **Formatting another mode:** add it to `FormattableMode` and `isFormattable()` in `language.ts` and to `formatCode()` in `format.ts`; keep any library it needs inside `format.ts`'s chunk, and keep `#{ … }` placeholders out of the library's sight as the SQL and JSON paths do.
 - **Overlay changes** (`index.ts` or `ui/hover-overlay.ts`): keep one controls element and no per-textarea DOM (see [AGENTS.md](../../../../AGENTS.md)); run `tests/designer/ui/hover-overlay.test.ts` and the end-to-end suite, which checks the overlay on a normal and a disabled textarea in real browsers.

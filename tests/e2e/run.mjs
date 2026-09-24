@@ -38,6 +38,9 @@ const EXPECTED = {
   detected: 'sql',
   variableStatus: 'Outside steps · 2 variables in scope',
   runTestWhileIdeOpen: 0,
+  // .cm-content's text: one line per element, so no newlines between them.
+  formatted: "SELECT  idFROM  guardianWHERE  account_id = '#{userId}'",
+  formatKeyReachedPage: false,
   ideClosed: true,
   runTestAfterClose: 1,
   publishedOverlay: true

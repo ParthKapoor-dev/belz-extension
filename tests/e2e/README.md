@@ -33,7 +33,9 @@ The page (`page.html`) waits past the overlay's first re-arm, then records:
 | `detected` | `'sql'` | The IDE detected SQL (the text is SQL containing `#{userId}`). |
 | `variableStatus` | `'Outside steps · 2 variables in scope'` | The AD variable scanner ran on open and found the input and the step output. |
 | `runTestWhileIdeOpen` | `0` | With the IDE open, `Ctrl+Shift+Enter` does nothing: the lazy IDE and the eager shortcut share one modal lock. |
-| `ideClosed`, `runTestAfterClose` | `true`, `1` | `Esc` closes the IDE, after which the shortcut works again. |
+| `formatted` | the SQL laid out, `#{userId}` intact | `Shift+Alt+F` loads the formatter chunk (a chunk importing a chunk) and formats the text. |
+| `formatKeyReachedPage` | `false` | The page's own `keydown` listener never saw `Shift+Alt+F`. |
+| `ideClosed`, `runTestAfterClose` | `true`, `1` | `Esc` closes the IDE (twice: the formatted text is an unsaved change, so the first only asks), after which the shortcut works again. |
 | `publishedOverlay` | `true` | The overlay also appears over a `disabled` (published) textarea, whose hover the browser retargets to its parent. |
 
 ## Prerequisites

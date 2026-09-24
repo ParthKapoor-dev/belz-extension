@@ -20,6 +20,14 @@ export const LANGUAGE_OPTIONS: ReadonlyArray<{ value: LanguageMode; label: strin
   { value: 'plain', label: 'Plain' }
 ];
 
+/** The modes the IDE's Format action handles (format.ts). */
+export type FormattableMode = 'sql' | 'json';
+
+/** Whether Format works in `mode`. Checked before the formatter chunk is loaded. */
+export function isFormattable(mode: LanguageMode): mode is FormattableMode {
+  return mode === 'sql' || mode === 'json';
+}
+
 // A SQL statement, judged by how it OPENS rather than by any keyword appearing
 // somewhere in it — `from` and `where` turn up in prose and SpEL alike.
 const SQL_STATEMENT_RE =

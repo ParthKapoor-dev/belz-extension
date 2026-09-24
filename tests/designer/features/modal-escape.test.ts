@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { openSearchPanel } from '@codemirror/search';
+import { undo, undoDepth } from '@codemirror/commands';
+import { waitFor } from '../../wait';
 import type { EditorView } from '@codemirror/view';
 import { IdeModal } from '../../../src/designer/features/ide/modal';
 import { SettingsModal } from '../../../src/designer/features/settings/modal';
@@ -117,6 +119,79 @@ describe('the IDE', () => {
     } finally {
       for (const [target, capture] of listeners) target.removeEventListener('keydown', record, capture);
     }
+  });
+
+  test('Format replaces the text in one transaction that one undo takes back', async () => {
+    const { editor, view } = openEditor('select a, b from t where id = #{id}');
+    await editor.format();
+    expect(view()!.state.doc.toString()).toBe('SELECT\n  a,\n  b\nFROM\n  t\nWHERE\n  id = #{id}');
+    expect(undoDepth(view()!.state)).toBe(1);
+    undo(view()!);
+    expect(view()!.state.doc.toString()).toBe('select a, b from t where id = #{id}');
+  });
+
+  test('Format on formatted text changes nothing; in plain mode it only says why', async () => {
+    const { editor, view } = openEditor('SELECT\n  1');
+    await editor.format();
+    expect(undoDepth(view()!.state)).toBe(0);
+    expect(document.getElementById(STATUS_ID)!.textContent).toBe('Already formatted');
+    editor.open(Object.assign(document.createElement('textarea'), { value: 'just a note' }));
+    await editor.format();
+    expect(view()!.state.doc.toString()).toBe('just a note');
+    expect(document.getElementById(STATUS_ID)!.textContent).toContain('SQL and JSON');
+  });
+
+  test('Format with a selection formats only the selection', async () => {
+    const text = 'keep this\n{"a":1}';
+    const { editor, view } = openEditor(text);
+    // Unfocused: happy-dom fires selectionchange inside CodeMirror's own
+    // update when a focused view writes its selection to the DOM.
+    view()!.contentDOM.blur();
+    view()!.dispatch({ selection: { anchor: text.indexOf('{'), head: text.length } });
+    editor['setLanguage']('json');
+    await editor.format();
+    expect(view()!.state.doc.toString()).toBe('keep this\n{\n  "a": 1\n}');
+  });
+
+  test('invalid JSON is left as it is, and the footer says why', async () => {
+    const { editor, view } = openEditor('{"a": 1,, }');
+    await editor.format();
+    expect(view()!.state.doc.toString()).toBe('{"a": 1,, }');
+    expect(document.getElementById(STATUS_ID)!.textContent).toStartWith('Not formatted: Invalid JSON');
+  });
+
+  test('Shift+Alt+F formats, and never reaches the page', async () => {
+    const { view } = openEditor('select 1 from t');
+    const seen: string[] = [];
+    const record = (event: Event) => seen.push((event as KeyboardEvent).key);
+    const listeners: Array<[EventTarget, boolean]> = [[window, true], [window, false], [document, true], [document, false]];
+    for (const [target, capture] of listeners) target.addEventListener('keydown', record, capture);
+    try {
+      // On a Mac, Option changes the key to another character; the code stays.
+      const event = new KeyboardEvent('keydown', {
+        key: 'Ï', code: 'KeyF', shiftKey: true, altKey: true, bubbles: true, cancelable: true
+      });
+      (document.activeElement || document.body).dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+      await waitFor(() => view()!.state.doc.toString().startsWith('SELECT'));
+      expect(seen).toEqual([]);
+    } finally {
+      for (const [target, capture] of listeners) target.removeEventListener('keydown', record, capture);
+    }
+  });
+
+  test('a read-only source can be formatted for reading, and has nothing unsaved', async () => {
+    const textarea = document.createElement('textarea');
+    textarea.value = 'select 1 from t';
+    textarea.disabled = true;
+    document.body.append(textarea);
+    const editor = track(new IdeModal());
+    editor.open(textarea);
+    await editor.format();
+    const view = (editor as unknown as { view: EditorView }).view;
+    expect(view.state.doc.toString()).toBe('SELECT\n  1\nFROM\n  t');
+    expect(editor.hasUnsavedChanges).toBe(false);
+    expect(textarea.value).toBe('select 1 from t');
   });
 
   // The completion list takes the same path (completionStatus instead of

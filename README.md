@@ -77,7 +77,7 @@ Repeat for each environment you use (dev, QA, and so on). To remove access, clic
 
 | Feature | How to use it |
 |---|---|
-| **IDE** | Hover over any text box and click **⤢** (**Open in IDE**, top-right corner). The IDE opens full-screen for that text box, with line numbers, search (`Ctrl+F`) and syntax highlighting. On published methods, it opens read-only. See [IDE](#ide) below. |
+| **IDE** | Hover over any text box and click **⤢** (**Open in IDE**, top-right corner). The IDE opens full-screen for that text box, with line numbers, search (`Ctrl+F`), SQL and JSON formatting (`Shift+Alt+F`) and syntax highlighting. On published methods, it opens read-only. See [IDE](#ide) below. |
 | **`#{variable}` intellisense** | In the IDE, type `#{` to pick from the method's inputs, internal variables and step outputs. Hover a name to see where it comes from. Unknown names, outputs of steps that run later, and an unclosed `#{` are underlined. Variables are read from the page each time the IDE opens, so unsaved edits (a step you just added) are included. The footer shows the current step and how many variables it can use. |
 | **Copy a text box** | Hover over a text box and click **⧉**. |
 | **Edit inputs as JSON** | Click the **JSON** button next to a method's **Inputs** heading, or press `Shift+J`. Edit every input as one JSON document. **Sync** writes your changes back into each input field with the correct type, including dates, booleans and structured data. |
@@ -98,7 +98,8 @@ The IDE is a full-screen CodeMirror editor that opens for the page text box you 
 - **Cancel** and **×** close without saving, and without asking.
 - **Esc** or a **click outside** the IDE closes it. `Esc` first closes whatever CodeMirror has open: the autocomplete list or the search panel. If you changed the text, the first `Esc` or click outside only asks, in the footer; press `Esc` or click outside again within 3 seconds to discard your changes. Typing in between cancels the question.
 - **Search:** `Ctrl+F` (`Command+F`) opens the search panel.
-- The keys the IDE handles (`Ctrl/Command+S`, `Ctrl/Command+F`, `Esc`) are kept from the page and the browser: `Ctrl+S` never opens the browser's Save page dialog.
+- **Format:** **Format** in the header, or `Shift+Alt+F` (`Shift+Option+F` on Mac), lays out SQL and JSON so a one-line query is readable: SQL keywords upper case, one clause per line, two-space indents, a blank line between statements; JSON indented by two spaces. With text selected, only the selection is formatted. `#{…}` placeholders and `:name` parameters are kept exactly as written, and in JSON numbers keep all their digits. One `Ctrl+Z` puts the original back. If the text cannot be parsed (invalid JSON, an unclosed `#{`), nothing changes and the footer says why. Other languages have no formatter: the button is greyed out and says so. On a read-only (published) text box you can still format it to read it; nothing is written back.
+- The keys the IDE handles (`Ctrl/Command+S`, `Ctrl/Command+F`, `Shift+Alt+F`, `Esc`) are kept from the page and the browser: `Ctrl+S` never opens the browser's Save page dialog.
 - **Autocomplete:** suggestions appear as you type (`Ctrl+Space` asks for them). `↑`/`↓` choose, `Enter` accepts, `Esc` closes the list.
 - **Language:** detected from the text (SQL, SpEL, JavaScript, JSON, Java, Python or plain text). The language dropdown in the header overrides it for this editing session only.
 - **Wrap and font size:** the two dropdowns next to it change the **IDE Wrap** and **IDE Font Size** settings, so the choice applies everywhere, not just to this text box.
@@ -161,6 +162,7 @@ The **Keyboard Shortcuts** switch covers exactly those four keys. It does not af
 | `Alt+,` or `Ctrl+,` | Open the Settings modal (`Ctrl+,` is taken by Firefox and Zen) | AD, PD |
 | `Ctrl+S` (`Command+S`) | Save and close | IDE |
 | `Ctrl+F` (`Command+F`) | Search | IDE |
+| `Shift+Alt+F` (`Shift+Option+F` on Mac) | Format SQL or JSON (only the selection, if there is one) | IDE |
 | `Ctrl+Space` | Show autocomplete suggestions | IDE |
 | `↑` / `↓`, `Enter` | Choose / accept a suggestion | IDE, autocomplete list open |
 | `Esc` | Close the autocomplete list or search panel, else close the IDE (asks first with unsaved changes) | IDE |

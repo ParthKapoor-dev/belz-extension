@@ -80,7 +80,25 @@ const overlayShown = () => {
     chord(); await sleep(400);
     r.runTestWhileIdeOpen = runTestClicks - clicksBefore;
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    // Shift+Alt+F loads the formatter chunk and lays the SQL out, placeholder
+    // intact; the key never reaches the page's own listeners.
+    let formatKeyReachedPage = false;
+    const spy = (e) => { if (e.code === 'KeyF') formatKeyReachedPage = true; };
+    document.addEventListener('keydown', spy, true);
+    $('.cm-content').dispatchEvent(new KeyboardEvent('keydown',
+      { key: 'F', code: 'KeyF', shiftKey: true, altKey: true, bubbles: true, cancelable: true }));
+    r.formatted = await waitFor(() => {
+      const text = $('.cm-content').textContent;
+      return text.startsWith('SELECT') ? text : null;
+    }, 5000);
+    document.removeEventListener('keydown', spy, true);
+    r.formatKeyReachedPage = formatKeyReachedPage;
+
+    // Formatting is an unsaved change: the first Esc asks, the second discards.
+    const escape = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    escape();
+    await sleep(100);
+    escape();
     await sleep(200);
     r.ideClosed = $('#belzIdeOverlay').style.display === 'none';
     chord(); await sleep(400);

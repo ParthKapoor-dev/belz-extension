@@ -62,28 +62,32 @@ function closingQuote(text: string, start: number): number {
 }
 
 /**
- * Every `#{` in `text`, with the `}` that closes it. Braces inside the
- * expression nest (SpEL inline lists and maps), and braces inside a string
- * literal do not count.
+ * The index just past the `}` closing the `#{` at `at`, or null when it is
+ * never closed. Braces inside the expression nest (SpEL inline lists and
+ * maps), and braces inside a string literal do not count.
  */
+export function expressionEnd(text: string, at: number): number | null {
+  let depth = 1;
+  for (let i = at + 2; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "'" || ch === '"') {
+      const close = closingQuote(text, i);
+      if (close !== -1) i = close;
+    } else if (ch === '{') {
+      depth++;
+    } else if (ch === '}' && --depth === 0) {
+      return i + 1;
+    }
+  }
+  return null;
+}
+
+/** Every `#{` in `text`, with the `}` that closes it (see expressionEnd()). */
 export function findExpressions(text: string): Expression[] {
   const found: Expression[] = [];
   let at = text.indexOf('#{');
   while (at !== -1) {
-    let depth = 1;
-    let end: number | null = null;
-    for (let i = at + 2; i < text.length; i++) {
-      const ch = text[i];
-      if (ch === "'" || ch === '"') {
-        const close = closingQuote(text, i);
-        if (close !== -1) i = close;
-      } else if (ch === '{') {
-        depth++;
-      } else if (ch === '}' && --depth === 0) {
-        end = i + 1;
-        break;
-      }
-    }
+    const end = expressionEnd(text, at);
     found.push({ from: at, to: end });
     at = text.indexOf('#{', end ?? at + 2);
   }
