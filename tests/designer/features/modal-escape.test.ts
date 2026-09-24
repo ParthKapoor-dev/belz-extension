@@ -8,6 +8,7 @@ import { SettingsModal } from '../../../src/designer/features/settings/modal';
 import { JsonEditorModal } from '../../../src/designer/features/json-editor/modal';
 import { modalLock } from '../../../src/designer/ui/modal-lock';
 import { ns } from '../../../src/config/namespace';
+import { DISCARD_PROMPT } from '../../../src/designer/features/ide/footer';
 
 // Esc in the extension's modals: only the topmost modal closes, CodeMirror's
 // own popups close first, and unsaved edits in the IDE are not
@@ -192,6 +193,57 @@ describe('the IDE', () => {
     expect(view.state.doc.toString()).toBe('SELECT\n  1\nFROM\n  t');
     expect(editor.hasUnsavedChanges).toBe(false);
     expect(textarea.value).toBe('select 1 from t');
+  });
+
+  test('on a read-only source, Esc asks before discarding a change other than a Format', async () => {
+    const textarea = document.createElement('textarea');
+    textarea.value = 'select 1 from t';
+    textarea.readOnly = true;
+    document.body.append(textarea);
+    const editor = track(new IdeModal());
+    editor.open(textarea);
+    const view = () => (editor as unknown as { view: EditorView | null }).view;
+    await editor.format();
+    view()!.dispatch({ changes: { from: 0, insert: '-- note\n' } });
+    esc();
+    expect(view() !== null).toBe(true);
+    expect(document.getElementById(STATUS_ID)!.textContent).toBe(DISCARD_PROMPT);
+    esc();
+    expect(view()).toBeNull();
+  });
+
+  test('a Format message does not replace the discard prompt', async () => {
+    const { editor, view } = openEditor('just a note');
+    view()!.dispatch({ changes: { from: 0, insert: 'x' } });
+    esc();
+    await editor.format(); // plain text: only a message, no change
+    expect(document.getElementById(STATUS_ID)!.textContent).toBe(DISCARD_PROMPT);
+  });
+
+  test('a formatted selection keeps the indentation of its line', async () => {
+    const text = 'begin\n    select a from t';
+    const { editor, view } = openEditor(text);
+    view()!.contentDOM.blur(); // see 'Format with a selection formats only the selection'
+    view()!.dispatch({ selection: { anchor: text.indexOf('select'), head: text.length } });
+    await editor.format();
+    expect(view()!.state.doc.toString()).toBe('begin\n    SELECT\n      a\n    FROM\n      t');
+  });
+
+  test('SQL that sql-formatter cannot parse is left as it is, and the footer says why', async () => {
+    const { editor, view } = openEditor('select (1');
+    await editor.format();
+    expect(view()!.state.doc.toString()).toBe('select (1');
+    expect(document.getElementById(STATUS_ID)!.textContent).toStartWith('Not formatted: Parse error');
+  });
+
+  test('Shift+Alt+F is the physical F key: another key that types "f" does not format', () => {
+    const { view } = openEditor('select 1 from t');
+    const event = new KeyboardEvent('keydown', {
+      key: 'f', code: 'KeyG', shiftKey: true, altKey: true, bubbles: true, cancelable: true
+    });
+    (document.activeElement || document.body).dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(view()!.state.doc.toString()).toBe('select 1 from t');
   });
 
   // The completion list takes the same path (completionStatus instead of

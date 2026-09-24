@@ -41,6 +41,7 @@ import type { CompletionContext, CompletionResult, CompletionSource } from '@cod
 import { variableCompletionSource, variableExtensions } from './variables';
 import { scopeStatus } from './references';
 import type { VariableScope } from './scope';
+import { FooterStatus } from './footer';
 
 const OVERLAY_ID = ns('IdeOverlay');
 const TITLE_ID = ns('IdeTitle');
@@ -60,17 +61,26 @@ const log = createLogger('ide');
 type FormatModule = typeof import('./format');
 
 const DEFAULT_STATUS = 'Syntax highlighting and optional line wrapping.';
-/**
- * Shown after Esc or a click outside the IDE with unsaved changes; doing
- * either again within the window discards them.
- */
-const DISCARD_PROMPT = 'Unsaved changes: press Esc or click outside again to discard them, or Ctrl+S to save.';
-const DISCARD_WINDOW_MS = 3000;
 
 /** Said by Format (button or Shift+Alt+F) in a mode it does not handle. */
 const FORMAT_UNAVAILABLE = 'Formatting is available for SQL and JSON';
-/** How long a Format message stays in the footer before its usual text returns. */
-const FORMAT_STATUS_MS = 4000;
+
+/** The header's small text buttons (Format, Copy). */
+const HEADER_TEXT_BUTTON_STYLE = {
+  border: '1px solid rgba(148, 163, 184, 0.45)',
+  background: 'rgba(15, 23, 42, 0.75)',
+  color: T.fgMuted,
+  borderRadius: RADIUS,
+  padding: '4px 10px',
+  fontSize: '12px',
+  cursor: 'pointer'
+};
+
+/** Shows whether `button` can act now: dimmed, with a not-allowed cursor, when it cannot. */
+function showUsable(button: HTMLButtonElement, usable: boolean): void {
+  button.style.opacity = usable ? '1' : '0.45';
+  button.style.cursor = usable ? 'pointer' : 'not-allowed';
+}
 
 const EDITOR_VERTICAL_PADDING_PX = 14;
 const EDITOR_HORIZONTAL_PADDING_PX = 16;
@@ -478,14 +488,12 @@ export class IdeModal {
   private unsubscribeSettings: (() => void) | null = null;
   /** The text as opened: anything else is an unsaved change. */
   private openedText = '';
-  /** The footer's text for this open, put back after the discard prompt. */
-  private statusText = DEFAULT_STATUS;
-  /** Until when a second Esc discards unsaved changes (epoch ms); 0 when not asked. */
-  private discardArmedUntil = 0;
+  /** A change other than a Format was made in this open. */
+  private edited = false;
+  /** The footer's status line: its own text, Format messages and the discard prompt. */
+  private readonly footer = new FooterStatus((text, warning) => this.setStatus(text, warning));
   /** The source is read-only or disabled: nothing can be written back. */
   private readOnly = false;
-  /** Puts the footer's own text back after a Format message. */
-  private statusTimer: ReturnType<typeof setTimeout> | null = null;
   /** The formatter chunk, once asked for; a failed load is forgotten. */
   private formatter: Promise<FormatModule> | null = null;
 
@@ -561,8 +569,9 @@ export class IdeModal {
       this.wrapCompartment.of(getWrapExtensionForMode(selectedWrapMode)),
       EditorView.updateListener.of((update) => {
         if (!update.docChanged || !this.view) return;
+        if (update.transactions.some((tr) => tr.docChanged && !tr.isUserEvent('format'))) this.edited = true;
         // An edit after the discard prompt takes the prompt back.
-        if (this.discardArmedUntil) this.disarmDiscard();
+        this.footer.disarmDiscard();
         if (this.languageOverridden) return;
 
         const nextMode = detectLanguage(update.state.doc.toString());
@@ -573,7 +582,7 @@ export class IdeModal {
 
     this.destroyView();
     this.openedText = textValue;
-    this.discardArmedUntil = 0;
+    this.edited = false;
     this.view = new EditorView({
       state: EditorState.create({
         doc: textValue,
@@ -636,40 +645,31 @@ export class IdeModal {
     this.source = null;
     this.scope = null;
     this.variableSource = null;
-    this.discardArmedUntil = 0;
-    this.clearStatusTimer();
+    this.footer.clear();
     this.destroyView();
     modalLock.unlock(this);
   }
 
   /**
-   * True while the IDE holds text that differs from what was opened and could
-   * be saved. A read-only source never has unsaved changes: a Format there is
-   * for reading, and there is nothing to save it to.
+   * True while the IDE holds text that differs from what was opened, so
+   * closing would lose it. On a read-only source a Format alone does not
+   * count (it is for reading); any other change does, although it cannot be
+   * saved.
    */
   get hasUnsavedChanges(): boolean {
-    return this.view !== null && !this.readOnly && this.text() !== this.openedText;
+    return this.view !== null && this.text() !== this.openedText && (!this.readOnly || this.edited);
   }
 
   /**
    * Esc or a click outside: close, but not straight over unsaved changes.
    * The first one then only says so in the footer; a second (either of them)
-   * within DISCARD_WINDOW_MS discards them. Typing in between takes the
-   * prompt back. Cancel and × close without asking: they say so already.
+   * within the footer's discard window discards them. Typing in between
+   * takes the prompt back. Cancel and × close without asking: they say so
+   * already.
    */
   private closeOrAskFirst(): void {
-    if (!this.hasUnsavedChanges || Date.now() <= this.discardArmedUntil) {
-      this.close();
-      return;
-    }
-    this.discardArmedUntil = Date.now() + DISCARD_WINDOW_MS;
-    this.clearStatusTimer();
-    this.setStatus(DISCARD_PROMPT, true);
-  }
-
-  private disarmDiscard(): void {
-    this.discardArmedUntil = 0;
-    this.setStatus(this.statusText, false);
+    if (!this.hasUnsavedChanges || this.footer.discardArmed) this.close();
+    else this.footer.armDiscard();
   }
 
   private setStatus(text: string, warning: boolean): void {
@@ -677,22 +677,6 @@ export class IdeModal {
     if (!status) return;
     status.textContent = text;
     status.style.color = warning ? T.warning : T.fgFaint;
-  }
-
-  /** A short message in the footer; the footer's own text returns after FORMAT_STATUS_MS. */
-  private flashStatus(text: string, warning: boolean): void {
-    this.clearStatusTimer();
-    this.setStatus(text, warning);
-    this.statusTimer = setTimeout(() => {
-      this.statusTimer = null;
-      if (!this.discardArmedUntil) this.setStatus(this.statusText, false);
-    }, FORMAT_STATUS_MS);
-  }
-
-  private clearStatusTimer(): void {
-    if (this.statusTimer === null) return;
-    clearTimeout(this.statusTimer);
-    this.statusTimer = null;
   }
 
   /** The Format button follows the mode: usable for SQL and JSON only. */
@@ -703,8 +687,7 @@ export class IdeModal {
     const label = LANGUAGE_OPTIONS.find((option) => option.value === this.language)?.label ?? '';
     button.setAttribute('aria-disabled', String(!usable));
     button.title = usable ? `Format ${label} (Shift+Alt+F)` : FORMAT_UNAVAILABLE;
-    button.style.opacity = usable ? '1' : '0.45';
-    button.style.cursor = usable ? 'pointer' : 'not-allowed';
+    showUsable(button, usable);
   }
 
   private loadFormatter(): Promise<FormatModule> {
@@ -726,7 +709,7 @@ export class IdeModal {
     const view = this.view;
     if (!view) return;
     if (!isFormattable(this.language)) {
-      this.flashStatus(FORMAT_UNAVAILABLE, true);
+      this.footer.showMessage(FORMAT_UNAVAILABLE, true);
       return;
     }
 
@@ -735,7 +718,7 @@ export class IdeModal {
       formatter = await this.loadFormatter();
     } catch (error) {
       log.debug('could not load the formatter', error);
-      this.flashStatus('Could not load the formatter', true);
+      this.footer.showMessage('Could not load the formatter', true);
       return;
     }
     // Closed, reopened or switched mode while the chunk loaded.
@@ -746,14 +729,20 @@ export class IdeModal {
     const from = range.empty ? 0 : range.from;
     const to = range.empty ? view.state.doc.length : range.to;
     const before = view.state.sliceDoc(from, to);
-    const result = formatter.formatCode(before, mode);
+    // Errors name document lines, and a formatted selection keeps the
+    // indentation of the line it starts on.
+    const startLine = view.state.doc.lineAt(from);
+    const result = formatter.formatCode(before, mode, {
+      line: startLine.number,
+      indent: range.empty ? '' : /^[ \t]*/.exec(startLine.text)![0]
+    });
     if (!result.ok) {
       log.debug('format failed:', result.error);
-      this.flashStatus(`Not formatted: ${result.error}`, true);
+      this.footer.showMessage(`Not formatted: ${result.error}`, true);
       return;
     }
     if (result.text === before) {
-      this.flashStatus('Already formatted', false);
+      this.footer.showMessage('Already formatted', false);
       return;
     }
 
@@ -766,7 +755,7 @@ export class IdeModal {
       userEvent: 'format'
     });
     view.focus();
-    this.flashStatus(
+    this.footer.showMessage(
       this.readOnly
         ? 'Formatted for reading: the source is read-only, nothing is written back'
         : 'Formatted: Ctrl+Z undoes it',
@@ -803,10 +792,9 @@ export class IdeModal {
     }
 
     // Read-only sources reach this path: a published AD method opens here
-    // for reading, and Ctrl+S is muscle memory. Say why nothing was written
-    // rather than swallowing the keystroke. The IDE itself stays editable on
-    // purpose — scratch-editing a published step is useful — so this is the
-    // only place the boundary is felt.
+    // for reading (the editor is read-only too, EditorState.readOnly), and
+    // Ctrl+S is muscle memory. Say why nothing was written rather than
+    // swallowing the keystroke.
     if (saveBtn.disabled) {
       toast.show('Read-only field — nothing was written back');
       return;
@@ -832,11 +820,9 @@ export class IdeModal {
       : describeSource(sourceEl);
 
     saveBtn.disabled = readOnly;
-    saveBtn.style.opacity = readOnly ? '0.45' : '1';
-    saveBtn.style.cursor = readOnly ? 'not-allowed' : 'pointer';
+    showUsable(saveBtn, !readOnly);
 
-    this.statusText = this.scope ? scopeStatus(this.scope) : DEFAULT_STATUS;
-    this.setStatus(this.statusText, false);
+    this.footer.reset(this.scope ? scopeStatus(this.scope) : DEFAULT_STATUS);
 
     syncIdeControlValuesFromSettings();
     this.createView(sourceEl);
@@ -865,10 +851,11 @@ export class IdeModal {
       return;
     }
 
-    // Shift+Alt+F (Shift+Option+F on a Mac, where the key itself is then a
-    // different character: hence the physical key code).
-    if (event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey
-      && (event.code === 'KeyF' || event.key.toLowerCase() === 'f')) {
+    // Shift+Alt+F, matched on the physical key (event.code): Option changes
+    // the character on a Mac. Ctrl/Cmd+S and Ctrl/Cmd+F below match the
+    // character (event.key), like the browser's own Save page and Find they
+    // stand in for, so they follow the keyboard layout.
+    if (event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey && event.code === 'KeyF') {
       consume(event);
       void this.format();
       return;
@@ -1031,15 +1018,7 @@ export class IdeModal {
     copyBtn.type = 'button';
     copyBtn.textContent = 'Copy';
     copyBtn.setAttribute('title', 'Copy IDE text');
-    Object.assign(copyBtn.style, {
-      border: '1px solid rgba(148, 163, 184, 0.45)',
-      background: 'rgba(15, 23, 42, 0.75)',
-      color: T.fgMuted,
-      borderRadius: RADIUS,
-      padding: '4px 10px',
-      fontSize: '12px',
-      cursor: 'pointer'
-    });
+    Object.assign(copyBtn.style, HEADER_TEXT_BUTTON_STYLE);
     copyBtn.onclick = () => {
       this.copyAll();
     };
@@ -1049,15 +1028,7 @@ export class IdeModal {
     formatBtn.type = 'button';
     formatBtn.textContent = 'Format';
     formatBtn.setAttribute('title', FORMAT_UNAVAILABLE);
-    Object.assign(formatBtn.style, {
-      border: '1px solid rgba(148, 163, 184, 0.45)',
-      background: 'rgba(15, 23, 42, 0.75)',
-      color: T.fgMuted,
-      borderRadius: RADIUS,
-      padding: '4px 10px',
-      fontSize: '12px',
-      cursor: 'pointer'
-    });
+    Object.assign(formatBtn.style, HEADER_TEXT_BUTTON_STYLE);
     // aria-disabled rather than disabled: a disabled button gets no click, and
     // a click in another mode should still say why nothing happens.
     formatBtn.onclick = () => {

@@ -78,6 +78,45 @@ describe('formatCode: SQL', () => {
     expect(result).toEqual({ ok: false, error: 'Unclosed #{ on line 2' });
   });
 
+  test('data types stay lower case, casts to arrays included; names stay as written', () => {
+    const out = sql("select a::text[], b::INT, c::UUID[], MyCol, t.Text[1], 'TEXT[x]', e ?| array['x'] from t");
+    for (const piece of ['a::text[]', 'b::int', 'c::uuid[]', 'MyCol', 't.Text[1]', "'TEXT[x]'", "ARRAY['x']"]) {
+      expect(out).toContain(piece);
+    }
+  });
+
+  test('text that does not start like a SQL statement is refused, not laid out', () => {
+    expect(formatCode('selec from where', 'sql')).toEqual({ ok: false, error: 'Doesn\'t look like SQL: it starts with "SELEC"' });
+    expect(formatCode('hello world', 'sql').ok).toBe(false);
+    // Comments, placeholders and parentheses before the first word are skipped.
+    expect(sql('-- q\n/* c */ ((select 1)) union (select 2)')).toContain('SELECT');
+    expect(sql('#{prefix} select 1')).toContain('SELECT');
+    expect(sql('#{wholeQuery}')).toBe('#{wholeQuery}');
+  });
+
+  test('sql-formatter failing leaves the text alone and names the document line', () => {
+    const result = formatCode('select 1;\nselect (1', 'sql', { line: 7, indent: '' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toStartWith('Parse error');
+      expect(result.error).toEndWith('(line 8)');
+    }
+  });
+
+  test('errors name the document line of a selection, and count leading blank lines', () => {
+    expect(formatCode('select 1\nfrom t where a = #{x', 'sql', { line: 10, indent: '' }))
+      .toEqual({ ok: false, error: 'Unclosed #{ on line 11' });
+    expect(formatCode('\n\n{"a": "x}', 'json')).toEqual({ ok: false, error: 'Unclosed string on line 3' });
+  });
+
+  test('a selection keeps the indentation of the line it starts on', () => {
+    expect(formatCode('select a from t', 'sql', { line: 3, indent: '    ' }))
+      .toEqual({ ok: true, text: 'SELECT\n      a\n    FROM\n      t' });
+    // Blank lines between statements stay blank.
+    expect(formatCode('select 1; select 2', 'sql', { line: 1, indent: '  ' }))
+      .toEqual({ ok: true, text: 'SELECT\n    1;\n\n  SELECT\n    2' });
+  });
+
   test('text that happens to contain the token prefix is still restored', () => {
     const out = sql('select __belzph0__, #{a} from t');
     expect(out).toContain('__belzph0__');
@@ -101,6 +140,14 @@ describe('formatCode: JSON', () => {
     expect(json('{"q":"id = #{id} and x = \'#{y}\'","n":"#{a.b}"}')).toBe(
       '{\n  "q": "id = #{id} and x = \'#{y}\'",\n  "n": "#{a.b}"\n}'
     );
+  });
+
+  test('a placeholder inside a string may hold double quotes', () => {
+    expect(json('{"a": "#{f("x")}", "b": ["pre #{m["k"]} post"]}')).toBe(
+      '{\n  "a": "#{f("x")}",\n  "b": [\n    "pre #{m["k"]} post"\n  ]\n}'
+    );
+    // Valid JSON is read as plain JSON first, even when a string holds `#{`.
+    expect(json('{"a": "#{x", "b": "}"}')).toBe('{\n  "a": "#{x",\n  "b": "}"\n}');
   });
 
   test('literals are copied, not re-serialised: big numbers and escapes survive', () => {
