@@ -12,7 +12,8 @@
 // (:w, :q, :q!, :wq, :x) and the clipboard sync of the unnamed register.
 // Which IDE an ex command or a yank belongs to is looked up by its view.
 import { Vim, getCM, vim } from '@replit/codemirror-vim';
-import { EditorView, ViewPlugin, drawSelection } from '@codemirror/view';
+import { EditorView, ViewPlugin, drawSelection, keymap } from '@codemirror/view';
+import { deleteCharBackward } from '@codemirror/commands';
 import type { Extension } from '@codemirror/state';
 import { T } from '../../ui/theme';
 
@@ -210,6 +211,17 @@ const cursorTheme = EditorView.theme({
 });
 
 /**
+ * Vim's insert-mode Ctrl+H: delete the character before the cursor. The
+ * library leaves the key alone (its own insert-mode keys include Ctrl+W and
+ * Ctrl+U), and outside a Mac CodeMirror has no binding for it, so without
+ * this the browser would take it (History). Only in insert mode: in normal
+ * mode the key does nothing here.
+ */
+const insertModeKeys = keymap.of([
+  { key: 'Ctrl-h', run: (view) => !!vimKeyState(view)?.insert && deleteCharBackward(view) }
+]);
+
+/**
  * Vim mode for one IDE view. Goes first in the view's extensions (the
  * library needs its keys handled before any other keymap). drawSelection()
  * is part of it because Vim mode hides the browser's own selection, so a
@@ -218,6 +230,7 @@ const cursorTheme = EditorView.theme({
 export function vimExtension(host: VimHost): Extension {
   return [
     vim(),
+    insertModeKeys,
     drawSelection(),
     cursorTheme,
     ViewPlugin.define((view) => new VimBridge(view, host))

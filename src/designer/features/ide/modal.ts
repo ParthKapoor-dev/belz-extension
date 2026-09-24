@@ -508,6 +508,8 @@ export class IdeModal {
   private vimModule: VimModule | null = null;
   /** Vim mode is on in the current view. */
   private vimActive = false;
+  /** `onBeforeUnload` is on `window`: the IDE holds unsaved changes. */
+  private guardingUnload = false;
   /** What Vim mode calls back: its ex commands, yanks for the clipboard, the mode line. */
   private readonly vimHost: VimHost = {
     write: () => this.writeAndStay(),
@@ -594,6 +596,7 @@ export class IdeModal {
       EditorView.updateListener.of((update) => {
         if (!update.docChanged || !this.view) return;
         if (update.transactions.some((tr) => tr.docChanged && !tr.isUserEvent('format'))) this.edited = true;
+        this.syncUnloadGuard();
         // An edit after the discard prompt takes the prompt back.
         this.footer.disarmDiscard();
         if (this.languageOverridden) return;
@@ -618,6 +621,8 @@ export class IdeModal {
     });
 
     this.applyFontSize(getSelectedFontSize());
+    // A reopen over unsaved changes starts clean.
+    this.syncUnloadGuard();
     // The first open with Vim on, before its chunk is in: it goes in once loaded.
     this.syncVim();
   }
@@ -724,6 +729,7 @@ export class IdeModal {
     this.variableSource = null;
     this.footer.clear();
     this.destroyView();
+    this.syncUnloadGuard();
     this.vimActive = false;
     modalLock.unlock(this);
   }
@@ -735,7 +741,34 @@ export class IdeModal {
    * saved.
    */
   get hasUnsavedChanges(): boolean {
-    return this.view !== null && this.text() !== this.openedText && (!this.readOnly || this.edited);
+    if (!this.view || (this.readOnly && !this.edited)) return false;
+    const doc = this.view.state.doc;
+    return doc.length !== this.openedText.length || doc.toString() !== this.openedText;
+  }
+
+  /**
+   * The browser's "Leave site?" dialog, on `window` only while the IDE holds
+   * unsaved changes. Ctrl+W (Vim's delete-word-back in insert mode) is the
+   * browser's own and no page can take it, so closing or reloading the tab
+   * asks first rather than dropping the work. The page's own beforeunload
+   * listeners are left as they are.
+   */
+  private readonly onBeforeUnload = (event: BeforeUnloadEvent): void => {
+    event.preventDefault();
+    event.returnValue = '';
+  };
+
+  /**
+   * Put `onBeforeUnload` on `window` or take it off to follow
+   * `hasUnsavedChanges`. Runs on every change of the text, after `:w`, on
+   * open and on close; touches `window` only when the state flips.
+   */
+  private syncUnloadGuard(): void {
+    const unsaved = this.hasUnsavedChanges;
+    if (unsaved === this.guardingUnload) return;
+    this.guardingUnload = unsaved;
+    if (unsaved) window.addEventListener('beforeunload', this.onBeforeUnload);
+    else window.removeEventListener('beforeunload', this.onBeforeUnload);
   }
 
   /**
@@ -845,6 +878,8 @@ export class IdeModal {
   dispose(): void {
     this.close();
     window.removeEventListener('keydown', this.onKeydown, true);
+    window.removeEventListener('beforeunload', this.onBeforeUnload);
+    this.guardingUnload = false;
     this.unsubscribeSettings?.();
     this.unsubscribeSettings = null;
     this.overlay?.remove();
@@ -872,6 +907,7 @@ export class IdeModal {
     this.openedText = this.text();
     this.edited = false;
     this.footer.disarmDiscard();
+    this.syncUnloadGuard();
   }
 
   /**

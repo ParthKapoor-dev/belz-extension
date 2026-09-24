@@ -359,3 +359,46 @@ describe('the IDE\'s keys with Vim mode on', () => {
     expect(seen).toBe(0);
   });
 });
+
+describe('deleting back in insert mode (Ctrl+W is the browser\'s: it closes the tab)', () => {
+  /** Press `init` in insert mode at the end of `text`: whether it was prevented, what the page saw, what is left. */
+  async function inInsert(text: string, init: KeyboardEventInit) {
+    const opened = await openVim(text);
+    keys(opened, 'A');
+    // Unfocused: happy-dom reports a selection change inside CodeMirror's
+    // update (browsers do so later), which CodeMirror logs as an error.
+    opened.view()!.contentDOM.blur();
+    let seen = 0;
+    const listener = () => { seen++; };
+    document.addEventListener('keydown', listener);
+    window.addEventListener('keydown', listener);
+    let prevented: boolean;
+    try {
+      prevented = press(opened.view()!, init);
+    } finally {
+      document.removeEventListener('keydown', listener);
+      window.removeEventListener('keydown', listener);
+    }
+    return {
+      prevented,
+      seen,
+      text: opened.view()!.state.doc.toString(),
+      insert: opened.cm().state.vim?.insertMode ?? null
+    };
+  }
+
+  test('Ctrl+Backspace deletes the word before the cursor', async () => {
+    const result = await inInsert('select one two', { key: 'Backspace', code: 'Backspace', ctrlKey: true });
+    expect(result).toEqual({ prevented: true, seen: 0, text: 'select one ', insert: true });
+  });
+
+  test('Ctrl+H deletes the character before the cursor', async () => {
+    const result = await inInsert('select 12', { key: 'h', code: 'KeyH', ctrlKey: true });
+    expect(result).toEqual({ prevented: true, seen: 0, text: 'select 1', insert: true });
+  });
+
+  test('Ctrl+U deletes to the start of the line', async () => {
+    const result = await inInsert('one\nselect 12', { key: 'u', code: 'KeyU', ctrlKey: true });
+    expect(result).toEqual({ prevented: true, seen: 0, text: 'one\n', insert: true });
+  });
+});
