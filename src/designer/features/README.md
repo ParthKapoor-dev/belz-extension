@@ -7,7 +7,7 @@ One folder per designer feature. Each runs in the content script on AD pages, PD
 | Folder | What it does | Setting | Pages |
 |---|---|---|---|
 | [`title-updater/`](title-updater/) | `TitleUpdater`: tab title `AD: <method>` / `PD: <page>` | `titleUpdater` | AD, PD |
-| [`keyboard/`](keyboard/) | `KeyboardShortcuts`: Esc Esc everywhere; Ctrl+Shift+Enter, Shift+L, Shift+J on AD | `runTestShortcut` | AD, PD |
+| [`keyboard/`](keyboard/) | `KeyboardShortcuts`: Esc Esc everywhere; Ctrl+Shift+Enter, Shift+L, Shift+J on AD | `keyboardShortcuts` | AD, PD |
 | [`run-test/`](run-test/) | `runTestAction`: finds and clicks AD's Run Test button (passed to `KeyboardShortcuts` by `ad-content.ts`) | none | AD |
 | [`json-editor/`](json-editor/) | `JsonEditor`: JSON button and modal to edit every test input as one JSON object | `jsonEditor` | AD |
 | [`output-copy/`](output-copy/) | `OutputCopy`: hover copy button on AD's output containers | `outputCopy` | AD |

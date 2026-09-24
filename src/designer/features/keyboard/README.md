@@ -1,6 +1,6 @@
 # `src/designer/features/keyboard/`
 
-Keyboard shortcuts on designer pages. Runs in the content script on AD and PD pages. Switched by the `runTestShortcut` setting (shown as **Keyboard Shortcuts**), which covers every shortcut here.
+Keyboard shortcuts on designer pages. Runs in the content script on AD and PD pages. Switched by the `keyboardShortcuts` setting (shown as **Keyboard Shortcuts**), which covers every shortcut here.
 
 ## Contents
 

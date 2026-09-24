@@ -3,10 +3,10 @@
 // are easy to spot.
 //
 // The `sdExtension…V1` keys do not carry the extension's `belz` prefix (see
-// namespace.ts) and keep their names: renaming a key loses what every user
-// has stored under it. The same goes for the shape stored under a key: an
-// incompatible change needs a new key or a migration (config/README.md,
-// "Stored shapes").
+// namespace.ts): their `V1` is the version of the shape stored under them.
+// Before the first release keys and shapes may change freely; from the first
+// release on, an incompatible change needs a new key or a migration
+// (config/README.md, "Stored shapes").
 
 /** Feature toggles + IDE defaults. Written by src/designer/core/settings.ts. */
 export const SETTINGS_STORAGE_KEY = 'sdExtensionSettingsV1';

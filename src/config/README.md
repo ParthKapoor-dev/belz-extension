@@ -30,8 +30,8 @@ Every name the extension adds to a world it shares with someone else starts with
 - the autofill marker in a designer URL's fragment: `AUTOFILL_FRAGMENT_PARAM` (`belz-autofill`).
 
 The storage keys are the exception: `SETTINGS_STORAGE_KEY`, `HOSTS_STORAGE_KEY`,
-`AD_CACHE_STORAGE_KEY` and `FOCUS_STORAGE_KEY` keep their `sdExtension…V1` names, because renaming a
-key would lose the settings and site list every user already has stored. New keys use `belz`.
+`AD_CACHE_STORAGE_KEY` and `FOCUS_STORAGE_KEY` keep their `sdExtension…V1` names: their `V1` is the
+version of the shape stored under them (see "Stored shapes"). New keys use `belz`.
 
 ## What belongs here
 

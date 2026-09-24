@@ -24,7 +24,7 @@ What each entry passes in:
 | Setting key | AD | PD |
 |---|---|---|
 | `titleUpdater` | `TitleUpdater` | `TitleUpdater` |
-| `runTestShortcut` | `KeyboardShortcuts` with the Run Test, copy-link and JSON editor actions | `KeyboardShortcuts` with no actions (Esc Esc only) |
+| `keyboardShortcuts` | `KeyboardShortcuts` with the Run Test, copy-link and JSON editor actions | `KeyboardShortcuts` with no actions (Esc Esc only) |
 | `jsonEditor` | `JsonEditor` | not bundled |
 | `outputCopy` | `OutputCopy` | not bundled (it looks for AD's output containers) |
 | `ide` | `Ide` with `scanScope` as its scope provider | `Ide` without one |

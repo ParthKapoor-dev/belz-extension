@@ -3,9 +3,10 @@
 // The Settings type, the defaults, validation and the modal's rows are all
 // derived from this list: adding a setting means adding one entry here.
 //
-// The keys are what is stored (under SETTINGS_STORAGE_KEY). Renaming one, or
-// changing the values it accepts incompatibly, resets every user's choice for
-// it: see "Stored shapes" in config/README.md.
+// The keys are what is stored (under SETTINGS_STORAGE_KEY). Before the first
+// release they, and the values each accepts, may change freely; from the
+// first release on, an incompatible change needs a new storage key or a
+// migration: see "Stored shapes" in config/README.md.
 
 /** Where the settings modal shows a setting. */
 export type SettingSection = 'features' | 'ide' | 'advanced';
@@ -43,9 +44,8 @@ const FONT_SIZES = [12, 13, 14, 16, 18] as const;
 
 export const SETTINGS = {
   titleUpdater: toggle('features', 'Title Updater', 'Update tab title with AD/PD method/page name'),
-  // Switches every KeyboardShortcuts shortcut, not only Run Test; the key is
-  // what is stored, so it is not renamed to match.
-  runTestShortcut: toggle(
+  // Switches every KeyboardShortcuts shortcut.
+  keyboardShortcuts: toggle(
     'features',
     'Keyboard Shortcuts',
     'Ctrl+Shift+Enter run test · Esc Esc unfocus · Shift+L copy link (AD) · Shift+J JSON editor (AD)'

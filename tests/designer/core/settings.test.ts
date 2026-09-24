@@ -85,13 +85,13 @@ describe('SettingsStore', () => {
     const mem = memoryStorage();
     const store = new SettingsStore(mem.storage);
     const seen: boolean[] = [];
-    const unsubscribe = store.subscribe((s) => seen.push(s.runTestShortcut));
-    store.set('runTestShortcut', false);
+    const unsubscribe = store.subscribe((s) => seen.push(s.keyboardShortcuts));
+    store.set('keyboardShortcuts', false);
     unsubscribe();
 
     expect(seen[0]).toBe(true); // called immediately with the current value
     expect(seen.at(-1)).toBe(false);
-    expect(mem.writes.at(-1)?.runTestShortcut).toBe(false);
+    expect(mem.writes.at(-1)?.keyboardShortcuts).toBe(false);
   });
 
   test('set() ignores unknown keys and no-op changes', () => {

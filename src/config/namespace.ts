@@ -5,8 +5,8 @@
 // the host app and easy to spot (Inspect → filter on "belz").
 //
 // The one exception is the storage keys in storage-keys.ts: they keep their
-// `sdExtension…V1` names, because renaming a key would lose the settings and
-// site list every user has stored.
+// `sdExtension…V1` names, whose `V1` is the version of the shape stored under
+// them (config/README.md, "Stored shapes").
 
 export const EXT_PREFIX = 'belz';
 

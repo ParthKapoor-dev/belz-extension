@@ -13,6 +13,6 @@ import { bootstrap } from './core/bootstrap';
 
 bootstrap({
   titleUpdater: new TitleUpdater(),
-  runTestShortcut: new KeyboardShortcuts(),
+  keyboardShortcuts: new KeyboardShortcuts(),
   ide: new Ide()
 });

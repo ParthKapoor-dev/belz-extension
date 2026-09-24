@@ -15,7 +15,7 @@ import { bootstrap } from './core/bootstrap';
 
 bootstrap({
   titleUpdater: new TitleUpdater(),
-  runTestShortcut: new KeyboardShortcuts({
+  keyboardShortcuts: new KeyboardShortcuts({
     runTest: runTestAction,
     copyLink: () => void copyAdRichLink(),
     // Shift+J follows the JSON Editor setting, like the button does.
