@@ -2,19 +2,15 @@
 //
 // Each host in the list is (a) an origin the user has granted us
 // chrome.permissions on (host permissions are requested at runtime in MV3),
-// and (b) a set of registered content scripts the background worker
-// reconciles against this same list. This page only writes the list; see
-// src/background/content-scripts.ts for the reconcile loop.
+// and (b) a set of registered content scripts the background reconciles
+// against this same list. The page never writes the list itself: it asks the
+// browser for a permission (or removes one) from the user's click, then sends
+// the change to the background (a HostsEdit message), which makes every
+// change to the list one at a time. See src/background/content-scripts.ts.
 
-import {
-  hostPattern,
-  isHostsChange,
-  normalizeHost,
-  readHosts,
-  syncEnabledFlags,
-  writeHosts,
-  type HostEntry
-} from '../shared/hosts';
+import { HOSTS_MESSAGE_KEY } from '../config/namespace';
+import { hostPattern, isHostsChange, normalizeHost, readGrants, readHosts, type HostEntry } from '../shared/hosts';
+import type { HostsEdit, HostsEditResult } from '../shared/messages';
 import { required } from '../shared/dom';
 import { errorText } from '../shared/errors';
 import { createLogger } from '../shared/logger';
@@ -26,6 +22,13 @@ const SAVED_HINT_MS = 1200;
 
 /** A stored host plus what the browser says about its permission right now. */
 type HostWithGrant = HostEntry & { granted: boolean };
+
+/** Ask the background to make `edit`; rejects with its reason when it refused. */
+async function sendEdit(edit: HostsEdit): Promise<void> {
+  const result = (await chrome.runtime.sendMessage(edit)) as HostsEditResult | undefined;
+  if (!result) throw new Error('The extension did not answer. Reload this page and try again.');
+  if (!result.ok) throw new Error(result.error);
+}
 
 /**
  * The Allowed sites list over options.html's markup. start() wires the form
@@ -78,16 +81,15 @@ export class OptionsPage {
   }
 
   /**
-   * Ask the browser for each host's permission, bring the stored `enabled`
-   * flags in line with it, and repaint. The browser, not storage, is the
-   * authority: a list restored from sites.default.json, or one carried into
+   * Read the list, ask the browser for each host's permission, and repaint.
+   * The browser, not the stored `enabled` flag, decides what each row
+   * offers: a list restored from sites.default.json, or one carried into
    * another profile, can name hosts the extension holds no permission for.
    */
   async refresh(): Promise<void> {
     const generation = ++this.generation;
-    const grants = await syncEnabledFlags();
-    if (generation !== this.generation) return;
     const hosts = await readHosts();
+    const grants = await readGrants(hosts);
     if (generation !== this.generation) return;
     this.render(hosts.map((entry) => ({ ...entry, granted: grants.get(entry.host) ?? false })));
   }
@@ -123,29 +125,27 @@ export class OptionsPage {
     if (msg) log.warn(msg);
   }
 
+  /**
+   * Ask the browser for `host`'s permission and, once granted, have the
+   * background list it (or mark a listed one granted: a seeded entry, say).
+   * chrome.permissions.request must run inside the user gesture: the submit
+   * or click handler calls this, and nothing is awaited before it.
+   */
+  private async requestAndAdd(host: string): Promise<boolean> {
+    const granted = await chrome.permissions.request({ origins: [hostPattern(host)] });
+    if (!granted) {
+      this.setError(`Permission for ${host} was denied.`);
+      return false;
+    }
+    await sendEdit({ [HOSTS_MESSAGE_KEY]: 'add', host });
+    return true;
+  }
+
   private async add(host: string): Promise<void> {
     this.setError('');
     this.addBtn.disabled = true;
     try {
-      // chrome.permissions.request must run inside a user-gesture handler —
-      // the submit event chain is one, provided nothing else is awaited first.
-      const granted = await chrome.permissions.request({ origins: [hostPattern(host)] });
-      if (!granted) {
-        this.setError(`Permission for ${host} was denied.`);
-        return;
-      }
-      const hosts = await readHosts();
-      const existing = hosts.find((h) => h.host === host);
-      if (existing) {
-        // Already listed — typically a seeded entry the user just granted.
-        // Mark it live rather than refusing the add.
-        existing.enabled = true;
-        delete existing.seeded;
-      } else {
-        hosts.push({ host, enabled: true, addedAt: Date.now() });
-      }
-      await writeHosts(hosts);
-      this.inputEl.value = '';
+      if (await this.requestAndAdd(host)) this.inputEl.value = '';
       await this.refresh();
     } catch (err) {
       this.setError(errorText(err));
@@ -159,11 +159,7 @@ export class OptionsPage {
     this.setError('');
     button.disabled = true;
     try {
-      const granted = await chrome.permissions.request({ origins: [hostPattern(host)] });
-      if (!granted) {
-        this.setError(`Permission for ${host} was denied.`);
-        return;
-      }
+      await this.requestAndAdd(host);
       await this.refresh();
     } catch (err) {
       this.setError(errorText(err));
@@ -173,30 +169,23 @@ export class OptionsPage {
   }
 
   /**
-   * Revoke: drop the entry from storage, then remove the permission. The
-   * background sees the storage change and unregisters the host's content
-   * scripts. The entry goes first so that the background's own reaction to
-   * the removed permission (it marks a listed host as not granted) finds
-   * nothing to mark. If the browser refuses the removal, the entry is put
-   * back, so the list never hides a host the browser still trusts.
+   * Revoke: remove the permission (from the click, as the browser may
+   * require a user gesture), then have the background drop the entry and
+   * unregister the host's scripts. If the browser refuses the removal,
+   * nothing changes.
    */
   private async revoke(host: string, button: HTMLButtonElement): Promise<void> {
     this.setError('');
     button.disabled = true;
     try {
-      const before = await readHosts();
-      const entry = before.find((h) => h.host === host);
-      await writeHosts(before.filter((h) => h !== entry));
       let removed = false;
       try {
         removed = await chrome.permissions.remove({ origins: [hostPattern(host)] });
       } catch (err) {
         log.debug(`removing the permission for ${host} failed:`, err);
       }
-      if (!removed) {
-        if (entry) await writeHosts([...(await readHosts()), entry]);
-        this.setError(`Could not revoke ${host}.`);
-      }
+      if (removed) await sendEdit({ [HOSTS_MESSAGE_KEY]: 'revoke', host });
+      else this.setError(`Could not revoke ${host}.`);
       await this.refresh();
     } catch (err) {
       this.setError(errorText(err));
@@ -213,19 +202,19 @@ export class OptionsPage {
   private async commitDesignerHost(entry: HostWithGrant, input: HTMLInputElement, saved: HTMLElement): Promise<void> {
     const raw = input.value.trim();
     const next = raw ? normalizeHost(raw) : '';
-    if (raw && !next) {
+    if (next === null) {
       this.setError(`"${raw}" is not a valid hostname.`);
       return;
     }
     this.setError('');
     if ((entry.designerHost || '') === next) return;
-    const hosts = await readHosts();
-    const target = hosts.find((h) => h.host === entry.host);
-    if (!target) return;
-    if (next) target.designerHost = next;
-    else delete target.designerHost;
+    try {
+      await sendEdit({ [HOSTS_MESSAGE_KEY]: 'designerHost', host: entry.host, designerHost: next });
+    } catch (err) {
+      this.setError(errorText(err));
+      return;
+    }
     entry.designerHost = next || undefined;
-    await writeHosts(hosts);
     if (!this.started) return;
     saved.classList.add('show');
     const timer = setTimeout(() => {

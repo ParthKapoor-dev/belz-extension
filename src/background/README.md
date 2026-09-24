@@ -4,15 +4,15 @@ The extension's background context: a service worker in Chromium, a background s
 (the per-browser split is made by `browserManifest()` in
 [`scripts/manifests.mjs`](../../scripts/manifests.mjs), which [`scripts/pack.mjs`](../../scripts/pack.mjs)
 writes out). It has no UI. It
-decides which sites the content scripts run on, answers the few messages other worlds send it, and
-handles the browser-level keyboard shortcuts.
+owns the site list and decides which sites the content scripts run on, answers the few messages other
+worlds send it, and handles the browser-level keyboard shortcuts.
 
 ## Contents
 
 | File / directory | What it does |
 |---|---|
 | [`index.ts`](index.ts) | Entry, built to `dist/background.js`. Only constructs and starts `ContentScriptSync`, `MessageRelay` and `CommandHandler`. |
-| [`content-scripts.ts`](content-scripts.ts) | `ContentScriptSync` keeps the registered content scripts in step with the site list, and the list's `enabled` flags in step with the browser's permissions; `reconcileContentScripts()` is one pass; `seedHostsIfEmpty()` restores the list from `sites.default.json`. |
+| [`content-scripts.ts`](content-scripts.ts) | `ContentScriptSync`, the site list's only writer: makes the options page's edits, keeps the list's `enabled` flags in step with the browser's permissions and the registered content scripts in step with the list; `reconcileContentScripts()` is one pass; `seedHostsIfEmpty()` restores the list from `sites.default.json`. |
 | [`relay.ts`](relay.ts) | `MessageRelay`: the PD Inspector relay and the "Open in draft" autofill handoff, for validated senders only. |
 | [`commands.ts`](commands.ts) | `CommandHandler`: the `chrome.commands` shortcuts (`open-settings`, `focus-ad-network`, `focus-pd-inspector`). |
 
@@ -29,23 +29,33 @@ handles the browser-level keyboard shortcuts.
    does not leave the others undone. `registerContentScripts` is all-or-nothing, so when an id turns
    out to be registered already ("Duplicate script ID"), `register()` retries each script alone and
    updates the existing one instead.
-2. **Serialised reconciles.** `ContentScriptSync.reconcile()` never runs two passes at once: a pass
-   waits for the running one, and every request that arrives before it starts shares it. It reads the
-   list when it starts, so the latest list wins. It never rejects. `ContentScriptSync.start()` calls it
-   on any `storage.onChanged` that touches the host list (`isHostsChange()`).
+2. **One queue.** Everything `ContentScriptSync` does to the list or the registrations runs one task at
+   a time in one promise chain (`enqueue()`): edits, grant syncs, seeding and reconciles, so no two of
+   them read-modify-write the list at once. `reconcile()` waits for the running task, and every request
+   that arrives before its pass starts shares it. It reads the list when it starts, so the latest list
+   wins. It never rejects. `ContentScriptSync.start()` calls it on any `storage.onChanged` that touches
+   the host list (`isHostsChange()`), and it runs after every grant sync and edit.
 3. **Grant sync.** A permission can change outside the options page (the browser's own extension
-   settings). `ContentScriptSync.syncGrants()` runs `syncEnabledFlags()` from
-   [`shared/hosts.ts`](../shared/hosts.ts), in the same one-at-a-time queue as the reconciles, then
-   reconciles: each stored `enabled` flag becomes what `chrome.permissions.contains` says, so a
-   revoked host's scripts are unregistered and a granted one's registered. It runs on
-   `permissions.onAdded` / `onRemoved`, `runtime.onStartup`, and `runtime.onInstalled` (after
-   `seedHostsIfEmpty()`).
-4. **Seeding.** `seedHostsIfEmpty()` fetches `SITES_SEED_FILE` from the extension root when storage has
+   settings). `ContentScriptSync.syncGrants()` stores each `enabled` flag as `chrome.permissions.contains`
+   reports it (`readGrants()` from [`shared/hosts.ts`](../shared/hosts.ts); a granted seeded entry
+   loses `seeded`), in the queue, then reconciles, so a revoked host's scripts are unregistered and a
+   granted one's registered. It runs on `permissions.onAdded` / `onRemoved`, `runtime.onStartup`, and
+   `runtime.onInstalled` (after `seedHostsIfEmpty()`, which runs in the queue too).
+4. **The options page's edits.** The options page never writes the list: it sends a `HostsEdit`
+   ([`shared/messages.ts`](../shared/messages.ts)), which `ContentScriptSync.onMessage` accepts only
+   whole-shape and only from the options page itself (`isFromOptionsPage()`). `edit()` makes it in the
+   queue and answers `{ ok: true }` or `{ ok: false, error }`. The host must be a normalised hostname.
+   `add` (sent once the browser granted the permission) lists the host at the end, or marks a listed
+   one granted in place; it is refused unless the browser holds the permission. `revoke` (sent once the
+   browser removed the permission) drops the entry, keeping the others' order; it is refused while the
+   browser still holds the permission. `designerHost` sets a listed host's designer host
+   (normalised) or clears it with `''`.
+5. **Seeding.** `seedHostsIfEmpty()` fetches `SITES_SEED_FILE` from the extension root when storage has
    no host key at all. Each seeded `host` and `designerHost` goes through `normalizeHost()`, like a host
    typed on the options page, and invalid ones are dropped. Seeded entries are stored
    `enabled: false, seeded: true`, because only a user gesture on the options page can grant a
    permission. A list the user emptied (`{hosts: []}`) is never re-seeded.
-5. **Message relay.** `MessageRelay.onMessage` acts only on messages that pass the full-shape guards in
+6. **Message relay.** `MessageRelay.onMessage` acts only on messages that pass the full-shape guards in
    [`shared/messages.ts`](../shared/messages.ts), and checks who sent them:
    - `PdRelayMessage`, only from this extension's own pages (`isFromExtensionPage()`: no tab, and a
      URL on the extension's origin), because Firefox
@@ -58,7 +68,7 @@ handles the browser-level keyboard shortcuts.
      `takeHandoff()` from [`shared/autofill-handoff.ts`](../shared/autofill-handoff.ts), which removes
      the body so it can be read once; anyone else gets null. Takes run one at a time (a promise chain
      in `MessageRelay`), so two requests for one id cannot both read the body.
-6. **Commands.** `open-settings` sends an `OpenSettingsMessage` (key `COMMAND_MESSAGE_KEY`) to the
+7. **Commands.** `open-settings` sends an `OpenSettingsMessage` (key `COMMAND_MESSAGE_KEY`) to the
    active tab, where the designer content script opens the in-page Settings modal.
    `focus-ad-network` and `focus-pd-inspector` call `writeFocusFlag()` from
    [`shared/focus-flag.ts`](../shared/focus-flag.ts), because no browser lets an extension open or
@@ -67,7 +77,8 @@ handles the browser-level keyboard shortcuts.
 ## How it connects
 
 - **Used by:** the browser, through `manifest.json` (`background`, `commands`).
-- **Talks to:** the [options page](../options/) (through the host list in storage), the
+- **Talks to:** the [options page](../options/) (its `HostsEdit` messages, and the host list in
+  storage), the
   [PD Inspector panel](../devtools/pd-inspector/) and its page engine in
   [`pd-inspector-page/`](../pd-inspector-page/) (relay), the designer content scripts in
   [`designer/`](../designer/) (open-settings, autofill handoff), the
@@ -91,8 +102,8 @@ handles the browser-level keyboard shortcuts.
 
 [`tests/background/content-scripts.test.ts`](../../tests/background/content-scripts.test.ts) covers
 `reconcileContentScripts`, `ContentScriptSync` (concurrent and coalesced reconciles, duplicate ids, no
-unhandled rejections, permissions removed or granted outside the options page) and
-`seedHostsIfEmpty`.
+unhandled rejections, permissions removed or granted outside the options page, the options page's
+edits, a grant and a revoke at once) and `seedHostsIfEmpty`.
 [`tests/background/relay.test.ts`](../../tests/background/relay.test.ts) covers `MessageRelay` (sender
 and payload checks, the `open` allow-list, the autofill handoff, two takes of one id at once) and
 `CommandHandler`. Both use the

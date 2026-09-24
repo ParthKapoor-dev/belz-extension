@@ -8,9 +8,9 @@ Worlds share data only through `chrome.storage` and messages, and this folder de
 
 | File / directory | What it does |
 |---|---|
-| [`hosts.ts`](hosts.ts) | The allowed-sites list: `HostEntry`, `normalizeHost()`, `hostPattern()`, `httpsHostOf()`, `isAllowedUrl()`, `readHosts()`, `readEnabledHosts()`, `enabledHostSet()`, `writeHosts()`, `syncEnabledFlags()`, `isHostsChange()`. |
+| [`hosts.ts`](hosts.ts) | The allowed-sites list: `HostEntry`, `normalizeHost()`, `hostPattern()`, `httpsHostOf()`, `isAllowedUrl()`, `readHosts()`, `readEnabledHosts()`, `enabledHostSet()`, `writeHosts()` (the background only), `isGranted()`, `readGrants()`, `isHostsChange()`. |
 | [`logger.ts`](logger.ts) | `createLogger(scope)`: the extension's only console output, printed as `[belz:<scope>]`. |
-| [`messages.ts`](messages.ts) | Every message shape that crosses worlds (`PdCommand`, `PdPushMessage`, `PdRelayMessage`, `OpenSettingsMessage`, `TakeAutofillMessage`, `FocusFlag`), their full-shape guards, and the sender checks `isFromExtension()` / `isFromExtensionPage()`. |
+| [`messages.ts`](messages.ts) | Every message shape that crosses worlds (`PdCommand`, `PdPushMessage`, `PdRelayMessage`, `OpenSettingsMessage`, `HostsEdit`, `TakeAutofillMessage`, `FocusFlag`), their full-shape guards, and the sender checks `isFromExtension()` / `isFromExtensionPage()` / `isFromOptionsPage()`. |
 | [`autofill-handoff.ts`](autofill-handoff.ts) | The "Open in draft" handoff: `storeHandoff()` (panel side), `takeHandoff()` (background side), `isHandoffId()`, `HANDOFF_TTL_MS`. |
 | [`rich-link.ts`](rich-link.ts) | `escapeHtml()`, `richLink()` and `copyRichLink()`: a link that pastes as a clickable label, with the label escaped. |
 | [`errors.ts`](errors.ts) | `errorText(err)`: an error's message for people, `''` when there is nothing to say. `isTransientStatus(status)`: 408, 429 or 5xx, the HTTP answers worth retrying. |
@@ -25,19 +25,21 @@ Worlds share data only through `chrome.storage` and messages, and this folder de
   origin a host's permission is requested and checked for. `httpsHostOf()` returns the normalised host
   of an https URL and null for any other scheme; `enabledHostSet()` is the normalised granted hosts.
   `isAllowedUrl(url, allowed)` is the one allowed-site check (https, and a host in `allowed`), used by
-  the background relay, the DevTools page and the AD Network panel. `syncEnabledFlags()` asks
-  `chrome.permissions.contains` for every listed host and stores each `enabled` flag as the browser
-  reports it (a granted seeded entry loses `seeded`); the background runs it on every permission
-  change and the options page on every render.
+  the background relay, the DevTools page and the AD Network panel. `isGranted()` and `readGrants()`
+  ask `chrome.permissions.contains`, the authority on grants, and write nothing. Only the background
+  calls `writeHosts()`: every change to the list (the options page's, and the grant sync that stores
+  each `enabled` flag as the browser reports it) runs in its one queue, in `ContentScriptSync`
+  ([`background/content-scripts.ts`](../background/content-scripts.ts)).
 - **`logger.ts`** keeps a `DebugSwitch` that follows the `debugLogging` setting through
   `chrome.storage`. Warnings and errors always print; debug and info print only while Debug Logging is
   on. In code without extension APIs it stays off.
 - **`messages.ts`** holds types plus guards (`isPdCommand`, `isPdPick`, `isPdRouteChanged`,
-  `isPdRelay`, `isOpenSettings`, `isTakeAutofill`). The guards check the whole shape, not only a tag:
+  `isPdRelay`, `isOpenSettings`, `isHostsEdit`, `isTakeAutofill`). The guards check the whole shape, not only a tag:
   `isPdCommand` accepts only the four known commands with their fields, and `isPdRelay` also checks the
   `tabId` and the command inside. Who may send a message is the receiver's check: `isFromExtension()`
   (this extension, not another) and `isFromExtensionPage()` (one of its own pages: no `sender.tab`,
-  and a `sender.url` on the extension's own origin; never a content script). A sender and its receiver use the same type, so renaming a field breaks the type check
+  and a `sender.url` on the extension's own origin; never a content script) and `isFromOptionsPage()`
+  (such a page at `OPTIONS_PAGE`, the only sender of a `HostsEdit`). A sender and its receiver use the same type, so renaming a field breaks the type check
   rather than the feature.
 - **`autofill-handoff.ts`** keeps a request body in `chrome.storage.session` under
   `AUTOFILL_HANDOFF_KEY_PREFIX` plus a random 32-hex id. Only the id travels in the opened URL's
@@ -80,7 +82,7 @@ Worlds share data only through `chrome.storage` and messages, and this folder de
 ## Testing
 
 [`tests/shared/hosts.test.ts`](../../tests/shared/hosts.test.ts) covers `normalizeHost` and host
-storage; `syncEnabledFlags` is covered through the options page and the background tests. [`tests/shared/logger.test.ts`](../../tests/shared/logger.test.ts) covers `createLogger` and
+storage; `readGrants` is covered through the options page and the background tests. [`tests/shared/logger.test.ts`](../../tests/shared/logger.test.ts) covers `createLogger` and
 fails on any stray `console.*` call in `src/`.
 [`tests/shared/rich-link.test.ts`](../../tests/shared/rich-link.test.ts) covers the escaping. The
 message guards and the handoff are covered through their users in

@@ -14,9 +14,9 @@ here. The modules hold no state, so each world can safely carry its own copy.
 | [`timings.ts`](timings.ts) | `TIMINGS`: waits tuned against the designer pages (widget polls, pauses after clicks, `jsonButtonThrottle`, `rearmDelays`, `pdRoutePoll`), plus numbers two parts of the extension must agree on (`panelFocusFlash`, `pdInspectHeartbeat`, `pdInspectTimeout`) and the AD Network lookup retry schedule (`resolveRetry`). |
 | [`routes.ts`](routes.ts) | Path prefixes: `AD_ROUTE_PREFIX` (`/automation-designer/`), `PD_ROUTE_PREFIX` (`/ui-designer/`), `PAGES_ROUTE_PREFIX` (`/pages/`). |
 | [`endpoints.ts`](endpoints.ts) | Paths on the inspected host: `CHAIN_PATH_RE`, `PD_DEPLOYABLE_PATH`, `chainV2Path()`, `chainV1Path()`, `designerPath()`, `pdPagePath()`, `pdSymbolPath()`. |
-| [`extension-files.ts`](extension-files.ts) | Paths of the extension's own files in the packaged tree: `CONTENT_SCRIPT_FILES`, `PANEL_PAGES`, `SITES_SEED_FILE`. |
+| [`extension-files.ts`](extension-files.ts) | Paths of the extension's own files in the packaged tree: `CONTENT_SCRIPT_FILES`, `PANEL_PAGES`, `OPTIONS_PAGE`, `SITES_SEED_FILE`. |
 | [`storage-keys.ts`](storage-keys.ts) | `chrome.storage` keys: `SETTINGS_STORAGE_KEY`, `HOSTS_STORAGE_KEY`, `AD_CACHE_STORAGE_KEY`, `FOCUS_STORAGE_KEY`, and the `AUTOFILL_HANDOFF_KEY_PREFIX` of an "Open in draft" handoff. |
-| [`namespace.ts`](namespace.ts) | The one naming prefix, `belz`: `EXT_PREFIX`, `ns()`, `nsAttr()`, `nsGlobal()`, `EXTENSION_OWNED_ATTR`, `PAGE_GLOBALS` (the AD Network wrapper's one global in the inspected page), `COMMAND_MESSAGE_KEY`, `AUTOFILL_MESSAGE_KEY`, `AUTOFILL_FRAGMENT_PARAM`. |
+| [`namespace.ts`](namespace.ts) | The one naming prefix, `belz`: `EXT_PREFIX`, `ns()`, `nsAttr()`, `nsGlobal()`, `EXTENSION_OWNED_ATTR`, `PAGE_GLOBALS` (the AD Network wrapper's one global in the inspected page), `COMMAND_MESSAGE_KEY`, `HOSTS_MESSAGE_KEY`, `AUTOFILL_MESSAGE_KEY`, `AUTOFILL_FRAGMENT_PARAM`. |
 
 ## The naming prefix
 
@@ -26,7 +26,7 @@ Every name the extension adds to a world it shares with someone else starts with
 - DOM ids and classes on the designer pages: `ns('SettingsButton')` → `belzSettingsButton`;
 - data attributes: `nsAttr('owned')` → `data-belz-owned` (`EXTENSION_OWNED_ATTR` marks injected DOM);
 - globals in the inspected page and message keys: `nsGlobal('Command')` → `__belzCommand`
-  (`PAGE_GLOBALS`, `COMMAND_MESSAGE_KEY`, `AUTOFILL_MESSAGE_KEY`);
+  (`PAGE_GLOBALS`, `COMMAND_MESSAGE_KEY`, `HOSTS_MESSAGE_KEY`, `AUTOFILL_MESSAGE_KEY`);
 - the autofill marker in a designer URL's fragment: `AUTOFILL_FRAGMENT_PARAM` (`belz-autofill`).
 
 The storage keys are the exception: `SETTINGS_STORAGE_KEY`, `HOSTS_STORAGE_KEY`,
@@ -65,8 +65,8 @@ What does **not** belong here:
   `PD_CONFIG_NODES`, `PD_DEPLOYABLE_PATH`, `PAGES_ROUTE_PREFIX`, `TIMINGS.pdRoutePoll`,
   `TIMINGS.pdInspectTimeout` and `ns()`. [`devtools/`](../devtools/) uses the endpoints,
   `PANEL_PAGES`, `PAGE_GLOBALS`, `AUTOFILL_FRAGMENT_PARAM` and the panel timings.
-  [`background/`](../background/) and [`shared/`](../shared/) use routes, extension files, storage keys
-  and message keys.
+  [`background/`](../background/), [`options/`](../options/) and [`shared/`](../shared/) use routes,
+  extension files, storage keys and message keys.
 - **Depends on:** nothing outside this folder. `endpoints.ts` imports `routes.ts`.
 
 ## Conventions

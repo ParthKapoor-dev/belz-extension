@@ -6,7 +6,7 @@ Unit tests for the background service worker's logic in [`src/background/`](../.
 
 | File | Source under test | What it covers |
 |---|---|---|
-| [`content-scripts.test.ts`](content-scripts.test.ts) | [`content-scripts.ts`](../../src/background/content-scripts.ts) | `ContentScriptSync` (including permissions removed or granted outside the options page), `reconcileContentScripts()` and `seedHostsIfEmpty()`. |
+| [`content-scripts.test.ts`](content-scripts.test.ts) | [`content-scripts.ts`](../../src/background/content-scripts.ts) | `ContentScriptSync` (including permissions removed or granted outside the options page, and the options page's edits), `reconcileContentScripts()` and `seedHostsIfEmpty()`. |
 | [`relay.test.ts`](relay.test.ts) | [`relay.ts`](../../src/background/relay.ts), [`commands.ts`](../../src/background/commands.ts) | `MessageRelay` (PD Inspector relay, its sender check, and the autofill handoff, one take at a time) and `CommandHandler`. |
 
 ## What is covered
@@ -17,6 +17,9 @@ Unit tests for the background service worker's logic in [`src/background/`](../.
 - Requests made while a pass runs are coalesced into one more pass, which reads the latest host list.
 - A host-list change reconciles; a failing step (here, unregistering) is logged, the other steps still run, and nothing is left as an unhandled rejection.
 - A script registered behind its back (the list it read was stale) is updated rather than failing the pass.
+- A grant of one host and a revoke of another, sent at once with their permission events, never bring the revoked host back, and the others keep their order.
+- `add` lists a granted host at the end and marks a listed one granted in place; an add the browser did not grant, or a revoke of a permission it still holds, is refused and changes nothing. The designer host is stored normalised, cleared with `''`, and refused when invalid.
+- Edits are accepted only from the options page (`optionsPageSender`; not another extension page, a sender with a tab or another extension), only whole-shape, and only for a normalised hostname.
 
 **`reconcileContentScripts()`**
 
@@ -42,7 +45,7 @@ Unit tests for the background service worker's logic in [`src/background/`](../.
 ## How it works
 
 - The host list is written with `writeHosts()` from [`src/shared/hosts.ts`](../../src/shared/hosts.ts). Registrations are read back from `fakeChrome.scripting.registered`, forwarded messages from `fakeChrome.tabs.messages` and opened tabs from `fakeChrome.tabs.created` (see [`../fakes/`](../fakes/)).
-- `relay.test.ts` calls `relay.onMessage()` directly with senders built by `extensionPageSender` and `contentScriptSender()` from the fake.
+- `relay.test.ts` calls `relay.onMessage()` directly with senders built by `extensionPageSender` and `contentScriptSender()` from the fake; `content-scripts.test.ts` calls `ContentScriptSync.onMessage()` the same way with `optionsPageSender`.
 - Concurrency tests hold a pass open by wrapping `getRegisteredContentScripts` with a gate, and restore every wrapped fake method in `finally`. They listen for `unhandledRejection` on `process`.
 - The seed file is served by replacing `globalThis.fetch`; the real `fetch` is restored after each test. `fakeChrome.reset()` runs before each test.
 

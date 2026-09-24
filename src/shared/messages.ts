@@ -11,7 +11,8 @@
 //
 // Types only: nothing here exists at runtime except the small guards.
 
-import { AUTOFILL_MESSAGE_KEY, COMMAND_MESSAGE_KEY } from '../config/namespace';
+import { AUTOFILL_MESSAGE_KEY, COMMAND_MESSAGE_KEY, HOSTS_MESSAGE_KEY } from '../config/namespace';
+import { OPTIONS_PAGE } from '../config/extension-files';
 
 type Json = Record<string, unknown>;
 const asRecord = (value: unknown): Json | null =>
@@ -33,6 +34,11 @@ export function isFromExtensionPage(sender: chrome.runtime.MessageSender | null 
   if (!isFromExtension(sender) || sender!.tab) return false;
   const url = sender!.url;
   return typeof url === 'string' && url.startsWith(chrome.runtime.getURL(''));
+}
+
+/** Sent by this extension's options page: an extension page at OPTIONS_PAGE. */
+export function isFromOptionsPage(sender: chrome.runtime.MessageSender | null | undefined): boolean {
+  return isFromExtensionPage(sender) && sender!.url!.split(/[?#]/)[0] === chrome.runtime.getURL(OPTIONS_PAGE);
 }
 
 // ---- PD Inspector: panel <-> page engine -----------------------------------
@@ -131,6 +137,38 @@ export interface FocusFlag {
   target: 'ad' | 'pd';
   /** When the shortcut fired (epoch ms); stale flags are ignored. */
   ts: number;
+}
+
+// ---- the allowed-sites list ------------------------------------------------------
+
+/**
+ * Options page -> background: one change to the allowed-sites list, which
+ * only the background writes. `add` follows a permission the browser granted:
+ * it lists the host, or marks a listed one granted. `revoke` follows a
+ * permission the browser removed: it drops the entry. `designerHost` sets a
+ * listed host's designer host, or clears it with ''. Answered with a
+ * HostsEditResult once the list is stored.
+ */
+export type HostsEdit =
+  | { [HOSTS_MESSAGE_KEY]: 'add'; host: string }
+  | { [HOSTS_MESSAGE_KEY]: 'revoke'; host: string }
+  | { [HOSTS_MESSAGE_KEY]: 'designerHost'; host: string; designerHost: string };
+
+/** The background's answer to a HostsEdit: why it was refused, when it was. */
+export type HostsEditResult = { ok: true } | { ok: false; error: string };
+
+export function isHostsEdit(msg: unknown): msg is HostsEdit {
+  const m = asRecord(msg);
+  if (!m || typeof m.host !== 'string') return false;
+  switch (m[HOSTS_MESSAGE_KEY]) {
+    case 'add':
+    case 'revoke':
+      return true;
+    case 'designerHost':
+      return typeof m.designerHost === 'string';
+    default:
+      return false;
+  }
 }
 
 // ---- "Open in draft" autofill ----------------------------------------------------

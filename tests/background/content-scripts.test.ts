@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { fakeChrome } from '../fakes/chrome';
+import { extensionPageSender, fakeChrome, optionsPageSender } from '../fakes/chrome';
+import { HOSTS_MESSAGE_KEY } from '../../src/config/namespace';
 import { HOSTS_STORAGE_KEY } from '../../src/config/storage-keys';
 import { hostPattern, readHosts, writeHosts } from '../../src/shared/hosts';
 import {
@@ -129,6 +130,78 @@ describe('ContentScriptSync', () => {
     await waitFor(() => ids().length === 3, 'b.test to be unregistered');
     expect(ids()).toEqual(['ad-a.test', 'pd-a.test', 'pdi-a.test']);
     expect((await readHosts()).map((h) => [h.host, h.enabled])).toEqual([['a.test', true], ['b.test', false]]);
+  });
+
+  /** Send `edit` to the background as the options page does; resolves with its answer ('ignored' when none). */
+  function send({ op, ...fields }: Record<string, unknown>, sender: object = optionsPageSender): Promise<unknown> {
+    return new Promise((resolve) => {
+      if (!sync.onMessage({ [HOSTS_MESSAGE_KEY]: op, ...fields }, sender as any, resolve)) resolve('ignored');
+    });
+  }
+  const listed = async () => (await readHosts()).map((h) => [h.host, h.enabled]);
+
+  test('a grant of one host and a revoke of another, at once, never bring the revoked one back', async () => {
+    await writeHosts([
+      { host: 'a.test', enabled: true },
+      { host: 'b.test', enabled: false, seeded: true },
+      { host: 'c.test', enabled: true }
+    ]);
+    fakeChrome.permissions.granted.add(hostPattern('a.test'));
+    fakeChrome.permissions.granted.add(hostPattern('c.test'));
+    sync.start();
+    await sync.reconcile();
+
+    // What the options page does for Grant on b and Revoke on a: the browser
+    // grants and removes (each firing its event), and the page sends both.
+    fakeChrome.permissions.granted.add(hostPattern('b.test'));
+    fakeChrome.permissions.onAdded.dispatch({ origins: [hostPattern('b.test')] });
+    fakeChrome.permissions.granted.delete(hostPattern('a.test'));
+    fakeChrome.permissions.onRemoved.dispatch({ origins: [hostPattern('a.test')] });
+    const answers = await Promise.all([send({ op: 'add', host: 'b.test' }), send({ op: 'revoke', host: 'a.test' })]);
+
+    expect(answers).toEqual([{ ok: true }, { ok: true }]);
+    await waitFor(() => ids().join() === 'ad-b.test,ad-c.test,pd-b.test,pd-c.test,pdi-b.test,pdi-c.test', 'b and c registered');
+    expect(await listed()).toEqual([['b.test', true], ['c.test', true]]); // a gone, order kept
+    expect((await readHosts())[0]!.seeded).toBe(undefined);
+    expect(errors).toEqual([]);
+  });
+
+  test('add lists a granted host at the end, and marks a listed one granted in place', async () => {
+    await writeHosts([{ host: 'a.test', enabled: false, seeded: true }, { host: 'b.test', enabled: true }]);
+    fakeChrome.permissions.granted.add(hostPattern('a.test'));
+    fakeChrome.permissions.granted.add(hostPattern('new.test'));
+    expect(await send({ op: 'add', host: 'a.test' })).toEqual({ ok: true });
+    expect(await send({ op: 'add', host: 'new.test' })).toEqual({ ok: true });
+    expect(await listed()).toEqual([['a.test', true], ['b.test', true], ['new.test', true]]);
+  });
+
+  test('the browser decides: an add it did not grant, or a revoke it still holds, changes nothing', async () => {
+    await writeHosts([{ host: 'a.test', enabled: true }]);
+    fakeChrome.permissions.granted.add(hostPattern('a.test'));
+    expect(await send({ op: 'add', host: 'b.test' })).toEqual({ ok: false, error: 'Permission for b.test was not granted.' });
+    expect(await send({ op: 'revoke', host: 'a.test' })).toEqual({ ok: false, error: 'Could not revoke a.test.' });
+    expect(await listed()).toEqual([['a.test', true]]);
+  });
+
+  test('the designer host is set normalised, cleared with blank, and refused when invalid', async () => {
+    await writeHosts([{ host: 'a.test', enabled: true }]);
+    expect(await send({ op: 'designerHost', host: 'a.test', designerHost: 'HTTPS://Staff.A.Test/x' })).toEqual({ ok: true });
+    expect((await readHosts())[0]!.designerHost).toBe('staff.a.test');
+    expect(await send({ op: 'designerHost', host: 'a.test', designerHost: 'bad host' }))
+      .toEqual({ ok: false, error: '"bad host" is not a valid hostname.' });
+    expect(await send({ op: 'designerHost', host: 'a.test', designerHost: '' })).toEqual({ ok: true });
+    expect('designerHost' in (await readHosts())[0]!).toBe(false);
+  });
+
+  test('edits come only from the options page, well-formed, for a normalised hostname', async () => {
+    fakeChrome.permissions.granted.add(hostPattern('a.test'));
+    expect(await send({ op: 'add', host: 'a.test' }, extensionPageSender)).toBe('ignored');
+    expect(await send({ op: 'add', host: 'a.test' }, { ...optionsPageSender, tab: { id: 1 } })).toBe('ignored');
+    expect(await send({ op: 'add', host: 'a.test' }, { ...optionsPageSender, id: 'other' })).toBe('ignored');
+    expect(await send({ op: 'designerHost', host: 'a.test' })).toBe('ignored');
+    expect(await send({ op: 'drop', host: 'a.test' })).toBe('ignored');
+    expect(await send({ op: 'add', host: 'A.Test' })).toEqual({ ok: false, error: '"A.Test" is not a valid hostname.' });
+    expect(await readHosts()).toEqual([]);
   });
 
   test('a permission granted outside the options page marks the host and registers its scripts', async () => {

@@ -1,4 +1,5 @@
-// The background's message handler: the only messages it answers.
+// The background's message relay: the messages it answers besides the
+// options page's edits of the site list (which ContentScriptSync answers).
 //
 //   - PD Inspector relay (`PdRelayMessage`). Firefox gives DevTools panels no
 //     chrome.tabs, so the PD Inspector panel asks the background to forward
@@ -32,11 +33,6 @@ const log = createLogger('background');
 
 type Sender = chrome.runtime.MessageSender;
 type Respond = (response: unknown) => void;
-
-/** True when `url` is https on a granted site, as stored now. */
-async function isOnAllowedSite(url: string | undefined): Promise<boolean> {
-  return isAllowedUrl(url, await enabledHostSet());
-}
 
 export class MessageRelay {
   private started = false;
@@ -88,7 +84,7 @@ export class MessageRelay {
 
   private async open(url: string): Promise<boolean> {
     try {
-      if (!(await isOnAllowedSite(url))) {
+      if (!isAllowedUrl(url, await enabledHostSet())) {
         log.warn('refusing to open a URL that is not on an allowed site:', url);
         return false;
       }
@@ -108,7 +104,7 @@ export class MessageRelay {
     } catch {
       return null;
     }
-    if (!path.startsWith(AD_ROUTE_PREFIX) || !(await isOnAllowedSite(sender.url))) return null;
+    if (!path.startsWith(AD_ROUTE_PREFIX) || !isAllowedUrl(sender.url, await enabledHostSet())) return null;
     // One take at a time: takeHandoff reads, then removes.
     const take = this.taking.then(() => takeHandoff(msg.id));
     this.taking = take.catch(() => null);

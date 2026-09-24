@@ -1,13 +1,16 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fakeChrome } from '../fakes/chrome';
+import { fakeChrome, optionsPageSender } from '../fakes/chrome';
 import { OptionsPage } from '../../src/options/options-page';
+import { ContentScriptSync } from '../../src/background/content-scripts';
 import { hostPattern, readHosts, writeHosts } from '../../src/shared/hosts';
 
 // Drives the real OptionsPage over the real options.html markup, with the
-// fake chrome.permissions and chrome.storage. Assertions read text, class
-// names and plain values only (see tests/memory-guard-worker.ts).
+// fake chrome.permissions and chrome.storage, and the background's
+// ContentScriptSync answering its messages (it alone writes the list).
+// Assertions read text, class names and plain values only (see
+// tests/memory-guard-worker.ts).
 
 const flush = async () => {
   for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
@@ -32,6 +35,7 @@ async function submit(value: string) {
 }
 
 let page: OptionsPage;
+const background = new ContentScriptSync();
 let baseline: number[] = [];
 const listenerCounts = () => [
   fakeChrome.storage.onChanged.listeners.length,
@@ -52,6 +56,11 @@ beforeAll(() => {
 afterAll(() => page.stop());
 beforeEach(async () => {
   fakeChrome.reset();
+  // The background, answering the page's messages as the browser delivers them.
+  fakeChrome.runtime.respond = (message) =>
+    new Promise((resolve) => {
+      if (!background.onMessage(message, optionsPageSender, resolve)) resolve(undefined);
+    });
   await writeHosts([]);
   await flush();
 });
@@ -98,12 +107,13 @@ describe('OptionsPage', () => {
     expect([stored!.enabled, stored!.seeded]).toEqual([true, undefined]);
   });
 
-  test('the stored enabled flag follows the browser, not the other way round', async () => {
-    // Stored as enabled, but the browser holds no grant (revoked elsewhere).
+  test('a row follows the browser, not the stored flag, and the page writes nothing', async () => {
+    // Stored as enabled, but the browser holds no grant (revoked elsewhere):
+    // the background's grant sync fixes the flag, not this page.
     await writeHosts([{ host: 'site.test', enabled: true }]);
     await flush();
     expect(rows()).toEqual([{ host: 'site.test', granted: false, button: 'Grant' }]);
-    expect((await readHosts())[0]!.enabled).toBe(false);
+    expect((await readHosts())[0]!.enabled).toBe(true);
   });
 
   test('a permission removed outside the page repaints the row', async () => {
@@ -123,7 +133,26 @@ describe('OptionsPage', () => {
     expect(items().length).toBe(0);
   });
 
-  test('a refused revoke keeps the entry', async () => {
+  test('Grant on one host and Revoke on another at once: the revoked one stays gone, the order stays', async () => {
+    await writeHosts([
+      { host: 'a.test', enabled: true },
+      { host: 'b.test', enabled: false, seeded: true },
+      { host: 'c.test', enabled: true }
+    ]);
+    fakeChrome.permissions.granted.add(hostPattern('a.test'));
+    fakeChrome.permissions.granted.add(hostPattern('c.test'));
+    await flush();
+    button('b.test').click();
+    button('a.test').click();
+    await flush();
+    expect(rows()).toEqual([
+      { host: 'b.test', granted: true, button: 'Revoke' },
+      { host: 'c.test', granted: true, button: 'Revoke' }
+    ]);
+    expect((await readHosts()).map((h) => h.host)).toEqual(['b.test', 'c.test']);
+  });
+
+  test('a refused revoke changes nothing', async () => {
     await submit('site.test');
     fakeChrome.permissions.allowRemove = false;
     button('site.test').click();

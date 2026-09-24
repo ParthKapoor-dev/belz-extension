@@ -2,8 +2,9 @@
 //
 // Entry only: constructs and starts the three parts, each in its own module.
 //
-//   1. ContentScriptSync (content-scripts.ts): keeps the registered content
-//      scripts in step with the user's site list.
+//   1. ContentScriptSync (content-scripts.ts): the site list's only writer
+//      (the options page's edits, grant syncs), and the registered content
+//      scripts kept in step with it.
 //   2. MessageRelay (relay.ts): the PD Inspector relay and the "Open in
 //      draft" autofill handoff, for validated senders only.
 //   3. CommandHandler (commands.ts): the browser-level keyboard shortcuts.

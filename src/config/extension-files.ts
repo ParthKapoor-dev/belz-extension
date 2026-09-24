@@ -21,5 +21,8 @@ export const PANEL_PAGES = {
   pdInspector: 'panel-pd.html'
 } as const;
 
+/** The options page, which edits the allowed-sites list. */
+export const OPTIONS_PAGE = 'options.html';
+
 /** The optional, gitignored list of sites restored on a fresh install. */
 export const SITES_SEED_FILE = 'sites.default.json';

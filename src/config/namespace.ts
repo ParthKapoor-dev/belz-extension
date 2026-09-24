@@ -43,6 +43,9 @@ export const PAGE_GLOBALS = {
 /** Key of a browser-command message from the background to a designer page. */
 export const COMMAND_MESSAGE_KEY = nsGlobal('Command');
 
+/** Key of an allowed-sites edit from the options page to the background. */
+export const HOSTS_MESSAGE_KEY = nsGlobal('Hosts');
+
 /** Key of an autofill-handoff message from a designer page to the background. */
 export const AUTOFILL_MESSAGE_KEY = nsGlobal('Autofill');
 

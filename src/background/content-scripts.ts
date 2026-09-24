@@ -1,35 +1,45 @@
-// Content-script registration, reconciled against the user's host list.
+// The allowed-sites list's one owner, and the content scripts registered for it.
 //
 // The manifest declares no content scripts: which sites the extension runs on
-// is the user's choice, made on the options page. On startup and whenever the
-// list changes, ContentScriptSync makes the registered scripts match it —
-// three per enabled host (AD, PD, PD Inspector) with stable ids.
+// is the user's choice, made on the options page. ContentScriptSync makes the
+// registered scripts match the list — three per granted host (AD, PD, PD
+// Inspector) with stable ids.
 //
-// A host's `enabled` flag follows the browser's permission, which can change
-// outside the options page (the browser's own extension settings): on
-// startup, on install and on every permission change, the flags are synced
-// with the browser (syncEnabledFlags), and the storage change that makes
-// reconciles the scripts in turn.
+// Only the background writes the list, and one change at a time. The options
+// page asks for each change with a HostsEdit message (add a granted host,
+// drop a revoked one, set a designer host); a host's `enabled` flag follows
+// the browser's permission, which can also change outside the options page
+// (the browser's own extension settings), so on startup, on install (after
+// seeding) and on every permission change the flags are synced with the
+// browser (syncGrants). All of these run in one queue, so no two of them
+// read-modify-write the list at once.
 //
-// Reconciles never overlap. Two at once (an install and a storage change
-// arriving together, say) would both see a script missing and both register
-// it, and the second would fail with "Duplicate script ID". So they run one
-// after another, and requests that arrive while one runs are coalesced into a
-// single follow-up run, which reads the list afresh: the latest list wins.
+// Reconciles run in that queue too. They are triggered by every storage
+// change to the list, and explicitly after a grant sync or an edit (a sync
+// that changed nothing writes nothing, and a browser start still has to
+// restore the registrations). Two reconciles at once would both see a script
+// missing and both register it, and the second would fail with "Duplicate
+// script ID". Requests that arrive while one waits are coalesced into it; it
+// reads the list when it starts, so the latest list wins.
 
 import { HOSTS_STORAGE_KEY } from '../config/storage-keys';
 import { AD_ROUTE_PREFIX, PD_ROUTE_PREFIX, PAGES_ROUTE_PREFIX } from '../config/routes';
 import { CONTENT_SCRIPT_FILES, SITES_SEED_FILE } from '../config/extension-files';
 import {
   hostPattern,
+  isGranted,
   isHostsChange,
   normalizeHost,
   readEnabledHosts,
-  syncEnabledFlags,
+  readGrants,
+  readHosts,
   writeHosts,
   type HostEntry
 } from '../shared/hosts';
+import { errorText } from '../shared/errors';
 import { createLogger } from '../shared/logger';
+import { isFromOptionsPage, isHostsEdit, type HostsEdit, type HostsEditResult } from '../shared/messages';
+import { HOSTS_MESSAGE_KEY } from '../config/namespace';
 
 const log = createLogger('background');
 
@@ -189,20 +199,79 @@ export async function seedHostsIfEmpty(): Promise<void> {
   }
 }
 
+// ---- the list's changes ---------------------------------------------------------
+
+/**
+ * Store each host's `enabled` flag as the browser reports its permission. A
+ * granted seeded entry also loses its `seeded` mark.
+ */
+async function syncEnabledFlags(): Promise<void> {
+  const stored = await readHosts();
+  const grants = await readGrants(stored);
+  let changed = false;
+  for (const entry of stored) {
+    const granted = grants.get(entry.host)!;
+    if (entry.enabled === granted) continue;
+    entry.enabled = granted;
+    if (granted) delete entry.seeded;
+    changed = true;
+  }
+  if (changed) await writeHosts(stored);
+}
+
+/**
+ * Make one options-page change to the list, in place, so the order stays.
+ * Rejects with the reason it was refused: a host that is not a normalised
+ * hostname, an add the browser did not grant, a revoke of a permission the
+ * browser still holds. An edit of a host that is not listed changes nothing.
+ */
+async function applyHostsEdit(edit: HostsEdit): Promise<void> {
+  const host = edit.host;
+  if (normalizeHost(host) !== host) throw new Error(`"${host}" is not a valid hostname.`);
+  const op = edit[HOSTS_MESSAGE_KEY];
+  // The browser is the authority on grants: the list never names a host as
+  // granted that is not, nor drops one the browser still trusts.
+  if (op === 'add' && !(await isGranted(host))) throw new Error(`Permission for ${host} was not granted.`);
+  if (op === 'revoke' && (await isGranted(host))) throw new Error(`Could not revoke ${host}.`);
+
+  const hosts = await readHosts();
+  const index = hosts.findIndex((h) => h.host === host);
+  const entry = hosts[index];
+  if (op === 'add') {
+    if (entry) {
+      // Already listed: typically a seeded entry the user just granted.
+      entry.enabled = true;
+      delete entry.seeded;
+    } else {
+      hosts.push({ host, enabled: true, addedAt: Date.now() });
+    }
+  } else if (!entry) {
+    return;
+  } else if (op === 'revoke') {
+    hosts.splice(index, 1);
+  } else {
+    const designerHost = edit.designerHost ? normalizeHost(edit.designerHost) : '';
+    if (designerHost === null) throw new Error(`"${edit.designerHost}" is not a valid hostname.`);
+    if (designerHost) entry.designerHost = designerHost;
+    else delete entry.designerHost;
+  }
+  await writeHosts(hosts);
+}
+
 // ---- the background's side --------------------------------------------------
 
 /**
- * Keeps the registrations in step with the site list, and the list's
- * `enabled` flags in step with the browser's permissions, for the life of the
- * background: on install (after seeding), on browser start, on every
- * permission change and on every change to the list. Grant syncs and
- * reconciles run one at a time, and reconciles are coalesced (see top).
+ * Owns the site list and keeps the registrations in step with it, for the
+ * life of the background: the options page's edits, grant syncs (on install
+ * after seeding, on browser start, on every permission change) and
+ * reconciles (on every change to the list) all run one at a time, in one
+ * queue; reconciles are coalesced (see top).
  */
 export class ContentScriptSync {
   private started = false;
-  /** The pass running now (or the last one); the next waits for it. */
-  private running: Promise<void> = Promise.resolve();
-  /** A pass requested but not started yet: later requests join it. */
+  /** The task running now (or the last one); the next waits for it. */
+  private running: Promise<unknown> = Promise.resolve();
+  /** A reconcile requested but not started yet: later requests join it. */
   private waiting: Promise<void> | null = null;
 
   start(): void {
@@ -210,6 +279,7 @@ export class ContentScriptSync {
     this.started = true;
     chrome.runtime.onInstalled.addListener(this.onInstalled);
     chrome.runtime.onStartup.addListener(this.onStartup);
+    chrome.runtime.onMessage.addListener(this.onMessage);
     chrome.storage.onChanged.addListener(this.onStorageChanged);
     chrome.permissions.onAdded.addListener(this.onPermissionsChanged);
     chrome.permissions.onRemoved.addListener(this.onPermissionsChanged);
@@ -219,18 +289,26 @@ export class ContentScriptSync {
     this.started = false;
     chrome.runtime.onInstalled.removeListener(this.onInstalled);
     chrome.runtime.onStartup.removeListener(this.onStartup);
+    chrome.runtime.onMessage.removeListener(this.onMessage);
     chrome.storage.onChanged.removeListener(this.onStorageChanged);
     chrome.permissions.onAdded.removeListener(this.onPermissionsChanged);
     chrome.permissions.onRemoved.removeListener(this.onPermissionsChanged);
   }
 
+  /** Run `task` after everything queued before it. Settles as `task` does. */
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.running.then(task);
+    this.running = run.catch(() => undefined);
+    return run;
+  }
+
   /**
-   * Reconcile once more after whatever pass is running. Never rejects.
-   * Callers arriving before that pass starts share it.
+   * Reconcile once more after whatever is running. Never rejects. Callers
+   * arriving before that pass starts share it.
    */
   reconcile(): Promise<void> {
     if (this.waiting) return this.waiting;
-    const pass = this.running.then(async () => {
+    const pass = this.enqueue(async () => {
       this.waiting = null;
       try {
         await reconcileContentScripts();
@@ -239,28 +317,51 @@ export class ContentScriptSync {
       }
     });
     this.waiting = pass;
-    this.running = pass;
     return pass;
   }
 
   /**
    * Store each host's `enabled` flag as the browser reports its permission,
-   * after whatever pass is running, then reconcile. Never rejects.
+   * after whatever is running, then reconcile. Never rejects.
    */
   syncGrants(): Promise<void> {
-    const pass = this.running.then(async () => {
+    const sync = this.enqueue(async () => {
       try {
         await syncEnabledFlags();
       } catch (err) {
         log.error('syncing the site permissions failed:', err);
       }
     });
-    this.running = pass;
-    return pass.then(() => this.reconcile());
+    return sync.then(() => this.reconcile());
   }
 
+  /**
+   * Make one options-page change to the list, after whatever is running,
+   * then reconcile. Resolves with what to answer the page; never rejects.
+   */
+  async edit(edit: HostsEdit): Promise<HostsEditResult> {
+    try {
+      await this.enqueue(() => applyHostsEdit(edit));
+    } catch (err) {
+      return { ok: false, error: errorText(err) || 'The site list could not be changed.' };
+    }
+    void this.reconcile();
+    return { ok: true };
+  }
+
+  /** Answers HostsEdit messages from the options page; returns true when it will. */
+  readonly onMessage = (
+    msg: unknown,
+    sender: chrome.runtime.MessageSender,
+    sendResponse: (response: HostsEditResult) => void
+  ): boolean => {
+    if (!isHostsEdit(msg) || !isFromOptionsPage(sender)) return false;
+    void this.edit(msg).then(sendResponse);
+    return true;
+  };
+
   private readonly onInstalled = (): void => {
-    void seedHostsIfEmpty().then(() => this.syncGrants());
+    void this.enqueue(seedHostsIfEmpty).then(() => this.syncGrants());
   };
 
   private readonly onStartup = (): void => {

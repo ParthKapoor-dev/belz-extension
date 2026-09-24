@@ -227,6 +227,9 @@ export const fakeChrome: FakeChrome = createFakeChrome();
 /** A message sender the extension's own pages would have: this extension, no tab. */
 export const extensionPageSender = { id: 'test-extension', url: 'chrome-extension://test-extension/panel-pd.html' };
 
+/** A message sender the extension's options page would have. */
+export const optionsPageSender = { id: 'test-extension', url: 'chrome-extension://test-extension/options.html' };
+
 /** A message sender for this extension's content script in tab `tabId` at `url`. */
 export function contentScriptSender(url: string, tabId = 1) {
   return { id: 'test-extension', url, tab: { id: tabId } };
