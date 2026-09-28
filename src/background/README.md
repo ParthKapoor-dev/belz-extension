@@ -57,8 +57,8 @@ worlds send it, and handles the browser-level keyboard shortcuts.
    permission. A list the user emptied (`{hosts: []}`) is never re-seeded.
 6. **Message relay.** `MessageRelay.onMessage` acts only on messages that pass the full-shape guards in
    [`shared/messages.ts`](../shared/messages.ts), and checks who sent them:
-   - `PdRelayMessage`, only from this extension's own pages (`isFromExtensionPage()`: no tab, and a
-     URL on the extension's origin), because Firefox
+   - `PdRelayMessage`, only from this extension's own pages (`isFromExtensionPage()`: a URL on the
+     extension's own origin), because Firefox
      gives DevTools panels no `chrome.tabs`. `__pdRelay: 'cmd'` forwards a well-formed `PdCommand` to
      the tab with `chrome.tabs.sendMessage` and passes the answer back (null on error).
      `__pdRelay: 'open'` opens the URL only when it is https on a granted site (`isAllowedUrl()` over

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { extensionPageSender, fakeChrome, optionsPageSender } from '../fakes/chrome';
+import { contentScriptSender, extensionPageSender, fakeChrome, optionsPageSender } from '../fakes/chrome';
 import { HOSTS_MESSAGE_KEY } from '../../src/config/namespace';
 import { HOSTS_STORAGE_KEY } from '../../src/config/storage-keys';
 import { hostPattern, readHosts, writeHosts } from '../../src/shared/hosts';
@@ -196,12 +196,18 @@ describe('ContentScriptSync', () => {
   test('edits come only from the options page, well-formed, for a normalised hostname', async () => {
     fakeChrome.permissions.granted.add(hostPattern('a.test'));
     expect(await send({ op: 'add', host: 'a.test' }, extensionPageSender)).toBe('ignored');
-    expect(await send({ op: 'add', host: 'a.test' }, { ...optionsPageSender, tab: { id: 1 } })).toBe('ignored');
+    expect(await send({ op: 'add', host: 'a.test' }, contentScriptSender('https://a.test/options.html'))).toBe('ignored');
     expect(await send({ op: 'add', host: 'a.test' }, { ...optionsPageSender, id: 'other' })).toBe('ignored');
     expect(await send({ op: 'designerHost', host: 'a.test' })).toBe('ignored');
     expect(await send({ op: 'drop', host: 'a.test' })).toBe('ignored');
     expect(await send({ op: 'add', host: 'A.Test' })).toEqual({ ok: false, error: '"A.Test" is not a valid hostname.' });
     expect(await readHosts()).toEqual([]);
+  });
+
+  test('the options page is answered when open in a tab, as it is in the browser', async () => {
+    fakeChrome.permissions.granted.add(hostPattern('a.test'));
+    expect(await send({ op: 'add', host: 'a.test' }, { ...optionsPageSender, tab: { id: 3 } })).toEqual({ ok: true });
+    expect((await readHosts()).map((h) => h.host)).toEqual(['a.test']);
   });
 
   test('a permission granted outside the options page marks the host and registers its scripts', async () => {

@@ -27,11 +27,13 @@ export function isFromExtension(sender: chrome.runtime.MessageSender | null | un
 
 /**
  * Sent by one of this extension's own pages (a DevTools panel, the options
- * page): no `sender.tab` (a content script always has one), and a URL on the
- * extension's own origin.
+ * page): a `sender.url` on the extension's own origin. A content script's
+ * `sender.url` is the web page it runs in, so it never passes. `sender.tab`
+ * says nothing either way: an extension page open in a tab (the options page,
+ * `open_in_tab`) has one too.
  */
 export function isFromExtensionPage(sender: chrome.runtime.MessageSender | null | undefined): boolean {
-  if (!isFromExtension(sender) || sender!.tab) return false;
+  if (!isFromExtension(sender)) return false;
   const url = sender!.url;
   return typeof url === 'string' && url.startsWith(chrome.runtime.getURL(''));
 }

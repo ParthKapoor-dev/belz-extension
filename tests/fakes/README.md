@@ -25,7 +25,7 @@ What it implements:
 | `commands` | `onCommand` event. |
 | `devtools` | `inspectedWindow.eval` records each expression in `inspectedWindow.evaluated` and returns whatever `inspectedWindow.evalHandler(expression)` returns (set it per test); `network.onNavigated` / `onRequestFinished` events; `getHAR` returns no entries; `panels.create` records `[title, page]` in `panels.created` and calls back at once. |
 
-`extensionPageSender` is a sender as one of the extension's own pages would have it (this extension's id, an extension URL, no tab); `optionsPageSender` is the same for the options page (`options.html`). `contentScriptSender(url, tabId)` is the extension's content script in a tab at `url`.
+`extensionPageSender` is a sender as one of the extension's own pages would have it (this extension's id, an extension URL, no tab); `optionsPageSender` is the same for the options page (`options.html`), with a `tab`, because the real page opens in one. `contentScriptSender(url, tabId)` is the extension's content script in a tab at `url`.
 
 `fakeChrome.reset()` clears stored data, registrations, grants and recorded requests, recorded messages, tabs, panels and evaluated expressions, `lastError`, and resets `evalHandler`, `runtime.respond`, `tabs.respond`, `tabs.queryResult`, `allowRequest` and `allowRemove`. It keeps registered listeners, because source modules may have added them at import time.
 

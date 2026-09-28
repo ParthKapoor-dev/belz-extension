@@ -38,8 +38,9 @@ Worlds share data only through `chrome.storage` and messages, and this folder de
   `isPdRelay`, `isOpenSettings`, `isHostsEdit`, `isTakeAutofill`). The guards check the whole shape, not only a tag:
   `isPdCommand` accepts only the four known commands with their fields, and `isPdRelay` also checks the
   `tabId` and the command inside. Who may send a message is the receiver's check: `isFromExtension()`
-  (this extension, not another) and `isFromExtensionPage()` (one of its own pages: no `sender.tab`,
-  and a `sender.url` on the extension's own origin; never a content script) and `isFromOptionsPage()`
+  (this extension, not another) and `isFromExtensionPage()` (one of its own pages: a `sender.url` on the
+  extension's own origin, which a content script never has; an extension page open in a tab, like the
+  options page, also carries `sender.tab`, so the tab is not checked) and `isFromOptionsPage()`
   (such a page at `OPTIONS_PAGE`, the only sender of a `HostsEdit`). A sender and its receiver use the same type, so renaming a field breaks the type check
   rather than the feature.
 - **`autofill-handoff.ts`** keeps a request body in `chrome.storage.session` under
