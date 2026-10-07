@@ -7,7 +7,7 @@ import path from 'node:path';
 const root = path.resolve(import.meta.dir, '../..');
 const readJson = (file: string) => JSON.parse(readFileSync(path.join(root, file), 'utf8'));
 const manifest = readJson('manifest.json');
-const release = readJson('release.config.json');
+const release = readJson('scripts/release.config.json');
 
 // A plain .mjs module without types: imported by path at run time.
 const modulePath = path.join(root, 'scripts/manifests.mjs');
@@ -35,9 +35,9 @@ describe.each(['chrome', 'firefox'])('the %s manifest', (target) => {
     expect(m.web_accessible_resources).toEqual([{ resources: ['dist/modules/*'], matches: ['https://*/*'] }]);
   });
 
-  test('has an icon at every size, and every icon file exists', () => {
+  test('has an icon at every size, and every icon file exists (under assets/ in the repo)', () => {
     expect(Object.keys(m.icons).sort()).toEqual(['128', '16', '32', '48']);
-    for (const file of Object.values(m.icons) as string[]) expect(existsSync(path.join(root, file))).toBe(true);
+    for (const file of Object.values(m.icons) as string[]) expect(existsSync(path.join(root, 'assets', file))).toBe(true);
   });
 
   test('carries the release version', () => {
@@ -93,7 +93,7 @@ describe('the Chrome Web Store public key (chromePublicKey)', () => {
     expect('key' in m).toBe(false);
   });
 
-  test('is a string in release.config.json, and the root manifest has no `key` of its own', () => {
+  test('is a string in scripts/release.config.json, and the root manifest has no `key` of its own', () => {
     expect(typeof release.chromePublicKey).toBe('string');
     expect('key' in manifest).toBe(false);
   });

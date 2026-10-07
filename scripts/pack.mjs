@@ -4,7 +4,7 @@
 // complete, loadable extension trees:
 //
 //   build/chrome/    — Chromium manifest (service_worker background, plus the
-//                      `key` from release.config.json's chromePublicKey if set)
+//                      `key` from scripts/release.config.json's chromePublicKey if set)
 //   build/firefox/   — Firefox manifest (scripts background + gecko settings)
 //
 // The GitHub Actions release workflow runs this with --store, zips build/chrome
@@ -38,7 +38,7 @@ const versionArg = (() => {
 const store = process.argv.includes('--store');
 
 const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-const release = JSON.parse(readFileSync(path.join(root, 'release.config.json'), 'utf8'));
+const release = JSON.parse(readFileSync(path.join(root, 'scripts/release.config.json'), 'utf8'));
 const version = versionArg ?? manifest.version;
 
 // 1. Build dist/.
@@ -46,6 +46,10 @@ execSync('node scripts/build.mjs', { cwd: root, stdio: 'inherit' });
 
 // 2. Files every packaged tree needs (besides the manifest, written per-browser),
 // as [source in the repo, path in the packaged tree].
+//
+// The icons and fonts live under assets/ in the repo but keep their packaged
+// paths (icons/…, fonts/…), which manifest.json and the pages' @font-face
+// rules name. assets/screenshots/ is for the README and never ships.
 //
 // The HTML pages live next to their scripts in src/ but are placed at the ROOT
 // of the packaged tree. That location is load-bearing: Chromium resolves a
@@ -58,8 +62,8 @@ execSync('node scripts/build.mjs', { cwd: root, stdio: 'inherit' });
 // skips any entry that does not exist.
 const SHARED = [
   ['dist', 'dist'],
-  ['fonts', 'fonts'],
-  ...[16, 32, 48, 128].map((s) => [`icons/icon-${s}.png`, `icons/icon-${s}.png`]),
+  ['assets/fonts', 'fonts'],
+  ...[16, 32, 48, 128].map((s) => [`assets/icons/icon-${s}.png`, `icons/icon-${s}.png`]),
   ['src/devtools/devtools.html', 'devtools.html'],
   ['src/devtools/ad-network/panel.html', 'panel.html'],
   ['src/devtools/pd-inspector/panel.html', 'panel-pd.html'],

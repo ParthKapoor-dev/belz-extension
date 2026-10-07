@@ -148,7 +148,7 @@ export async function reconcileContentScripts(): Promise<void> {
 // Browsers clear an extension's storage when it is uninstalled, and loading a
 // temporary add-on in Firefox uninstalls the previous copy — so a rebuild and
 // re-add cycle loses the site list every time. If the user keeps a
-// sites.default.json in the extension root (see the .example), we restore the
+// sites.default.json in the extension root (format: docs/development.md), we restore the
 // list from it whenever storage comes up empty.
 //
 // Seeded entries are marked enabled:false. The host permission itself cannot

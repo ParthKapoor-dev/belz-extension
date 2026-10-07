@@ -16,14 +16,16 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** Directories watched recursively. */
-const WATCHED_DIRS = ['src', 'fonts'];
+const WATCHED_DIRS = ['src', 'assets/fonts', 'assets/icons'];
 /**
- * Files at the repo root that the build reads: pack.mjs reads the manifest,
- * release.config.json and the optional (gitignored) sites.default.json. The
- * root is watched non-recursively and filtered to these names, so a
- * sites.default.json created after `bun run dev` started is picked up too.
+ * Files at the repo root that the build reads: pack.mjs reads the manifest
+ * and the optional (gitignored) sites.default.json. The root is watched
+ * non-recursively and filtered to these names, so a sites.default.json
+ * created after `bun run dev` started is picked up too.
  */
-const WATCHED_ROOT_FILES = new Set(['manifest.json', 'release.config.json', 'sites.default.json']);
+const WATCHED_ROOT_FILES = new Set(['manifest.json', 'sites.default.json']);
+/** scripts/release.config.json, which pack.mjs also reads. */
+const RELEASE_CONFIG = path.join('scripts', 'release.config.json');
 /** Editors write a file in several steps; wait for them to settle. */
 const DEBOUNCE_MS = 150;
 
@@ -63,5 +65,6 @@ for (const dir of WATCHED_DIRS) {
 watch(root, (_event, filename) => {
   if (filename && WATCHED_ROOT_FILES.has(String(filename))) schedule();
 });
-console.log(`[dev] watching ${[...WATCHED_DIRS, ...WATCHED_ROOT_FILES].join(', ')}`);
+watch(path.join(root, RELEASE_CONFIG), schedule);
+console.log(`[dev] watching ${[...WATCHED_DIRS, ...WATCHED_ROOT_FILES, RELEASE_CONFIG].join(', ')}`);
 build();

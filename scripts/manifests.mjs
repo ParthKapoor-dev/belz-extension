@@ -8,7 +8,7 @@
  * @param {Record<string, any>} manifest The root manifest.json.
  * @param {'chrome' | 'firefox'} target
  * @param {{ version: string, release: Record<string, string>, store?: boolean }} options
- *   `version` goes into the manifest; `release` is release.config.json.
+ *   `version` goes into the manifest; `release` is scripts/release.config.json.
  *   `store` (Chromium only): the tree is the Chrome Web Store package, which
  *   must not carry a `key`.
  * @returns {Record<string, any>}

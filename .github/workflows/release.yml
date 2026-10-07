@@ -11,7 +11,7 @@
 #   5. Firefox: lints and signs build/firefox via the Mozilla AMO API (unlisted
 #      channel) and writes updates.json, the self-hosted update manifest.
 #   6. Attaches the Chrome zip and the signed XPI to the GitHub Release, and
-#      publishes updates.json to GitHub Pages at the URL in release.config.json.
+#      publishes updates.json to GitHub Pages at the URL in scripts/release.config.json.
 #
 # Each store is optional: a store whose secrets are all absent is skipped with
 # a notice. A store with only some of its secrets set fails the run, and so
@@ -48,7 +48,7 @@
 #
 # One-time setup: Settings → Pages → Source: GitHub Actions; and Settings →
 # Environments → github-pages → Deployment branches and tags: allow tags `v*`.
-# See .github/workflows/README.md and the root README ("Releasing").
+# See docs/releasing.md.
 
 name: release
 
@@ -284,7 +284,7 @@ jobs:
           LINK="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$(basename "$XPI")"
           HASH="sha256:$(sha256sum "$XPI" | cut -d' ' -f1)"
           LINK="$LINK" HASH="$HASH" node -e '
-            const { firefoxId } = require("./release.config.json");
+            const { firefoxId } = require("./scripts/release.config.json");
             const update = { version: process.env.VERSION, update_link: process.env.LINK, update_hash: process.env.HASH };
             const doc = { addons: { [firefoxId]: { updates: [update] } } };
             require("fs").writeFileSync("pages/updates.json", JSON.stringify(doc, null, 2) + "\n");'
