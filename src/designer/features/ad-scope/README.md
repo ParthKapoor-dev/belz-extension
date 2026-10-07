@@ -32,7 +32,7 @@ It reads the page, not the chain API. So unsaved draft edits count, and no auth 
 
 ## Testing
 
-[`tests/designer/features/ad-scope.test.ts`](../../../../tests/designer/features/ad-scope.test.ts), with the page fixture in [`tests/fixtures/ad-scope.ts`](../../../../tests/fixtures/ad-scope.ts), covers scoping and field-code parsing. The e2e run checks that the scanner ran (footer status). How to run them is in the Development section of the [root README](../../../../README.md).
+[`tests/designer/features/ad-scope.test.ts`](../../../../tests/designer/features/ad-scope.test.ts), with the page fixture in [`tests/fixtures/ad-scope.ts`](../../../../tests/fixtures/ad-scope.ts), covers scoping and field-code parsing. The e2e run checks that the scanner ran (footer status). How to run them is in [`docs/development.md`](../../../../docs/development.md).
 
 ## Adding or changing things
 

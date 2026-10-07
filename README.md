@@ -1,338 +1,90 @@
 # belz-extension
 
-A browser extension for engineers working in Service Designer. It adds productivity tools to **Automation Designer (AD)** and **Page Designer (PD)**, plus two **DevTools panels**: one for tracing AD method calls, and one for finding which PD component rendered a given part of a page.
+Productivity tools for engineers working in Service Designer's **Automation Designer (AD)** and **Page Designer (PD)**: a full-screen code editor for any text box, a JSON editor for method inputs, handy shortcuts, and two DevTools panels. It runs on Chrome, Edge, Brave, Firefox and Zen, works only on the sites you add yourself, and collects nothing.
 
-It runs on Chrome, Edge, Brave, Firefox and Zen. It only talks to the sites you add yourself, and it collects nothing.
-
-## Contents
-
-- [Install](#install)
-- [First-time setup](#first-time-setup)
-- [Using it](#using-it)
-- [Settings](#settings)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-- [Troubleshooting](#troubleshooting)
-- [Development](#development)
-- [Releasing](#releasing)
-- [Privacy and permissions](#privacy-and-permissions)
-- [License](#license)
-
----
+![The IDE: a SQL query after Format, with #{variable} suggestions open](assets/screenshots/ide.png)
 
 ## Install
 
-**Browsers:** Firefox 128 or newer (and Zen, which is built on it). On Chrome, Edge and Brave, use a current release; the extension sets no minimum Chrome version.
+**Chrome, Edge, Brave:** install it from the [Chrome Web Store](https://chromewebstore.google.com/detail/heenggkonmlbicnokmkbeoodfmfjlgao) and click **Add to Chrome** (in Edge, allow extensions from other stores when asked). The store keeps it up to date.
 
-### Published builds (recommended)
+Or load a release by hand:
 
-**Chrome, Edge, Brave:** open the Chrome Web Store link shared by the maintainer and click **Add to Chrome** (in Edge, first allow extensions from other stores when it asks). The store keeps the extension up to date.
+1. Download `belz-extension-<version>-chrome.zip` from the [latest release](https://github.com/ParthKapoor-dev/belz-extension/releases/latest) and unzip it.
+2. Open `chrome://extensions` (or `edge://extensions`, `brave://extensions`) and turn on **Developer mode**.
+3. Click **Load unpacked** and choose the unzipped folder.
 
-**Firefox, Zen:** download the signed `belz-extension-<version>-firefox.xpi` from the latest [GitHub Release](https://github.com/ParthKapoor-dev/belz-extension/releases/latest) and open it in the browser (or drag it onto a Firefox window), then confirm. It is signed by Mozilla, stays installed across restarts, and updates itself when a new version is released.
+**Firefox, Zen** (Firefox 128 or newer; Zen is built on it):
 
-Then go to [First-time setup](#first-time-setup).
+1. Download `belz-extension-<version>-firefox.xpi` from the [latest release](https://github.com/ParthKapoor-dev/belz-extension/releases/latest).
+2. Open it in Firefox (or drag it onto a Firefox window) and confirm. It is signed by Mozilla and updates itself.
 
-### Updates and your data
+## Setup
 
-- **Updates keep everything:** your allowed sites, their permissions and your settings carry over from one version to the next.
-- **Removing the extension deletes all of it.** Browsers delete an extension's data when it is uninstalled.
-- **Switching from a build you loaded yourself** (**Load unpacked**, or a Firefox temporary add-on) to the published version is a separate install: the two keep separate data. Remove the one you loaded, install the published one, and add your sites once more.
+The extension does nothing until you tell it which sites to work on.
 
-### Build from source
+1. Open the extension's options page:
+   - Chrome, Edge, Brave: `chrome://extensions` → **belz DevTools** → **Details** → **Extension options**
+   - Firefox, Zen: `about:addons` → **belz DevTools** → **Preferences**
+2. Under **Allowed sites**, type your instance's hostname (like `your-instance.example.com`) and click **Add**. Only https sites can be added.
+3. Approve the browser's permission prompt.
+4. Reload any tabs you already had open on that site.
 
-To build it yourself, which takes about a minute:
+Repeat for each environment you use. **Revoke** removes a site and its permission. If your Automation Designer lives on a different host, see [designer host](docs/usage.md#setup).
 
-**You need:** [Git](https://git-scm.com/), [Bun](https://bun.sh/) (CI and the release build use Bun 1.2.20), and [Node.js](https://nodejs.org/) 18 or newer to build (20 or newer for `bun run dev` on Linux, which needs recursive file watching; 22 or newer for the end-to-end tests, which use Node's built-in `WebSocket`).
+## Features
 
-```bash
-git clone https://github.com/ParthKapoor-dev/belz-extension.git
-cd belz-extension
-bun install
-bun run build
-```
+- **IDE:** hover any text box and click **⤢** to edit it full-screen, with syntax highlighting, search, SQL/JSON formatting, `#{variable}` autocomplete and checks (AD), and an optional Vim mode.
+- **JSON input editor:** edit all of a method's inputs as one JSON document and sync them back, each with the right type.
+- **Run Test and link shortcuts:** run the test from anywhere, or copy a link to the method.
+- **Copy buttons** on text boxes and method outputs.
+- **Readable tab titles:** `AD: <method>` and `PD: <page>`.
+- **AD Network panel** (DevTools): every AD method call the page makes, by name, with copy as cURL and **Open in draft** with its inputs filled in.
+- **PD Inspector panel** (DevTools): a published page's component tree, and which component rendered what you point at.
+- **Settings modal:** the **⚙** next to the page title turns each feature on or off.
 
-That creates a ready-to-load extension for each browser family under `build/`. Load the one for your browser:
-
-**Chrome, Edge, Brave**
-
-1. Open `chrome://extensions` (or `edge://extensions`, `brave://extensions`).
-2. Turn on **Developer mode** (top right).
-3. Click **Load unpacked** and choose the **`build/chrome`** folder.
-
-Each GitHub Release also carries the Chrome package as `belz-extension-<version>-chrome.zip`: unzip it and choose that folder in step 3 to load a released version without building.
-
-**Firefox, Zen**
-
-1. Open `about:debugging#/runtime/this-firefox`.
-2. Click **Load Temporary Add-on…**
-3. Choose **`build/firefox/manifest.json`**.
-
-> Firefox removes temporary add-ons when it closes, so you'll repeat these three steps after each restart. That's a Firefox rule for unsigned extensions, not a bug. The signed `.xpi` from a release stays installed.
-
-> **Load from `build/`, never from the repo root.** The root `manifest.json` is a template that the build splits per browser. It will not load in Firefox.
-
----
-
-## First-time setup
-
-**The extension does nothing until you tell it which sites to work on.** It ships without access to any website, so there's one step before anything appears.
-
-1. **Open the extension's options page** (titled **belz DevTools options**; it holds only the list of allowed sites).
-   - Chrome/Edge/Brave: `chrome://extensions` → **belz DevTools** → **Details** → **Extension options**
-   - Firefox/Zen: `about:addons` → **belz DevTools** → **Preferences**
-2. Under **Allowed sites**, type the hostname of your Service Designer instance (only the hostname, like `your-instance.example.com`) and click **Add**. Only **https** sites can be added.
-3. **Approve the browser's permission prompt.** Without it, the extension can't run on that site.
-4. **Reload any tabs** you already had open on that site.
-
-Repeat for each environment you use (dev, QA, and so on). To remove access, click **Revoke**, which removes the site and its permission.
-
-**Optional: designer host.** Some deployments serve the Automation Designer on a different host from the one you browse, such as a public portal plus a staff portal. If yours does, fill in **designer host** for that site so **Open in draft** and the copied links go to the right place. For **Open in draft** to also fill in the method's inputs, add the designer host as an allowed site of its own and grant it. Most setups can leave it blank.
-
----
-
-## Using it
-
-### In Automation Designer
-
-| Feature | How to use it |
-|---|---|
-| **IDE** | Hover over any text box and click **⤢** (**Open in IDE**, top-right corner). The IDE opens full-screen for that text box, with line numbers, search (`Ctrl+F`), SQL and JSON formatting (`Shift+Alt+F`) and syntax highlighting. On published methods, it opens read-only. See [IDE](#ide) below. |
-| **`#{variable}` intellisense** | In the IDE, type `#{` to pick from the method's inputs, internal variables and step outputs. Hover a name to see where it comes from. Unknown names, outputs of steps that run later, and an unclosed `#{` are underlined. Variables are read from the page each time the IDE opens, so unsaved edits (a step you just added) are included. The footer shows the current step and how many variables it can use. |
-| **Copy a text box** | Hover over a text box and click **⧉**. |
-| **Edit inputs as JSON** | Click the **JSON** button next to a method's **Inputs** heading, or press `Shift+J`. Edit every input as one JSON document. **Sync** writes your changes back into each input field with the correct type, including dates, booleans and structured data. |
-| **Copy an output** | Hover over a method's output and click **⧉**. |
-| **Run Test from anywhere** | `Ctrl+Shift+Enter`, even while you're typing in a field. It commits the field first, so the test uses your latest edit. When the page shows no Run Test button, the key does nothing and is left to the page. |
-| **Copy a link to the method** | `Shift+L` copies a link labelled `category::method`. It pastes as a clickable link in Slack and docs. |
-| **Readable tab titles** | Tabs show `AD: <method name>` rather than a generic title. Turning the feature off puts the page's own title back. |
-
-### In Page Designer
-
-The tab title updates to `PD: <page name>`, and the IDE (with its **⧉** copy button on text boxes), `Esc` `Esc` and the Settings modal work the same as in Automation Designer. Page Designer has no Run Test, method link or JSON input editor, so `Ctrl+Shift+Enter`, `Shift+L` and `Shift+J` do nothing there and are left to the page. The output copy button and the `#{variable}` intellisense are AD-only.
-
-### IDE
-
-The IDE is a full-screen CodeMirror editor that opens for the page text box you clicked **⤢** on: language modes, autocomplete, hover help and checks, and an optional Vim mode.
-
-- **Save:** `Ctrl+S` (`Command+S` on Mac) or **Save** writes the text back into the text box and closes the IDE.
-- **Cancel** and **×** close without saving, and without asking.
-- **Esc** or a **click outside** the IDE closes it. `Esc` first closes whatever CodeMirror has open: the autocomplete list or the search panel. If you changed the text, the first `Esc` or click outside only asks, in the footer; press `Esc` or click outside again within 3 seconds to discard your changes. Typing in between cancels the question. Formatting a read-only text box doesn't count as a change.
-- **Unsaved changes are protected:** while the IDE holds text you haven't saved, closing or reloading the tab first shows the browser's **Leave site?** dialog. Once you save, discard, close the IDE or undo back to the original text, it no longer asks.
-- **Deleting words:** `Ctrl+Backspace` (`Option+Backspace` on Mac) deletes the word before the cursor. `Ctrl+W` can't be used: the browser keeps it and closes the tab (the **Leave site?** dialog above saves unsaved work from it).
-- **Search:** `Ctrl+F` (`Command+F`) opens the search panel.
-- **Format:** **Format** in the header, or `Shift+Alt+F` (`Shift+Option+F` on Mac), lays out SQL and JSON so a one-line query is readable: SQL keywords upper case, data types lower case (`::text[]` stays as it is), names as you wrote them, one clause per line, two-space indents, a blank line between statements; JSON indented by two spaces. With text selected, only the selection is formatted, and it keeps the indentation of the line it starts on. `#{…}` placeholders and `:name` parameters are kept exactly as written, and in JSON numbers keep all their digits. One `Ctrl+Z` puts the original back. If the text cannot be parsed (invalid JSON, an unclosed `#{`, SQL that doesn't start with a statement such as `SELECT` or `WITH`), nothing changes and the footer says why, with the line. Other languages have no formatter: the button is greyed out and says so. On a read-only (published) text box you can still format it to read it; nothing is written back.
-- The keys the IDE handles (`Ctrl/Command+S`, `Ctrl/Command+F`, `Shift+Alt+F`, `Esc`) are kept from the page and the browser: `Ctrl+S` never opens the browser's Save page dialog. Other keys typed in the IDE don't reach the page's own shortcuts either.
-- **Autocomplete:** suggestions appear as you type (`Ctrl+Space` asks for them). `↑`/`↓` choose, `Enter` accepts, `Esc` closes the list.
-- **Language:** detected from the text (SQL, SpEL, JavaScript, JSON, Java, Python or plain text). The language dropdown in the header overrides it for this editing session only.
-- **Wrap and font size:** the two dropdowns next to it change the **IDE Wrap** and **IDE Font Size** settings, so the choice applies everywhere, not just to this text box.
-- **⚙** opens the Settings modal over the IDE, and **Copy** copies the IDE's text.
-- **Vim mode:** turn on **IDE Vim Mode** in Settings (it can be switched while the IDE is open). See [Vim mode](#vim-mode) below.
-
-#### Vim mode
-
-With **IDE Vim Mode** on, the IDE edits like Vim (the [`@replit/codemirror-vim`](https://github.com/replit/codemirror-vim) key set). It opens in normal mode, and the footer starts with the mode (`-- NORMAL --`, `-- INSERT --`, `-- VISUAL --`, `-- VISUAL LINE --`, `-- VISUAL BLOCK --`, `-- REPLACE --`) followed by any keys typed so far, such as a count or an operator (`-- NORMAL --  2d`).
-
-- **Esc** belongs to Vim first: it closes the autocomplete list or a hover tooltip, closes the `:` or `/` prompt, leaves insert, replace or visual mode, and cancels keys typed so far. Only in normal mode with nothing pending does `Esc` close the IDE, asking first if you changed the text, as without Vim.
-- **Ex commands:** `:w` writes the text back into the text box and keeps the IDE open; `:q` closes (asks first if the text changed since it was opened or last written; `:q` or `Esc` again within 3 seconds discards); `:q!` closes and drops your changes; `:wq` writes and closes; `:x` writes and closes if the text changed, and just closes otherwise. On a read-only (published) text box `:w`, `:wq` and `:x` write nothing and say so, like **Save**.
-- **Clipboard:** as with Vim's `clipboard=unnamedplus`, every yank, delete and change that doesn't name a register (`yy`, `yiw`, `y` in visual mode, `dd`, `x`, `cw`, `s`, …) and `:yank` also copies its text to the system clipboard. The black hole register (`"_dd`) and named registers (`"ayy`) don't. Replacing a visual selection with `p` doesn't copy what it replaced. `p` pastes from Vim's own register, so pasting never needs the browser's clipboard permission; to paste from the system clipboard, use `Ctrl+V` (`Command+V`) in insert mode. `"+y` copies to the clipboard and `"+p` pastes from it the way the Vim library does, and `"+p` reads the clipboard through the browser, which may ask for permission first (Firefox shows a **Paste** button).
-- **Search** is Vim's `/`, `?`, `n` and `N`; `Ctrl+F` is left to Vim (page down in normal mode) and does not open the search panel.
-- `Ctrl+S` (`Command+S`) saves and closes, and `Shift+Alt+F` formats, in every mode. Vim's own `Ctrl` keys (`Ctrl+V` visual block, `Ctrl+R` redo, `Ctrl+D` / `Ctrl+U`, `Ctrl+O`, …) reach Vim.
-- **Deleting back in insert mode:** Vim's `Ctrl+W` (delete the word before the cursor) can't work in a browser: the browser keeps `Ctrl+W` and closes the tab, asking first only if you have unsaved changes. Use `Ctrl+Backspace` (`Option+Backspace` on Mac) for the word, `Ctrl+U` to delete to the start of the line, and `Ctrl+H` for one character.
-- Autocomplete works in insert mode as usual: while its list is open, `↑`/`↓`, `Enter` and `Esc` are the list's.
-- On a read-only (published) text box, normal-mode moves, search and yanks work; editing commands do nothing.
-- Vim mode is loaded only when it is on: with the setting off, none of its code is fetched.
-
-### DevTools: AD Network
-
-Open DevTools (`F12`) on an allowed site and select the **AD Network** tab. It lists every Automation Designer method call the page makes, in order, with each method's **name and category**. The regular Network tab only shows IDs.
-
-- **Record** pauses and resumes capture. **Clear** empties the list. Tick **Preserve log** to keep entries when the page navigates.
-- **Filter** searches by name, category, UUID or URL. The list keeps the newest 300 requests.
-- **Click a row** to see its headers, request payload, response and timing. `↑`/`↓` move between rows. The detail pane's **Copy** copies what the open tab shows.
-- **Click a UUID** to copy it.
-- **Actions** on each row: **copy as cURL**, **copy a Slack link**, and **Open in draft**. **Open in draft** opens the method's draft in the designer in a background tab, so you stay where you are (a published method opens its linked draft); several clicks are queued and opened one after another. If the request sent inputs, the opened method's inputs are filled in with them (the designer host must be an allowed site). If the method's inputs have not appeared 30 seconds after the page shows the method (a minute at most in all), autofill gives up and says so in a toast.
-- Requests still in progress show as **pending**, and cancelled ones show a red **canceled** label.
-
-Requests made while DevTools was open, before you selected the tab, are still listed; requests from before DevTools opened are not. Names and categories are looked up on the same site with your existing sign-in; while they are unknown, a row shows the start of its UUID.
-
-### DevTools: PD Inspector
-
-Open a **published** page (a `/pages/...` URL) on an allowed site, open DevTools and select the **PD Inspector** tab.
-
-- The panel shows the page's **component tree**, including the navbar and sidebar the page is placed inside.
-- Click **Inspect**, then point at anything on the page to see **which PD component rendered it** and where that component sits in the tree. Click to select it. Inspect mode ends by itself when you close DevTools.
-- Click a component in the tree to **highlight** it on the page.
-- **↗ PD** on a component, and **↗ open in PD** in its detail, open that component (or the page) in Page Designer in a new tab.
-- **Refresh** reloads the page's configuration after a redeploy.
-
----
-
-## Settings
-
-The **Settings modal** is on the AD and PD pages themselves (it is not the options page, which only holds the allowed sites). Open it with the **⚙** button next to the page title, the **⚙** in the IDE, `Alt+Shift+S`, or `Alt+,` (`Ctrl+,` works too where the browser does not keep it for itself; Firefox and Zen do). Changes apply immediately and are shared across all your sites.
-
-| Setting | What it does | Default |
-|---|---|---|
-| **Title Updater** | Names the tab `AD: <method>` / `PD: <page>` | on |
-| **Keyboard Shortcuts** | `Ctrl+Shift+Enter`, `Esc` `Esc`, `Shift+L` and `Shift+J` | on |
-| **JSON Editor** | The **JSON** button next to **Inputs**, and `Shift+J` | on |
-| **Output Copy** | The **⧉** copy button on method outputs (AD) | on |
-| **IDE** | The **⤢** and **⧉** buttons on text boxes | on |
-| **IDE Wrap** | Wrap long lines in the IDE: **Wrap** or **No Wrap** | Wrap |
-| **IDE Font Size** | The IDE's font size: 12, 13, 14, 16 or 18 px | 13 px |
-| **IDE Autocomplete** | `#{variable}` completion, hover and checks in the IDE (AD only) | on |
-| **IDE Vim Mode** | Vim keys in the IDE: modes, `:w` / `:q`, yanks also copied to the clipboard (see [Vim mode](#vim-mode)) | off |
-| **Debug Logging** (under **Advanced**) | Prints the extension's step-by-step messages to the browser console | off |
-
-The **Keyboard Shortcuts** switch covers exactly those four keys. It does not affect the Settings shortcut (`Alt+,` / `Ctrl+,`) or the IDE's keys, which are always on, nor the browser-level shortcuts (`Alt+Shift+S`, `Ctrl+Shift+A`, `Ctrl+Shift+P`), which the browser handles.
-
----
+Every feature in detail: [docs/usage.md](docs/usage.md).
 
 ## Keyboard shortcuts
 
-| Shortcut | Does | Where |
-|---|---|---|
-| `Ctrl+Shift+Enter` | Run Test (commits the field you're typing in first) | AD |
-| `Shift+J` | Open the JSON input editor (when **JSON Editor** is on) | AD, not while typing |
-| `Shift+L` | Copy a link to this method | AD, not while typing |
-| `Esc` `Esc` (twice within 500 ms) | Leave the current field, so your edit registers | AD, PD, in a field |
-| `Alt+Shift+S` | Open the Settings modal | AD, PD |
-| `Alt+,` or `Ctrl+,` | Open the Settings modal (`Ctrl+,` is taken by Firefox and Zen) | AD, PD |
-| `Ctrl+S` (`Command+S`) | Save and close | IDE |
-| `Ctrl+F` (`Command+F`) | Search (with **IDE Vim Mode** on: Vim's page down; search is `/`) | IDE |
-| `Shift+Alt+F` (`Shift+Option+F` on Mac) | Format SQL or JSON (only the selection, if there is one) | IDE |
-| `Ctrl+Space` | Show autocomplete suggestions | IDE |
-| `Ctrl+Backspace` (`Option+Backspace` on Mac) | Delete the word before the cursor (`Ctrl+W` closes the tab: the browser keeps it) | IDE |
-| `Ctrl+U`, `Ctrl+H` | Delete to the start of the line; delete one character back | IDE, **IDE Vim Mode** on, insert mode |
-| `↑` / `↓`, `Enter` | Choose / accept a suggestion | IDE, autocomplete list open |
-| `Esc` | Close the autocomplete list or search panel, else close the IDE (asks first with unsaved changes). With **IDE Vim Mode** on, Vim's first: back to normal mode, and closes the IDE only from normal mode | IDE |
-| `:w`, `:q`, `:q!`, `:wq`, `:x` | Write; close (asks first with unsaved changes); close discarding; write and close; write if changed and close | IDE, **IDE Vim Mode** on |
-| `Ctrl+Shift+A` (`Command+Shift+A` on Mac) | Jump to the newest entry in AD Network | DevTools open |
-| `Ctrl+Shift+P` (`Command+Shift+P` on Mac) | Refresh PD Inspector | DevTools open |
+| Shortcut | Does |
+|---|---|
+| `Ctrl+Shift+Enter` | Run Test (AD) |
+| `Shift+J` | Open the JSON input editor (AD) |
+| `Shift+L` | Copy a link to the method (AD) |
+| `Esc` `Esc` | Leave the current field, so your edit registers |
+| `Alt+Shift+S` or `Alt+,` | Open the Settings modal |
+| `Ctrl+S` | Save and close the IDE |
+| `Shift+Alt+F` | Format SQL or JSON in the IDE |
+| `Ctrl+Shift+A` / `Ctrl+Shift+P` | Jump to AD Network / refresh PD Inspector |
 
-"Not while typing" means the key does nothing while the cursor is in a text field, including fields inside embedded components and frames, so you can type a capital `J` or `L`.
+On a Mac, the IDE's keys are `Command+S` and `Shift+Option+F`, and the panel keys `Command+Shift+A` / `Command+Shift+P`. The [full table](docs/usage.md#keyboard-shortcuts) also explains how to change the browser-level shortcuts.
 
-While a modal is open (the IDE, the JSON editor or the Settings modal), the page shortcuts (`Ctrl+Shift+Enter`, `Esc` `Esc`, `Shift+L`, `Shift+J`) do nothing: keys belong to the topmost modal.
+## Updating and your data
 
-`Alt+Shift+S`, `Ctrl+Shift+A` and `Ctrl+Shift+P` are browser-level shortcuts. They can clash with the browser's own shortcuts (in Chrome, `Ctrl+Shift+A` searches tabs, and `Ctrl+Shift+P` opens a private window in Firefox); when one does, the browser keeps it. Change them at `chrome://extensions/shortcuts`, or in Firefox at `about:addons` → ⚙ → **Manage Extension Shortcuts**.
-
-Browsers don't let extensions open DevTools or switch its tabs, so `Ctrl+Shift+A` and `Ctrl+Shift+P` only ask the panel to react. The AD Network or PD Inspector panel does so if it is open on that tab, or when you open it within 60 seconds of pressing the shortcut.
-
----
+Updates keep your sites, permissions and settings. Removing the extension deletes all of them. A build you loaded by hand and the store version are separate installs, so add your sites again after switching.
 
 ## Troubleshooting
 
-**Nothing appears on the page.** Check that the site is in **Allowed sites** and shows **Revoke**. If it shows **Grant** or `not granted`, click **Grant**. Then reload the tab.
+- **Nothing appears on the page:** check that the site is in **Allowed sites** and shows **Revoke** (click **Grant** if it doesn't), then reload the tab.
+- **The DevTools tabs are missing:** they appear only on allowed https sites. Close and reopen DevTools after adding a site.
+- **AD Network shows IDs instead of names:** sign in to the site; the panel retries by itself.
+- **Something stopped working after an AD/PD update:** turn on **Debug Logging** in Settings, reload, check the console for `[belz:…]` messages, and [open an issue](https://github.com/ParthKapoor-dev/belz-extension/issues).
 
-**The DevTools tabs are missing.** They only appear on allowed sites, and only over https: a plain-http page of the same host doesn't count. Close and reopen DevTools after adding a site.
+More in [docs/usage.md](docs/usage.md#troubleshooting).
 
-**AD Network shows UUIDs instead of names.** While a name is being looked up, a row shows the start of its UUID and `…` for the category. If the lookup fails, a red **names unavailable — …** pill in the toolbar says why (hover it for the full message). The usual reason is not being signed in: sign in to the site; the panel retries by itself for about a minute, and again for each new request. **this page is not on an allowed site** means DevTools is on a site you haven't added.
+## Privacy
 
-**Open in draft opened nothing.** The toast says why. It opens only a method the platform describes well enough: a draft by its own ID, a published method by its linked draft. A method with no category, a published method without a linked draft, or one whose state the platform doesn't give can't be opened, and nothing is guessed.
-
-**Open in draft didn't fill in the inputs.** The designer host must be an allowed, granted site, and the tab must be opened from the panel: a copied or reopened link fills nothing. If the method's inputs take more than 30 seconds to appear, autofill gives up.
-
-**The extension disappeared in Firefox.** Temporary add-ons are removed when Firefox closes. Load it again, or install the signed `.xpi` from a release, which stays (see [Install](#install)).
-
-**A feature stopped working after an upstream UI change.** The extension relies on the AD/PD page structure, so that's the likeliest cause. Turn on **Debug Logging** in the Settings modal, reload, and check the console for `[belz:…]` messages. The page selectors all live in `src/config/selectors.ts`. Please [open an issue](https://github.com/ParthKapoor-dev/belz-extension/issues).
-
----
+The extension talks only to the site you are on, with the sign-in you already have there; it has no server, no analytics and no telemetry. It asks for storage, scripting, a DevTools page, keyboard commands and access to each https site you add, and [PRIVACY.md](PRIVACY.md) explains each one.
 
 ## Development
 
-| Command | What it does |
-|---|---|
-| `bun install` | Install dependencies |
-| `bun run build` | Bundle everything and assemble `build/chrome` + `build/firefox`. The only command you normally need. |
-| `bun run build:dist` | Bundle to `dist/` only, without the per-browser folders |
-| `bun run dev` | Rebuild `build/chrome` + `build/firefox` every time you save a file |
-| `bun run typecheck` | Check the TypeScript types of the source and the tests |
-| `bun test` | Run the unit tests (a few seconds). One of them runs the real build, so it rewrites `dist/` |
-| `bun run test:e2e` | Run the built extension in headless Chromium and Firefox, if installed |
-
-**The edit loop:** run `bun run dev` and leave it running. After each save, click the extension's **reload** icon (`chrome://extensions`, or **Reload** in `about:debugging`), then reload the page. Reloading keeps your sites and permissions, but removing and re-adding the extension clears them.
-
-**Keeping your sites across reinstalls.** Browsers delete an extension's data when it's removed, and so does Firefox's temporary-add-on reload. To avoid retyping your sites, copy `sites.default.json.example` to `sites.default.json` and list them there:
-
-```json
-{ "hosts": [ { "host": "your-instance.example.com", "designerHost": "" } ] }
+```bash
+bun install && bun run build    # then load build/chrome or build/firefox
 ```
 
-On a fresh install they're restored automatically. You still need to click **Grant** once for each, because only you can approve a site permission. The file is gitignored so that your internal hostnames stay out of the repository.
-
-**How it works.** Start with [`AGENTS.md`](./AGENTS.md), the maintained map of the codebase. Every folder also has its own `README.md` explaining what it holds and how it connects to the rest; [`src/README.md`](src/README.md) is the place to begin. Each top-level folder of `src/` is one part of the extension, and they run separately from each other:
-
-```
-src/
-  designer/           content scripts on Automation Designer and Page Designer pages
-  pd-inspector-page/  the PD Inspector engine, on published pages
-  devtools/           the AD Network and PD Inspector DevTools panels
-  background/         site registration, shortcuts, message relay
-  options/            the options page (allowed sites)
-  config/             settings schema, host-page selectors and timings, constants
-  shared/             helpers shared by all of the above
-tests/                unit tests (mirroring src/), e2e/ for real browsers
-scripts/              build, per-browser packaging, dev watcher
-store/                Chrome Web Store listing text and privacy-form answers
-```
-
----
-
-## Releasing
-
-Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml). The tag sets the version that ships: `v1.2.3` builds version `1.2.3` (`scripts/pack.mjs --version`); the `version` in `manifest.json` and `package.json` is only what a local build carries. The workflow type-checks and runs the unit tests, then:
-
-- **Chrome:** zips `build/chrome`, uploads it to the Chrome Web Store and submits it for review. The store publishes it once approved.
-- **Firefox:** has Mozilla sign `build/firefox` as a self-distributed (unlisted) add-on, and publishes `updates.json` to GitHub Pages so installed copies update themselves.
-- Attaches the Chrome `.zip` and the signed `.xpi` to the tag's GitHub Release.
-
-Either store can be left out: with its secrets unset, the workflow skips it with a notice. With neither set up, it fails.
-
-### One-time setup
-
-1. **GitHub Pages:** Settings → Pages → Source: **GitHub Actions**.
-2. **Let tags deploy to Pages:** Settings → Environments → `github-pages` → Deployment branches and tags → add a tag rule `v*` (by default only the default branch may deploy, and a release runs on a tag).
-3. **Firefox:** on addons.mozilla.org, Tools → Manage API Keys, create a key, and add it as the repository secrets `AMO_JWT_ISSUER` (the key) and `AMO_JWT_SECRET` (the secret).
-4. **Chrome Web Store item:** register as a Chrome Web Store developer, then in the Developer Dashboard create the item by uploading a package once by hand (the Chrome `.zip` from a Firefox-only release, or `build/chrome` zipped so that `manifest.json` is at the top of the zip; leave `chromePublicKey` empty for that build). Fill in the listing from [`store/README.md`](store/README.md), give [`PRIVACY.md`](PRIVACY.md)'s URL as the privacy policy, set **Visibility** to **Unlisted** (or as you choose) under Distribution, and submit it. The first tag released after that must carry a higher version than this hand upload.
-5. **Chrome Web Store API:** in a Google Cloud project, enable the **Chrome Web Store API**, configure the OAuth consent screen and set it to **In production** (a refresh token of a project left in testing expires after 7 days), and create an OAuth client. Get a refresh token for the publisher account with the scope `https://www.googleapis.com/auth/chromewebstore` (for example through the OAuth 2.0 Playground with your own client).
-6. **Chrome secrets:** add `CWS_PUBLISHER_ID` (Developer Dashboard → Account), `CWS_EXTENSION_ID` (the item's ID), `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET` and `CWS_REFRESH_TOKEN`.
-7. **Optional, pin the unpacked Chrome ID:** copy the item's public key (Developer Dashboard → the item → Package → **Public key**, the base64 text between the `BEGIN`/`END` lines) into `chromePublicKey` in `release.config.json`. A local `build/chrome` then has the store item's ID wherever the folder lives. The Web Store package never carries it.
-
-### Each release
-
-1. Make sure `main` is green in CI.
-2. **Stored data:** if anything stored in `chrome.storage` changed shape since the last release (a setting's key or values, the site list, the method cache), it ships with a migration or under a new key. Installed copies keep their data across updates. See [`src/config/README.md`](src/config/README.md) ("Stored shapes").
-3. Pick a version **higher than the last release**: both stores refuse a version they have already seen or a lower one, and a failed release is retried with the next patch version.
-4. Tag and push:
-
-   ```bash
-   git tag vX.Y.Z && git push origin vX.Y.Z
-   ```
-
-5. Watch the **release** workflow. Chrome users get the version after the store's review; Firefox users within a day (or at once via `about:addons` → Check for Updates).
-
----
-
-## Privacy and permissions
-
-**No data leaves your own AD/PD instance.** There is no analytics, no telemetry and no companion server. Method names and page configurations come from the site you're on, using your existing sign-in. The full privacy policy is [`PRIVACY.md`](PRIVACY.md).
-
-What the extension asks for, and why:
-
-- **`storage`**: your settings, your list of allowed sites, and a cache of AD method names and categories (see below), in local storage. Session storage, which the browser clears when it closes, holds two short-lived things: an **Open in draft** request's inputs, passed from the AD Network panel to the tab it opens, for one use and at most 5 minutes; and the flag `Ctrl+Shift+A` / `Ctrl+Shift+P` leave for a DevTools panel, honoured for 60 seconds.
-- **`scripting`**: to run its scripts on the sites you allowed, and only on their Automation Designer, Page Designer and published pages.
-- **Optional host access (`https://*/*`)**: the extension starts with access to no site. Each site you add asks for its own permission (`https://<your site>/*`), which you can revoke at any time. Plain-http sites can't be added.
-- **`web_accessible_resources` (`dist/modules/*`, on https pages)**: the AD and PD scripts load their code from these files. A side effect: in Chromium browsers the extension's ID is fixed, so an https page that knows it could request one of these files and learn that the extension is installed. The files contain no secrets. Firefox gives each install a random ID, so it can't be detected this way.
-- **`devtools_page`**: adds the AD Network and PD Inspector panels, only when DevTools inspects an allowed site.
-- **`commands`**: the browser-level keyboard shortcuts (`Alt+Shift+S`, `Ctrl+Shift+A`, `Ctrl+Shift+P`).
-
-What the DevTools panels do on an allowed site:
-
-- **AD Network** wraps the inspected page's `fetch` and `XMLHttpRequest` to show requests that are still in flight. It puts the page's own versions back when the tab leaves the allowed site or DevTools closes (within 10 seconds, even if the panel could not say goodbye).
-- To show method names, it asks that same site's API, with the page's own sign-in: the authorization header the page itself sent, or the sign-in token in the page's storage. These are used only for the site they came from, never follow a redirect, and are forgotten when the tab navigates.
-- Names and categories are cached in `chrome.storage.local` per site: used as they are for 6 hours, shown and refreshed in the background up to 14 days, and never more than 800 methods (the oldest go first).
-- **PD Inspector** reads the published page's configuration from the same site.
-
-On any other site, the panels look nothing up and change nothing on the page.
+Requirements, the edit loop and tests: [docs/development.md](docs/development.md). How the code fits together: [AGENTS.md](AGENTS.md). Releasing: [docs/releasing.md](docs/releasing.md).
 
 ## License
 
-The code is MIT-licensed; see [`LICENSE`](./LICENSE). The bundled Ioskeley Mono fonts are under the SIL Open Font License; see [`fonts/OFL.txt`](./fonts/OFL.txt).
+MIT, see [LICENSE](LICENSE). The bundled Ioskeley Mono fonts are under the SIL Open Font License, see [assets/fonts/OFL.txt](assets/fonts/OFL.txt).

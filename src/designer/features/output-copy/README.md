@@ -23,4 +23,4 @@ There is one controls element for the whole page. The page's markup is not chang
 
 ## Testing
 
-The overlay behaviour is covered by [`tests/designer/ui/hover-overlay.test.ts`](../../../../tests/designer/ui/hover-overlay.test.ts). How to run it is in the Development section of the [root README](../../../../README.md).
+The overlay behaviour is covered by [`tests/designer/ui/hover-overlay.test.ts`](../../../../tests/designer/ui/hover-overlay.test.ts). How to run it is in [`docs/development.md`](../../../../docs/development.md).

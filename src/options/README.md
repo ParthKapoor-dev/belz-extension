@@ -72,8 +72,7 @@ unregisters the content scripts when the list changes.
 over the real `options.html` markup with the fake `chrome` and the background's `ContentScriptSync`
 answering its messages (add, deny, grant, rows that follow the browser, revoke, a refused revoke that
 changes nothing, a grant and a revoke at once, designer host, `stop()`). The host logic it uses is tested in
-[`tests/shared/hosts.test.ts`](../../tests/shared/hosts.test.ts). To run the tests, see the root
-[README](../../README.md#development)'s Development section.
+[`tests/shared/hosts.test.ts`](../../tests/shared/hosts.test.ts). To run the tests, see [`docs/development.md`](../../docs/development.md).
 
 ## Adding or changing things
 

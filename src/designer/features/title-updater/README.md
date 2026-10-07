@@ -26,4 +26,4 @@ It writes `document.title` only when the name is found and differs from the last
 
 ## Testing
 
-[`tests/designer/features/title-updater.test.ts`](../../../../tests/designer/features/title-updater.test.ts) covers the title and its restoring. The name helpers are covered by [`tests/designer/features/page-helpers.test.ts`](../../../../tests/designer/features/page-helpers.test.ts). How to run it is in the Development section of the [root README](../../../../README.md).
+[`tests/designer/features/title-updater.test.ts`](../../../../tests/designer/features/title-updater.test.ts) covers the title and its restoring. The name helpers are covered by [`tests/designer/features/page-helpers.test.ts`](../../../../tests/designer/features/page-helpers.test.ts). How to run it is in [`docs/development.md`](../../../../docs/development.md).

@@ -49,7 +49,7 @@ See the "Content-script module graph" and "Feature flow" sections of [AGENTS.md]
 
 ## Testing
 
-Unit tests are in [`tests/designer/`](../../tests/designer/). [`tests/build/bundle.test.ts`](../../tests/build/bundle.test.ts) checks the bundle split, and [`tests/e2e/`](../../tests/e2e/) runs the built content script in real browsers. How to run them is in the Development section of the [root README](../../README.md).
+Unit tests are in [`tests/designer/`](../../tests/designer/). [`tests/build/bundle.test.ts`](../../tests/build/bundle.test.ts) checks the bundle split, and [`tests/e2e/`](../../tests/e2e/) runs the built content script in real browsers. How to run them is in [`docs/development.md`](../../docs/development.md).
 
 ## Adding or changing things
 

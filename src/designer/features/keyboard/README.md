@@ -37,8 +37,8 @@ Shortcuts that act on the page check `modalLock.isLocked`. Plain-letter shortcut
 
 ## Testing
 
-[`tests/designer/features/shortcuts.test.ts`](../../../../tests/designer/features/shortcuts.test.ts) covers Run Test (click, modal lock, commit first, a disabled or missing button leaves the key alone, `stop()`), the PD wiring, Shift+L and Shift+J (the JSON Editor setting, typing in a field, in a shadow root, focus in an iframe) and Esc Esc. How to run it is in the Development section of the [root README](../../../../README.md).
+[`tests/designer/features/shortcuts.test.ts`](../../../../tests/designer/features/shortcuts.test.ts) covers Run Test (click, modal lock, commit first, a disabled or missing button leaves the key alone, `stop()`), the PD wiring, Shift+L and Shift+J (the JSON Editor setting, typing in a field, in a shadow root, focus in an iframe) and Esc Esc. How to run it is in [`docs/development.md`](../../../../docs/development.md).
 
 ## Adding or changing things
 
-Add a branch to `onKeydown` (and an action to `ShortcutActions` if it is page-specific), then update the setting's description in `config/settings.ts`, the shortcut table in the root README and [AGENTS.md](../../../../AGENTS.md) if needed. Browser-level shortcuts (the ones in `manifest.json` `commands`) are handled in the background, not here.
+Add a branch to `onKeydown` (and an action to `ShortcutActions` if it is page-specific), then update the setting's description in `config/settings.ts`, the shortcut tables in the root README and [`docs/usage.md`](../../../../docs/usage.md) and [AGENTS.md](../../../../AGENTS.md) if needed. Browser-level shortcuts (the ones in `manifest.json` `commands`) are handled in the background, not here.

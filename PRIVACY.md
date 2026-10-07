@@ -33,13 +33,20 @@ Removing the extension deletes all of it.
 
 ## Permissions
 
-- **Storage:** the settings, site list and cache above.
-- **Scripting:** to run the extension's scripts on the sites you allowed, and only on their designer and published pages.
-- **Optional access to https sites:** the extension starts with access to no site. Each site you add asks for its own permission, which you can revoke at any time from the options page or the browser's settings.
-- **DevTools page:** adds the network panel and the component inspector, only when DevTools inspects an allowed site.
-- **Keyboard commands:** the browser-level shortcuts that open the settings and focus the panels.
+- **Storage (`storage`):** the settings, site list and cache above, in local storage, and the two short-lived items in session storage.
+- **Scripting (`scripting`):** to run the extension's scripts on the sites you allowed, and only on their designer and published pages.
+- **Optional access to https sites (`optional_host_permissions: https://*/*`):** the extension starts with access to no site. Each site you add asks for its own permission (`https://<your site>/*`), which you can revoke at any time from the options page or the browser's settings. Plain-http sites can't be added.
+- **Web-accessible files (`dist/modules/*`, on https pages):** the designer-page scripts load their own code from these packaged files. A side effect: in Chromium browsers the extension's ID is fixed, so an https page that knows it could request one of these files and learn that the extension is installed. The files contain no secrets. Firefox gives each install a random ID, so it can't be detected this way.
+- **DevTools page (`devtools_page`):** adds the network panel and the component inspector, only when DevTools inspects an allowed site.
+- **Keyboard commands (`commands`):** the browser-level shortcuts that open the settings and focus the panels.
 
-The [README](README.md#privacy-and-permissions) explains each in more detail.
+## What the DevTools panels do on an allowed site
+
+- The **network panel** wraps the inspected page's `fetch` and `XMLHttpRequest` to show requests that are still in flight. It puts the page's own versions back when the tab leaves the allowed site or DevTools closes (within 10 seconds, even if the panel could not say goodbye).
+- To show method names, it calls that same site's API with the page's own sign-in, as described above, and caches the names and categories per site.
+- The **component inspector** reads the published page's configuration from the same site.
+
+On any other site, the panels look nothing up and change nothing on the page.
 
 ## Changes and contact
 

@@ -21,4 +21,4 @@ Finds Automation Designer's Run Test button and clicks it. It is the action behi
 
 ## Testing
 
-Covered through the shortcut in [`tests/designer/features/shortcuts.test.ts`](../../../../tests/designer/features/shortcuts.test.ts), including the disabled and missing button cases. How to run it is in the Development section of the [root README](../../../../README.md).
+Covered through the shortcut in [`tests/designer/features/shortcuts.test.ts`](../../../../tests/designer/features/shortcuts.test.ts), including the disabled and missing button cases. How to run it is in [`docs/development.md`](../../../../docs/development.md).

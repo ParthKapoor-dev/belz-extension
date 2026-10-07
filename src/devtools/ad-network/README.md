@@ -144,8 +144,7 @@ auth, the token scan, the 401 rescan, a method without a category served from th
 state kept unknown, `redirect: 'error'`, `buildDesignerUrl()` and `noDesignerUrlReason()`;
 `pending-capture.test.ts` runs the page scripts against the test page's window, including a retired
 wrapper installed again by the next poll and no install on a page of another origin; `cache.test.ts`,
-`extract.test.ts`, `format.test.ts` and `names.test.ts` cover those modules. To run the tests, see the
-root [README](../../../README.md#development)'s Development section.
+`extract.test.ts`, `format.test.ts` and `names.test.ts` cover those modules. To run the tests, see [`docs/development.md`](../../../docs/development.md).
 
 ## Adding or changing things
 

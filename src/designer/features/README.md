@@ -33,7 +33,7 @@ See "Feature flow" in [AGENTS.md](../../../AGENTS.md).
 
 ## Testing
 
-Tests are in [`tests/designer/features/`](../../../tests/designer/features/). How to run them is in the Development section of the [root README](../../../README.md).
+Tests are in [`tests/designer/features/`](../../../tests/designer/features/). How to run them is in [`docs/development.md`](../../../docs/development.md).
 
 ## Adding or changing things
 

@@ -61,8 +61,7 @@ page with its own bundle. For how this folder fits with the rest of `src/`, see
 ## Testing
 
 Panel tests live in [`tests/devtools/`](../../tests/devtools/) (the AD Network panel and its
-modules, the PD Inspector panel, and `PanelRegistrar`). To run the tests, see the root
-[README](../../README.md#development)'s Development section.
+modules, the PD Inspector panel, and `PanelRegistrar`). To run the tests, see [`docs/development.md`](../../docs/development.md).
 
 ## Adding or changing things
 

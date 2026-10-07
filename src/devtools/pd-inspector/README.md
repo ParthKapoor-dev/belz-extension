@@ -68,8 +68,7 @@ drives `PdInspectorPanel` over the real `panel.html` with a fake engine behind t
 messaging, including the heartbeat (with a short interval: the `on: true` messages it sends, and
 that none follow `stop()`), "inspect off" before Refresh, the focus shortcut and `pagehide`,
 and a button that follows the engine's answer. The data it renders is tested on the engine side, in
-[`tests/pd-inspector-page/`](../../../tests/pd-inspector-page/). To run the tests, see the root
-[README](../../../README.md#development)'s Development section.
+[`tests/pd-inspector-page/`](../../../tests/pd-inspector-page/). To run the tests, see [`docs/development.md`](../../../docs/development.md).
 
 ## Adding or changing things
 

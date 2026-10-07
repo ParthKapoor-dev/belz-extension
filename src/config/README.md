@@ -85,14 +85,13 @@ keep, and these shapes change freely. **From the first published release on** (t
 item and the signed Firefox add-on update installed copies in place, keeping their storage), an
 incompatible change (a renamed setting key, a narrower set of values, a different structure) needs
 either a new key, with its version suffix bumped, or a migration that reads the old shape and writes
-the new one. This is on the release checklist in the root README ("Releasing").
+the new one. This is on the release checklist in [`docs/releasing.md`](../../docs/releasing.md).
 
 ## Testing
 
 [`tests/config/settings.test.ts`](../../tests/config/settings.test.ts) covers the settings schema,
 `sanitizeSetting` (a toggle takes only a real boolean) and `sanitizeSettings`. Selectors are exercised by the designer feature tests under
-[`tests/designer/`](../../tests/designer/). To run the tests, see the root
-[README](../../README.md#development)'s Development section.
+[`tests/designer/`](../../tests/designer/). To run the tests, see [`docs/development.md`](../../docs/development.md).
 
 ## Adding or changing things
 

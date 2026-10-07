@@ -44,7 +44,7 @@ It also keeps the open modals in order. A modal passes itself as the owner: `loc
 
 ## Testing
 
-[`tests/designer/ui/hover-overlay.test.ts`](../../../tests/designer/ui/hover-overlay.test.ts) covers showing and hiding, the single controls element, button clicks, skipping the extension's own UI, and `stop()`. [`tests/designer/ui/modal-lock.test.ts`](../../../tests/designer/ui/modal-lock.test.ts) covers the lock, and [`tests/designer/features/modal-escape.test.ts`](../../../tests/designer/features/modal-escape.test.ts) the topmost-modal rule with real modals. The e2e run ([`tests/e2e/`](../../../tests/e2e/)) checks that the lazy IDE and the eager shortcut share one lock. How to run them is in the Development section of the [root README](../../../README.md).
+[`tests/designer/ui/hover-overlay.test.ts`](../../../tests/designer/ui/hover-overlay.test.ts) covers showing and hiding, the single controls element, button clicks, skipping the extension's own UI, and `stop()`. [`tests/designer/ui/modal-lock.test.ts`](../../../tests/designer/ui/modal-lock.test.ts) covers the lock, and [`tests/designer/features/modal-escape.test.ts`](../../../tests/designer/features/modal-escape.test.ts) the topmost-modal rule with real modals. The e2e run ([`tests/e2e/`](../../../tests/e2e/)) checks that the lazy IDE and the eager shortcut share one lock. How to run them is in [`docs/development.md`](../../../docs/development.md).
 
 ## Adding or changing things
 

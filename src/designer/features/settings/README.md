@@ -34,7 +34,7 @@ The way to open the extension's in-page Settings modal on a designer page, and t
 
 ## Testing
 
-[`tests/designer/ui/rebuild.test.ts`](../../../../tests/designer/ui/rebuild.test.ts) covers the modal following the store while open and rebuilding after the body is wiped. [`tests/designer/features/modal-escape.test.ts`](../../../../tests/designer/features/modal-escape.test.ts) covers Escape with the modal over the other two. [`tests/designer/core/lifecycle.test.ts`](../../../../tests/designer/core/lifecycle.test.ts) checks that the teardown stops the launcher. The store behind it is covered by [`tests/designer/core/settings.test.ts`](../../../../tests/designer/core/settings.test.ts) and the schema by [`tests/config/settings.test.ts`](../../../../tests/config/settings.test.ts). How to run them is in the Development section of the [root README](../../../../README.md).
+[`tests/designer/ui/rebuild.test.ts`](../../../../tests/designer/ui/rebuild.test.ts) covers the modal following the store while open and rebuilding after the body is wiped. [`tests/designer/features/modal-escape.test.ts`](../../../../tests/designer/features/modal-escape.test.ts) covers Escape with the modal over the other two. [`tests/designer/core/lifecycle.test.ts`](../../../../tests/designer/core/lifecycle.test.ts) checks that the teardown stops the launcher. The store behind it is covered by [`tests/designer/core/settings.test.ts`](../../../../tests/designer/core/settings.test.ts) and the schema by [`tests/config/settings.test.ts`](../../../../tests/config/settings.test.ts). How to run them is in [`docs/development.md`](../../../../docs/development.md).
 
 ## Adding or changing things
 

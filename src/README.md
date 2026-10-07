@@ -48,7 +48,7 @@ See [AGENTS.md](../AGENTS.md) for the full rules, the module-graph rule and the 
 
 ## Testing
 
-Unit tests live in [`tests/`](../tests/), in folders that mirror `src/`. How to run them is in the Development section of the [root README](../README.md).
+Unit tests live in [`tests/`](../tests/), in folders that mirror `src/`. How to run them is in [`docs/development.md`](../docs/development.md).
 
 ## Adding or changing things
 

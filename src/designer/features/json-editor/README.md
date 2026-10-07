@@ -57,7 +57,7 @@ The result is a `SyncResult`: `success`, `message`, `errors`, `warnings`, `fille
 - [`tests/designer/features/modal-escape.test.ts`](../../../../tests/designer/features/modal-escape.test.ts): Escape with the Settings modal over the JSON editor.
 - [`tests/designer/features/json-values.test.ts`](../../../../tests/designer/features/json-values.test.ts): `normalizeDataType()`, `normalizeValueForType()`, `parseDateValue()`, `generateInputJSON()`.
 
-Opening the calendar, clicking a day and the time picker are not unit-tested; check them by hand on a real AD page after any change to `sync.ts`. How to run the tests is in the Development section of the [root README](../../../../README.md).
+Opening the calendar, clicking a day and the time picker are not unit-tested; check them by hand on a real AD page after any change to `sync.ts`. How to run the tests is in [`docs/development.md`](../../../../docs/development.md).
 
 ## Adding or changing things
 

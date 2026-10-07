@@ -84,8 +84,7 @@ Tests live in [`tests/pd-inspector-page/`](../../tests/pd-inspector-page/): `con
 (page, shell and component fetches, and which failures `fetchJson()` retries), `model.test.ts` (config tree, references, component tree) and
 `resolve.test.ts` (`buildConfigIndex` and `Resolver`) and `engine.test.ts` (the `PdEngine` and
 `Highlighter` lifecycle, the build generation guard, inspect-mode clicks, the watchdog, and the
-sender and command checks). To run the tests, see the root
-[README](../../README.md#development)'s Development section.
+sender and command checks). To run the tests, see [`docs/development.md`](../../docs/development.md).
 
 ## Adding or changing things
 

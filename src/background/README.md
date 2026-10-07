@@ -107,8 +107,7 @@ edits, a grant and a revoke at once) and `seedHostsIfEmpty`.
 [`tests/background/relay.test.ts`](../../tests/background/relay.test.ts) covers `MessageRelay` (sender
 and payload checks, the `open` allow-list, the autofill handoff, two takes of one id at once) and
 `CommandHandler`. Both use the
-fake `chrome` in [`tests/fakes/chrome.ts`](../../tests/fakes/chrome.ts). To run the tests, see the root
-[README](../../README.md#development)'s Development section.
+fake `chrome` in [`tests/fakes/chrome.ts`](../../tests/fakes/chrome.ts). To run the tests, see [`docs/development.md`](../../docs/development.md).
 
 ## Adding or changing things
 

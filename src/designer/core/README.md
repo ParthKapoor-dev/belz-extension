@@ -38,7 +38,7 @@ The lifecycle machinery of the designer content scripts: how features are starte
 
 ## Testing
 
-[`tests/designer/core/lifecycle.test.ts`](../../../tests/designer/core/lifecycle.test.ts) covers `PageObserver` and `bootstrap` (start/stop per setting, retry after a failed start, the teardown). [`tests/designer/core/settings.test.ts`](../../../tests/designer/core/settings.test.ts) covers `SettingsStore` and `chromeSettingsStorage`. How to run them is in the Development section of the [root README](../../../README.md).
+[`tests/designer/core/lifecycle.test.ts`](../../../tests/designer/core/lifecycle.test.ts) covers `PageObserver` and `bootstrap` (start/stop per setting, retry after a failed start, the teardown). [`tests/designer/core/settings.test.ts`](../../../tests/designer/core/settings.test.ts) covers `SettingsStore` and `chromeSettingsStorage`. How to run them is in [`docs/development.md`](../../../docs/development.md).
 
 ## Adding or changing things
 

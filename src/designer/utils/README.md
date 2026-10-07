@@ -27,4 +27,4 @@ Keep these functions stateless. Page selectors stay in `config/selectors.ts`; do
 
 ## Testing
 
-[`tests/designer/features/page-helpers.test.ts`](../../../tests/designer/features/page-helpers.test.ts) covers the method, category and page-name helpers. How to run it is in the Development section of the [root README](../../../README.md).
+[`tests/designer/features/page-helpers.test.ts`](../../../tests/designer/features/page-helpers.test.ts) covers the method, category and page-name helpers. How to run it is in [`docs/development.md`](../../../docs/development.md).

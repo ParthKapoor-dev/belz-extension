@@ -101,7 +101,7 @@ Closing, in one place: **Save** (or Ctrl/Cmd+S) writes the text into the source 
 - [`tests/build/bundle.test.ts`](../../../../tests/build/bundle.test.ts): the IDE stays out of the page-load bundle, and the formatter and Vim mode out of both it and the IDE chunk.
 - [`tests/e2e/`](../../../../tests/e2e/): in real browsers, the overlay (also on a disabled textarea), lazy loading, SQL detection, the footer status, Format through Shift+Alt+F (the formatter chunk loads), the shared modal lock, and Vim mode once switched on in the Settings modal (its chunk loads, the footer shows the mode, Esc in insert mode keeps the IDE open, Esc in normal mode closes it).
 
-How to run them is in the Development section of the [root README](../../../../README.md).
+How to run them is in [`docs/development.md`](../../../../docs/development.md).
 
 ## Adding or changing things
 

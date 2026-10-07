@@ -1,0 +1,174 @@
+# Using belz-extension
+
+The full guide: every feature, setting and shortcut. Installing is in the root [README](../README.md#install).
+
+- [Setup](#setup)
+- [In Automation Designer](#in-automation-designer)
+- [In Page Designer](#in-page-designer)
+- [IDE](#ide) (with [Vim mode](#vim-mode))
+- [DevTools: AD Network](#devtools-ad-network)
+- [DevTools: PD Inspector](#devtools-pd-inspector)
+- [Settings](#settings)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [Updates and your data](#updates-and-your-data)
+- [Troubleshooting](#troubleshooting)
+
+## Setup
+
+**The extension does nothing until you tell it which sites to work on.** It ships without access to any website, so there's one step before anything appears.
+
+1. **Open the extension's options page** (titled **belz DevTools options**; it holds only the list of allowed sites).
+   - Chrome/Edge/Brave: `chrome://extensions` → **belz DevTools** → **Details** → **Extension options**
+   - Firefox/Zen: `about:addons` → **belz DevTools** → **Preferences**
+2. Under **Allowed sites**, type the hostname of your Service Designer instance (only the hostname, like `your-instance.example.com`) and click **Add**. Only **https** sites can be added.
+3. **Approve the browser's permission prompt.** Without it, the extension can't run on that site.
+4. **Reload any tabs** you already had open on that site.
+
+Repeat for each environment you use (dev, QA, and so on). To remove access, click **Revoke**, which removes the site and its permission.
+
+**Optional: designer host.** Some deployments serve the Automation Designer on a different host from the one you browse, such as a public portal plus a staff portal. If yours does, fill in **designer host** for that site so **Open in draft** and the copied links go to the right place. For **Open in draft** to also fill in the method's inputs, add the designer host as an allowed site of its own and grant it. Most setups can leave it blank.
+
+## In Automation Designer
+
+| Feature | How to use it |
+|---|---|
+| **IDE** | Hover over any text box and click **⤢** (**Open in IDE**, top-right corner). The IDE opens full-screen for that text box, with line numbers, search (`Ctrl+F`), SQL and JSON formatting (`Shift+Alt+F`) and syntax highlighting. On published methods, it opens read-only. See [IDE](#ide) below. |
+| **`#{variable}` intellisense** | In the IDE, type `#{` to pick from the method's inputs, internal variables and step outputs. Hover a name to see where it comes from. Unknown names, outputs of steps that run later, and an unclosed `#{` are underlined. Variables are read from the page each time the IDE opens, so unsaved edits (a step you just added) are included. The footer shows the current step and how many variables it can use. |
+| **Copy a text box** | Hover over a text box and click **⧉**. |
+| **Edit inputs as JSON** | Click the **JSON** button next to a method's **Inputs** heading, or press `Shift+J`. Edit every input as one JSON document. **Sync** writes your changes back into each input field with the correct type, including dates, booleans and structured data. |
+| **Copy an output** | Hover over a method's output and click **⧉**. |
+| **Run Test from anywhere** | `Ctrl+Shift+Enter`, even while you're typing in a field. It commits the field first, so the test uses your latest edit. When the page shows no Run Test button, the key does nothing and is left to the page. |
+| **Copy a link to the method** | `Shift+L` copies a link labelled `category::method`. It pastes as a clickable link in Slack and docs. |
+| **Readable tab titles** | Tabs show `AD: <method name>` rather than a generic title. Turning the feature off puts the page's own title back. |
+
+![The JSON input editor over a method's inputs](../assets/screenshots/json-editor.png)
+
+## In Page Designer
+
+The tab title updates to `PD: <page name>`, and the IDE (with its **⧉** copy button on text boxes), `Esc` `Esc` and the Settings modal work the same as in Automation Designer. Page Designer has no Run Test, method link or JSON input editor, so `Ctrl+Shift+Enter`, `Shift+L` and `Shift+J` do nothing there and are left to the page. The output copy button and the `#{variable}` intellisense are AD-only.
+
+## IDE
+
+The IDE is a full-screen CodeMirror editor that opens for the page text box you clicked **⤢** on: language modes, autocomplete, hover help and checks, and an optional Vim mode.
+
+- **Save:** `Ctrl+S` (`Command+S` on Mac) or **Save** writes the text back into the text box and closes the IDE.
+- **Cancel** and **×** close without saving, and without asking.
+- **Esc** or a **click outside** the IDE closes it. `Esc` first closes whatever CodeMirror has open: the autocomplete list or the search panel. If you changed the text, the first `Esc` or click outside only asks, in the footer; press `Esc` or click outside again within 3 seconds to discard your changes. Typing in between cancels the question. Formatting a read-only text box doesn't count as a change.
+- **Unsaved changes are protected:** while the IDE holds text you haven't saved, closing or reloading the tab first shows the browser's **Leave site?** dialog. Once you save, discard, close the IDE or undo back to the original text, it no longer asks.
+- **Deleting words:** `Ctrl+Backspace` (`Option+Backspace` on Mac) deletes the word before the cursor. `Ctrl+W` can't be used: the browser keeps it and closes the tab (the **Leave site?** dialog above saves unsaved work from it).
+- **Search:** `Ctrl+F` (`Command+F`) opens the search panel.
+- **Format:** **Format** in the header, or `Shift+Alt+F` (`Shift+Option+F` on Mac), lays out SQL and JSON so a one-line query is readable: SQL keywords upper case, data types lower case (`::text[]` stays as it is), names as you wrote them, one clause per line, two-space indents, a blank line between statements; JSON indented by two spaces. With text selected, only the selection is formatted, and it keeps the indentation of the line it starts on. `#{…}` placeholders and `:name` parameters are kept exactly as written, and in JSON numbers keep all their digits. One `Ctrl+Z` puts the original back. If the text cannot be parsed (invalid JSON, an unclosed `#{`, SQL that doesn't start with a statement such as `SELECT` or `WITH`), nothing changes and the footer says why, with the line. Other languages have no formatter: the button is greyed out and says so. On a read-only (published) text box you can still format it to read it; nothing is written back.
+- The keys the IDE handles (`Ctrl/Command+S`, `Ctrl/Command+F`, `Shift+Alt+F`, `Esc`) are kept from the page and the browser: `Ctrl+S` never opens the browser's Save page dialog. Other keys typed in the IDE don't reach the page's own shortcuts either.
+- **Autocomplete:** suggestions appear as you type (`Ctrl+Space` asks for them). `↑`/`↓` choose, `Enter` accepts, `Esc` closes the list.
+- **Language:** detected from the text (SQL, SpEL, JavaScript, JSON, Java, Python or plain text). The language dropdown in the header overrides it for this editing session only.
+- **Wrap and font size:** the two dropdowns next to it change the **IDE Wrap** and **IDE Font Size** settings, so the choice applies everywhere, not just to this text box.
+- **⚙** opens the Settings modal over the IDE, and **Copy** copies the IDE's text.
+- **Vim mode:** turn on **IDE Vim Mode** in Settings (it can be switched while the IDE is open). See [Vim mode](#vim-mode) below.
+
+### Vim mode
+
+With **IDE Vim Mode** on, the IDE edits like Vim (the [`@replit/codemirror-vim`](https://github.com/replit/codemirror-vim) key set). It opens in normal mode, and the footer starts with the mode (`-- NORMAL --`, `-- INSERT --`, `-- VISUAL --`, `-- VISUAL LINE --`, `-- VISUAL BLOCK --`, `-- REPLACE --`) followed by any keys typed so far, such as a count or an operator (`-- NORMAL --  2d`).
+
+- **Esc** belongs to Vim first: it closes the autocomplete list or a hover tooltip, closes the `:` or `/` prompt, leaves insert, replace or visual mode, and cancels keys typed so far. Only in normal mode with nothing pending does `Esc` close the IDE, asking first if you changed the text, as without Vim.
+- **Ex commands:** `:w` writes the text back into the text box and keeps the IDE open; `:q` closes (asks first if the text changed since it was opened or last written; `:q` or `Esc` again within 3 seconds discards); `:q!` closes and drops your changes; `:wq` writes and closes; `:x` writes and closes if the text changed, and just closes otherwise. On a read-only (published) text box `:w`, `:wq` and `:x` write nothing and say so, like **Save**.
+- **Clipboard:** as with Vim's `clipboard=unnamedplus`, every yank, delete and change that doesn't name a register (`yy`, `yiw`, `y` in visual mode, `dd`, `x`, `cw`, `s`, …) and `:yank` also copies its text to the system clipboard. The black hole register (`"_dd`) and named registers (`"ayy`) don't. Replacing a visual selection with `p` doesn't copy what it replaced. `p` pastes from Vim's own register, so pasting never needs the browser's clipboard permission; to paste from the system clipboard, use `Ctrl+V` (`Command+V`) in insert mode. `"+y` copies to the clipboard and `"+p` pastes from it the way the Vim library does, and `"+p` reads the clipboard through the browser, which may ask for permission first (Firefox shows a **Paste** button).
+- **Search** is Vim's `/`, `?`, `n` and `N`; `Ctrl+F` is left to Vim (page down in normal mode) and does not open the search panel.
+- `Ctrl+S` (`Command+S`) saves and closes, and `Shift+Alt+F` formats, in every mode. Vim's own `Ctrl` keys (`Ctrl+V` visual block, `Ctrl+R` redo, `Ctrl+D` / `Ctrl+U`, `Ctrl+O`, …) reach Vim.
+- **Deleting back in insert mode:** Vim's `Ctrl+W` (delete the word before the cursor) can't work in a browser: the browser keeps `Ctrl+W` and closes the tab, asking first only if you have unsaved changes. Use `Ctrl+Backspace` (`Option+Backspace` on Mac) for the word, `Ctrl+U` to delete to the start of the line, and `Ctrl+H` for one character.
+- Autocomplete works in insert mode as usual: while its list is open, `↑`/`↓`, `Enter` and `Esc` are the list's.
+- On a read-only (published) text box, normal-mode moves, search and yanks work; editing commands do nothing.
+- Vim mode is loaded only when it is on: with the setting off, none of its code is fetched.
+
+## DevTools: AD Network
+
+Open DevTools (`F12`) on an allowed site and select the **AD Network** tab. It lists every Automation Designer method call the page makes, in order, with each method's **name and category**. The regular Network tab only shows IDs.
+
+- **Record** pauses and resumes capture. **Clear** empties the list. Tick **Preserve log** to keep entries when the page navigates.
+- **Filter** searches by name, category, UUID or URL. The list keeps the newest 300 requests.
+- **Click a row** to see its headers, request payload, response and timing. `↑`/`↓` move between rows. The detail pane's **Copy** copies what the open tab shows.
+- **Click a UUID** to copy it.
+- **Actions** on each row: **copy as cURL**, **copy a Slack link**, and **Open in draft**. **Open in draft** opens the method's draft in the designer in a background tab, so you stay where you are (a published method opens its linked draft); several clicks are queued and opened one after another. If the request sent inputs, the opened method's inputs are filled in with them (the designer host must be an allowed site). If the method's inputs have not appeared 30 seconds after the page shows the method (a minute at most in all), autofill gives up and says so in a toast.
+- Requests still in progress show as **pending**, and cancelled ones show a red **canceled** label.
+
+Requests made while DevTools was open, before you selected the tab, are still listed; requests from before DevTools opened are not. Names and categories are looked up on the same site with your existing sign-in; while they are unknown, a row shows the start of its UUID.
+
+## DevTools: PD Inspector
+
+Open a **published** page (a `/pages/...` URL) on an allowed site, open DevTools and select the **PD Inspector** tab.
+
+- The panel shows the page's **component tree**, including the navbar and sidebar the page is placed inside.
+- Click **Inspect**, then point at anything on the page to see **which PD component rendered it** and where that component sits in the tree. Click to select it. Inspect mode ends by itself when you close DevTools.
+- Click a component in the tree to **highlight** it on the page.
+- **↗ PD** on a component, and **↗ open in PD** in its detail, open that component (or the page) in Page Designer in a new tab.
+- **Refresh** reloads the page's configuration after a redeploy.
+
+## Settings
+
+The **Settings modal** is on the AD and PD pages themselves (it is not the options page, which only holds the allowed sites). Open it with the **⚙** button next to the page title, the **⚙** in the IDE, `Alt+Shift+S`, or `Alt+,` (`Ctrl+,` works too where the browser does not keep it for itself; Firefox and Zen do). Changes apply immediately and are shared across all your sites.
+
+| Setting | What it does | Default |
+|---|---|---|
+| **Title Updater** | Names the tab `AD: <method>` / `PD: <page>` | on |
+| **Keyboard Shortcuts** | `Ctrl+Shift+Enter`, `Esc` `Esc`, `Shift+L` and `Shift+J` | on |
+| **JSON Editor** | The **JSON** button next to **Inputs**, and `Shift+J` | on |
+| **Output Copy** | The **⧉** copy button on method outputs (AD) | on |
+| **IDE** | The **⤢** and **⧉** buttons on text boxes | on |
+| **IDE Wrap** | Wrap long lines in the IDE: **Wrap** or **No Wrap** | Wrap |
+| **IDE Font Size** | The IDE's font size: 12, 13, 14, 16 or 18 px | 13 px |
+| **IDE Autocomplete** | `#{variable}` completion, hover and checks in the IDE (AD only) | on |
+| **IDE Vim Mode** | Vim keys in the IDE: modes, `:w` / `:q`, yanks also copied to the clipboard (see [Vim mode](#vim-mode)) | off |
+| **Debug Logging** (under **Advanced**) | Prints the extension's step-by-step messages to the browser console | off |
+
+The **Keyboard Shortcuts** switch covers exactly those four keys. It does not affect the Settings shortcut (`Alt+,` / `Ctrl+,`) or the IDE's keys, which are always on, nor the browser-level shortcuts (`Alt+Shift+S`, `Ctrl+Shift+A`, `Ctrl+Shift+P`), which the browser handles.
+
+## Keyboard shortcuts
+
+| Shortcut | Does | Where |
+|---|---|---|
+| `Ctrl+Shift+Enter` | Run Test (commits the field you're typing in first) | AD |
+| `Shift+J` | Open the JSON input editor (when **JSON Editor** is on) | AD, not while typing |
+| `Shift+L` | Copy a link to this method | AD, not while typing |
+| `Esc` `Esc` (twice within 500 ms) | Leave the current field, so your edit registers | AD, PD, in a field |
+| `Alt+Shift+S` | Open the Settings modal | AD, PD |
+| `Alt+,` or `Ctrl+,` | Open the Settings modal (`Ctrl+,` is taken by Firefox and Zen) | AD, PD |
+| `Ctrl+S` (`Command+S`) | Save and close | IDE |
+| `Ctrl+F` (`Command+F`) | Search (with **IDE Vim Mode** on: Vim's page down; search is `/`) | IDE |
+| `Shift+Alt+F` (`Shift+Option+F` on Mac) | Format SQL or JSON (only the selection, if there is one) | IDE |
+| `Ctrl+Space` | Show autocomplete suggestions | IDE |
+| `Ctrl+Backspace` (`Option+Backspace` on Mac) | Delete the word before the cursor (`Ctrl+W` closes the tab: the browser keeps it) | IDE |
+| `Ctrl+U`, `Ctrl+H` | Delete to the start of the line; delete one character back | IDE, **IDE Vim Mode** on, insert mode |
+| `↑` / `↓`, `Enter` | Choose / accept a suggestion | IDE, autocomplete list open |
+| `Esc` | Close the autocomplete list or search panel, else close the IDE (asks first with unsaved changes). With **IDE Vim Mode** on, Vim's first: back to normal mode, and closes the IDE only from normal mode | IDE |
+| `:w`, `:q`, `:q!`, `:wq`, `:x` | Write; close (asks first with unsaved changes); close discarding; write and close; write if changed and close | IDE, **IDE Vim Mode** on |
+| `Ctrl+Shift+A` (`Command+Shift+A` on Mac) | Jump to the newest entry in AD Network | DevTools open |
+| `Ctrl+Shift+P` (`Command+Shift+P` on Mac) | Refresh PD Inspector | DevTools open |
+
+"Not while typing" means the key does nothing while the cursor is in a text field, including fields inside embedded components and frames, so you can type a capital `J` or `L`.
+
+While a modal is open (the IDE, the JSON editor or the Settings modal), the page shortcuts (`Ctrl+Shift+Enter`, `Esc` `Esc`, `Shift+L`, `Shift+J`) do nothing: keys belong to the topmost modal.
+
+`Alt+Shift+S`, `Ctrl+Shift+A` and `Ctrl+Shift+P` are browser-level shortcuts. They can clash with the browser's own shortcuts (in Chrome, `Ctrl+Shift+A` searches tabs, and `Ctrl+Shift+P` opens a private window in Firefox); when one does, the browser keeps it. Change them at `chrome://extensions/shortcuts`, or in Firefox at `about:addons` → ⚙ → **Manage Extension Shortcuts**.
+
+Browsers don't let extensions open DevTools or switch its tabs, so `Ctrl+Shift+A` and `Ctrl+Shift+P` only ask the panel to react. The AD Network or PD Inspector panel does so if it is open on that tab, or when you open it within 60 seconds of pressing the shortcut.
+
+## Updates and your data
+
+- **Updates keep everything:** your allowed sites, their permissions and your settings carry over from one version to the next.
+- **Removing the extension deletes all of it.** Browsers delete an extension's data when it is uninstalled.
+- **Switching from a build you loaded yourself** (**Load unpacked**, or a Firefox temporary add-on) to the published version is a separate install: the two keep separate data. Remove the one you loaded, install the published one, and add your sites once more.
+
+## Troubleshooting
+
+**Nothing appears on the page.** Check that the site is in **Allowed sites** and shows **Revoke**. If it shows **Grant** or `not granted`, click **Grant**. Then reload the tab.
+
+**The DevTools tabs are missing.** They only appear on allowed sites, and only over https: a plain-http page of the same host doesn't count. Close and reopen DevTools after adding a site.
+
+**AD Network shows UUIDs instead of names.** While a name is being looked up, a row shows the start of its UUID and `…` for the category. If the lookup fails, a red **names unavailable — …** pill in the toolbar says why (hover it for the full message). The usual reason is not being signed in: sign in to the site; the panel retries by itself for about a minute, and again for each new request. **this page is not on an allowed site** means DevTools is on a site you haven't added.
+
+**Open in draft opened nothing.** The toast says why. It opens only a method the platform describes well enough: a draft by its own ID, a published method by its linked draft. A method with no category, a published method without a linked draft, or one whose state the platform doesn't give can't be opened, and nothing is guessed.
+
+**Open in draft didn't fill in the inputs.** The designer host must be an allowed, granted site, and the tab must be opened from the panel: a copied or reopened link fills nothing. If the method's inputs take more than 30 seconds to appear, autofill gives up.
+
+**The extension disappeared in Firefox.** Temporary add-ons are removed when Firefox closes. Load it again, or install the signed `.xpi` from a release, which stays (see [Install](../README.md#install)).
+
+**A feature stopped working after an upstream UI change.** The extension relies on the AD/PD page structure, so that's the likeliest cause. Turn on **Debug Logging** in the Settings modal, reload, and check the console for `[belz:…]` messages. The page selectors all live in `src/config/selectors.ts`. Please [open an issue](https://github.com/ParthKapoor-dev/belz-extension/issues).

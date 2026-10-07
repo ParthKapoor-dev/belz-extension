@@ -94,7 +94,7 @@ fails on any stray `console.*` call in `src/`.
 message guards and the handoff are covered through their users in
 [`tests/background/relay.test.ts`](../../tests/background/relay.test.ts) and
 [`tests/designer/features/autofill.test.ts`](../../tests/designer/features/autofill.test.ts). To run
-the tests, see the root [README](../../README.md#development)'s Development section.
+the tests, see [`docs/development.md`](../../docs/development.md).
 
 ## Adding or changing things
 
