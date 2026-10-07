@@ -1,7 +1,7 @@
 {
   "_comment": "The extension's published identity, read by scripts/pack.mjs. firefoxId and firefoxUpdatesJsonUrl go into the Firefox manifest (the release workflow publishes updates.json there). chromePublicKey is optional: the Chrome Web Store item's public key (Developer Dashboard, Package, Public key); when set, the local build/chrome tree carries it as `key`, so an unpacked build has the store item's ID. The Web Store package never carries it.",
   "firefoxId": "belz-devtools@belz",
-  "chromePublicKey": "",
+  "chromePublicKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2l7+lBzUjq6nwGiRtIMfxGJ6Mv/6cP6lkA5d5hshFiF28Jc9Vro1sFF+1UjrYv4xHfNFplKaR+jR5hXLzWmm5rGvkdVD+ZjUJEiLOB1XhIWTY+/BVjAbwpC7on+vVeQKznHAcanJnTzblVr1/s2ccGcfCklifkm3Yru/GzfFauOX85tbtg323SOnt2AJNDeUcQVocm1h8muRs/yTWSODSwrVgzBDZgHKwyjkJCfghDtaXtljNdTK5Ji20Ypl/9TpBGiBVKNMriQ5ChCaxXx/M0acTqATZ9xaV4foM15rlyFPtGsLEdXaNVDG3emmr1oRG1gPEOSTy+6n1fd0XEDcVwIDAQAB",
   "pagesBaseUrl": "https://parthkapoor-dev.github.io/belz-extension",
   "firefoxUpdatesJsonUrl": "https://parthkapoor-dev.github.io/belz-extension/updates.json"
 }
