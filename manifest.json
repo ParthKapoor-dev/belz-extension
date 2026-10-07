@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "belz DevTools",
   "version": "1.0.1",
-  "description": "AD Network and PD Inspector DevTools panels plus Automation/Page Designer helpers",
+  "description": "Developer tools for low-code designer sites: a code editor for text boxes, a JSON input editor, shortcuts and two DevTools panels.",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
