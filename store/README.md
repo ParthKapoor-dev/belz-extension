@@ -46,7 +46,7 @@ Privacy: no analytics, no telemetry, no server of its own. The extension talks o
 
 **Graphics:**
 
-- **Store icon:** 128×128 PNG.
+- **Store icon:** 128×128 PNG with the artwork in the middle 96×96, rendered from [`icons/icon.svg`](../icons/icon.svg) as [`icons/README.md`](../icons/README.md) shows.
 - **Screenshots:** 1280×800 (the store also takes 640×400), at least one and up to five. Take them on an allowed site with no internal hostnames, customer data or tokens visible (crop the address bar or use a demo instance):
   1. The AD Network panel with several named method calls listed, one row open on its Payload tab.
   2. The IDE open over an AD text box with SQL, the `#{` completion list showing, and the footer's variable count.

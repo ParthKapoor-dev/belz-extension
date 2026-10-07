@@ -1,7 +1,7 @@
 // The manifests scripts/pack.mjs writes for each browser: the permissions they
 // ask for are exactly the ones the extension uses. Pure (no build), so fast.
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dir, '../..');
@@ -33,6 +33,11 @@ describe.each(['chrome', 'firefox'])('the %s manifest', (target) => {
 
   test('exposes only the content-script modules to web pages, on https pages', () => {
     expect(m.web_accessible_resources).toEqual([{ resources: ['dist/modules/*'], matches: ['https://*/*'] }]);
+  });
+
+  test('has an icon at every size, and every icon file exists', () => {
+    expect(Object.keys(m.icons).sort()).toEqual(['128', '16', '32', '48']);
+    for (const file of Object.values(m.icons) as string[]) expect(existsSync(path.join(root, file))).toBe(true);
   });
 
   test('carries the release version', () => {

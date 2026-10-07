@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect x="0" y="0" width="128" height="128" fill="#0c0d0f"/>
+  <rect x="3" y="3" width="122" height="122" fill="none" stroke="#2a2d30" stroke-width="2"/>
+  <text x="64" y="83" text-anchor="middle" font-family="JetBrains Mono" font-weight="800" font-size="56" letter-spacing="-3">
+    <tspan fill="#3b82f6">{</tspan><tspan fill="#e6e7e8">b</tspan><tspan fill="#3b82f6">}</tspan>
+  </text>
+</svg>

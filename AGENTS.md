@@ -104,6 +104,8 @@ The page-side PD Inspector folder is `pd-inspector-page/` and the DevTools panel
 
 **HTML pages live next to their script** but ship at the root of the packaged extension: `scripts/pack.mjs` copies `src/devtools/devtools.html`, `src/devtools/ad-network/panel.html`, `src/devtools/pd-inspector/panel.html` and `src/options/options.html` to `devtools.html`, `panel.html`, `panel-pd.html` and `options.html`. Keep that placement: Chromium resolves a DevTools panel page path against the extension root and Firefox against the devtools page, and they agree only when all of them sit together at the root.
 
+The icon is `icons/icon.svg`, rendered to the four PNGs `manifest.json` lists under `icons` (see `icons/README.md`); `pack.mjs` copies the PNGs into each tree.
+
 `manifest.json`, the `standalone` list in `scripts/build.mjs`, `SHARED` in `scripts/pack.mjs` and `config/extension-files.ts` are the source of truth for paths — keep them in sync with this layout when adding or removing an entry point.
 
 ## Build & release

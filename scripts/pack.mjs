@@ -59,6 +59,7 @@ execSync('node scripts/build.mjs', { cwd: root, stdio: 'inherit' });
 const SHARED = [
   ['dist', 'dist'],
   ['fonts', 'fonts'],
+  ...[16, 32, 48, 128].map((s) => [`icons/icon-${s}.png`, `icons/icon-${s}.png`]),
   ['src/devtools/devtools.html', 'devtools.html'],
   ['src/devtools/ad-network/panel.html', 'panel.html'],
   ['src/devtools/pd-inspector/panel.html', 'panel-pd.html'],
