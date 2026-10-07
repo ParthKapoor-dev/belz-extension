@@ -1,6 +1,6 @@
 # `assets/`
 
-Files that are not code: the extension's icon, the font of its own pages, and the screenshots the root README shows. [`scripts/pack.mjs`](../scripts/pack.mjs) copies the icons and fonts into each browser tree at **`icons/`** and **`fonts/`** (the paths `manifest.json` and the pages' `@font-face` rules use); the screenshots never ship.
+Files that are not code: the extension's icon, the font of its own pages, and the screenshots the docs show. [`scripts/pack.mjs`](../scripts/pack.mjs) copies the icons and fonts into each browser tree at **`icons/`** and **`fonts/`** (the paths `manifest.json` and the pages' `@font-face` rules use); the screenshots never ship.
 
 ## Contents
 

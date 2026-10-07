@@ -49,7 +49,7 @@ execSync('node scripts/build.mjs', { cwd: root, stdio: 'inherit' });
 //
 // The icons and fonts live under assets/ in the repo but keep their packaged
 // paths (icons/…, fonts/…), which manifest.json and the pages' @font-face
-// rules name. assets/screenshots/ is for the README and never ships.
+// rules name. assets/screenshots/ is for the docs and never ships.
 //
 // The HTML pages live next to their scripts in src/ but are placed at the ROOT
 // of the packaged tree. That location is load-bearing: Chromium resolves a

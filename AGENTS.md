@@ -23,7 +23,7 @@ tests/                       unit tests mirroring src/; build/ checks, docs/ che
 scripts/                     build, per-browser packaging, dev watcher, singleton check;
                              release.config.json (Firefox id, update URL, optional Chrome public key)
 assets/                      icons/ (icon.svg + the four PNGs), fonts/ (Ioskeley Mono + OFL.txt),
-                             screenshots/ (for the README; never shipped)
+                             screenshots/ (for the docs; never shipped)
 docs/                        usage.md, development.md, releasing.md
 .github/workflows/           test.yml (every push), release.yml (v* tags)
 manifest.json                the manifest template, split per browser by scripts/manifests.mjs

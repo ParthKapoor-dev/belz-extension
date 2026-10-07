@@ -74,6 +74,6 @@ CI ([`.github/workflows/test.yml`](../.github/workflows/test.yml)) runs the type
 src/        the extension, one folder per JavaScript world (see src/README.md)
 tests/      unit tests mirroring src/, e2e/ for real browsers
 scripts/    build, per-browser packaging, dev watcher, release config
-assets/     icons, fonts, README screenshots
+assets/     icons, fonts, docs screenshots
 docs/       usage, development and release guides
 ```

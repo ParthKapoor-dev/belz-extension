@@ -1,14 +1,19 @@
-# belz-extension
+<p align="center"><img src="assets/icons/icon-128.png" alt="" width="96" height="96"></p>
+
+<h1 align="center">belz-extension</h1>
 
 Productivity tools for engineers working in Service Designer's **Automation Designer (AD)** and **Page Designer (PD)**: a full-screen code editor for any text box, a JSON editor for method inputs, handy shortcuts, and two DevTools panels. It runs on Chrome, Edge, Brave, Firefox and Zen, works only on the sites you add yourself, and collects nothing.
 
-![The IDE: a SQL query after Format, with #{variable} suggestions open](assets/screenshots/ide.png)
-
 ## Install
 
-**Chrome, Edge, Brave:** install it from the [Chrome Web Store](https://chromewebstore.google.com/detail/heenggkonmlbicnokmkbeoodfmfjlgao) and click **Add to Chrome** (in Edge, allow extensions from other stores when asked). The store keeps it up to date.
+**Chrome, Edge, Brave:**
 
-Or load a release by hand:
+> [!NOTE]
+> **Not on the Chrome Web Store yet.** It is waiting for Google's review, so the store link below doesn't work yet. Until then, use **Load a release by hand** below.
+
+Install it from the [Chrome Web Store](https://chromewebstore.google.com/detail/heenggkonmlbicnokmkbeoodfmfjlgao) and click **Add to Chrome** (in Edge, allow extensions from other stores when asked). The store keeps it up to date.
+
+**Load a release by hand** (works now; it doesn't update itself, so switch to the store version once it's live):
 
 1. Download `belz-extension-<version>-chrome.zip` from the [latest release](https://github.com/ParthKapoor-dev/belz-extension/releases/latest) and unzip it.
 2. Open `chrome://extensions` (or `edge://extensions`, `brave://extensions`) and turn on **Developer mode**.
