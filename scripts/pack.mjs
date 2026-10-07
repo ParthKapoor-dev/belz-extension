@@ -3,14 +3,16 @@
 // `build.mjs` produces dist/. This script builds on top of it and writes two
 // complete, loadable extension trees:
 //
-//   build/chrome/    — Chromium manifest (service_worker background)
-//   build/firefox/   — Firefox manifest (scripts background + gecko id/update_url)
+//   build/chrome/    — Chromium manifest (service_worker background, plus the
+//                      `key` from release.config.json's chromePublicKey if set)
+//   build/firefox/   — Firefox manifest (scripts background + gecko settings)
 //
-// The GitHub Actions release workflow runs this, then packs build/chrome into a
-// signed CRX and signs build/firefox into an XPI. Locally, load build/chrome or
-// build/firefox as an unpacked extension.
+// The GitHub Actions release workflow runs this with --store, zips build/chrome
+// for the Chrome Web Store and signs build/firefox into an XPI. Locally, load
+// build/chrome or build/firefox as an unpacked extension.
 //
-// Usage: node scripts/pack.mjs [--version X.Y.Z]
+// Usage: node scripts/pack.mjs [--version X.Y.Z] [--store]
+//   --store  build/chrome is the Web Store package: no `key` in its manifest.
 
 import { execSync } from 'node:child_process';
 import {
@@ -32,6 +34,8 @@ const versionArg = (() => {
   const i = process.argv.indexOf('--version');
   return i !== -1 ? process.argv[i + 1] : null;
 })();
+
+const store = process.argv.includes('--store');
 
 const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 const release = JSON.parse(readFileSync(path.join(root, 'release.config.json'), 'utf8'));
@@ -76,11 +80,11 @@ function stage(target) {
 
 // 3. One tree per browser family, each with its own manifest (manifests.mjs):
 // Chromium gets a service_worker background and no gecko settings; Firefox a
-// scripts background plus the gecko id and update_url for auto-update.
+// scripts background plus the gecko settings for signing and auto-update.
 for (const target of ['chrome', 'firefox']) {
   const dest = stage(target);
-  const m = browserManifest(manifest, target, { version, release });
+  const m = browserManifest(manifest, target, { version, release, store });
   writeFileSync(path.join(dest, 'manifest.json'), JSON.stringify(m, null, 2));
 }
 
-console.log(`extension packed (v${version}) → build/chrome, build/firefox`);
+console.log(`extension packed (v${version}${store ? ', Chrome Web Store package' : ''}) → build/chrome, build/firefox`);

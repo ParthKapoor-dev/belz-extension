@@ -1,28 +1,32 @@
 # Builds, signs, and publishes the browser extension.
 #
-# Trigger: push a tag like `v1.2.3`.
+# Trigger: push a tag like `v1.2.3`. The tag sets the version that ships.
 #
 # What it does:
 #   1. Type-checks and runs the unit tests: nothing is built from a tag that fails them.
-#   2. Builds per-browser extension trees (scripts/pack.mjs).
-#   3. Packs a signed Chromium CRX (key from the CHROME_CRX_KEY secret).
-#   4. Signs a Firefox XPI via the Mozilla AMO API (unlisted channel).
-#   5. Generates the update manifests (updates.xml / updates.json).
-#   6. Attaches the CRX + XPI to the GitHub Release and publishes the update
-#      manifests to GitHub Pages at a stable URL.
+#   2. Builds per-browser extension trees (scripts/pack.mjs --store: the Chrome
+#      tree carries no `key`, which the Chrome Web Store rejects).
+#   3. Zips build/chrome (manifest.json at the zip root).
+#   4. Chrome Web Store: uploads the zip and submits it for review (API v2).
+#   5. Firefox: lints and signs build/firefox via the Mozilla AMO API (unlisted
+#      channel) and writes updates.json, the self-hosted update manifest.
+#   6. Attaches the Chrome zip and the signed XPI to the GitHub Release, and
+#      publishes updates.json to GitHub Pages at the URL in release.config.json.
 #
-# Force-installed browsers auto-update from the Pages-hosted manifests whenever
-# a new `v*` tag is pushed.
+# Each store is optional: a store whose secrets are all absent is skipped with
+# a notice. A store with only some of its secrets set fails the run, and so
+# does a run with neither store configured.
 #
 # Supply chain: every action is pinned to a full commit SHA (the tag it came
-# from is in the comment), Bun to an exact version, and the signing tools (crx3,
-# web-ext) to the exact devDependency versions in package.json and bun.lock,
-# installed with the rest by `bun install --frozen-lockfile`. To update one,
-# change the SHA and its comment together.
+# from is in the comment), Bun to an exact version, and the signing tool
+# (web-ext) to the exact devDependency version in package.json and bun.lock,
+# installed with the rest by `bun install --frozen-lockfile`. The Chrome Web
+# Store is called with plain curl. To update an action, change the SHA and its
+# comment together.
 #
-# Secrets: the CRX key exists on disk only inside the step that signs, and is
-# shredded by an always() step even if signing fails. The AMO credentials are
-# given to the one step that uses them, as environment variables.
+# Secrets reach only the steps that use them, as environment variables. The
+# Web Store's short-lived access token is masked in the log and kept only in a
+# file the runner user alone can read, deleted when the step ends.
 #
 # Least privilege: the workflow's token can only read by default. The release
 # job may write repository contents (to create the GitHub Release), and only
@@ -30,16 +34,21 @@
 # disk, and no workflow expression is expanded inside a script: values reach
 # `run:` blocks as environment variables.
 #
-# Required repository secrets:
-#   CHROME_CRX_KEY    PEM private key for CRX signing. Generate ONCE and never
-#                     rotate — the key determines the stable Chrome extension
-#                     ID. Create: `openssl genrsa 2048 > key.pem`.
-#   AMO_JWT_ISSUER    Mozilla add-ons API key      (addons.mozilla.org → Manage API Keys)
-#   AMO_JWT_SECRET    Mozilla add-ons API secret
+# Repository secrets (Settings → Secrets and variables → Actions):
+#   Chrome Web Store (all five, or none):
+#     CWS_PUBLISHER_ID   publisher ID (Developer Dashboard → Account)
+#     CWS_EXTENSION_ID   the store item's ID
+#     CWS_CLIENT_ID      Google Cloud OAuth client ID (Chrome Web Store API enabled)
+#     CWS_CLIENT_SECRET  that client's secret
+#     CWS_REFRESH_TOKEN  refresh token for the publisher account, scope
+#                        https://www.googleapis.com/auth/chromewebstore
+#   Firefox (both, or neither):
+#     AMO_JWT_ISSUER     Mozilla add-ons API key  (addons.mozilla.org → Manage API Keys)
+#     AMO_JWT_SECRET     Mozilla add-ons API secret
 #
-# One-time setup: enable GitHub Pages (Settings → Pages → source: GitHub Actions)
-# and, after the first run, copy the printed Chrome extension ID into
-# release.config.json (`chromeId`).
+# One-time setup: Settings → Pages → Source: GitHub Actions; and Settings →
+# Environments → github-pages → Deployment branches and tags: allow tags `v*`.
+# See .github/workflows/README.md and the root README ("Releasing").
 
 name: release
 
@@ -58,10 +67,11 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
+    timeout-minutes: 30
     permissions:
       contents: write   # create/update the GitHub Release
+    outputs:
+      amo: ${{ steps.stores.outputs.amo }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -73,7 +83,55 @@ jobs:
 
       - name: Resolve version from tag
         id: ver
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          # Chrome and Firefox both take one to four dot-separated integers.
+          if ! printf '%s' "$V" | grep -Eq '^(0|[1-9][0-9]{0,8})(\.(0|[1-9][0-9]{0,8})){0,3}$'; then
+            echo "::error::tag $GITHUB_REF_NAME does not give a valid extension version (expected v1.2.3)"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Check which stores are configured
+        id: stores
+        env:
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          # Prints all, none or some: how many of the named variables are set.
+          configured() {
+            set_count=0
+            for name in "$@"; do
+              if [ -n "$(printenv "$name")" ]; then set_count=$((set_count + 1)); fi
+            done
+            if [ "$set_count" -eq "$#" ]; then echo all
+            elif [ "$set_count" -eq 0 ]; then echo none
+            else echo some
+            fi
+          }
+          CWS_SECRETS="CWS_PUBLISHER_ID CWS_EXTENSION_ID CWS_CLIENT_ID CWS_CLIENT_SECRET CWS_REFRESH_TOKEN"
+          AMO_SECRETS="AMO_JWT_ISSUER AMO_JWT_SECRET"
+          # shellcheck disable=SC2086 # the lists split into names on purpose
+          cws_set=$(configured $CWS_SECRETS)
+          # shellcheck disable=SC2086
+          amo_set=$(configured $AMO_SECRETS)
+          if [ "$cws_set" = some ]; then echo "::error::the Chrome Web Store is partly configured: set all of $CWS_SECRETS, or none"; exit 1; fi
+          if [ "$amo_set" = some ]; then echo "::error::AMO is partly configured: set both of $AMO_SECRETS, or neither"; exit 1; fi
+          cws=false; [ "$cws_set" = all ] && cws=true
+          amo=false; [ "$amo_set" = all ] && amo=true
+          if [ "$cws" = false ] && [ "$amo" = false ]; then
+            echo "::error::no store is configured: add the CWS_* secrets, the AMO_JWT_* secrets, or both"
+            exit 1
+          fi
+          if [ "$cws" = false ]; then echo "::notice::Chrome Web Store secrets not set: skipping the Web Store upload"; fi
+          if [ "$amo" = false ]; then echo "::notice::AMO secrets not set: skipping Firefox signing and updates.json"; fi
+          echo "cws=$cws" >> "$GITHUB_OUTPUT"
+          echo "amo=$amo" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -87,87 +145,150 @@ jobs:
       - name: Build per-browser extension trees
         env:
           VERSION: ${{ steps.ver.outputs.version }}
-        run: node scripts/pack.mjs --version "$VERSION"
+        run: node scripts/pack.mjs --version "$VERSION" --store
 
-      - name: Pack signed Chromium CRX
-        id: crx
+      - name: Zip the Chrome package
         env:
-          CHROME_CRX_KEY: ${{ secrets.CHROME_CRX_KEY }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          umask 077
-          printf '%s' "$CHROME_CRX_KEY" > key.pem
+          set -euo pipefail
           mkdir -p dist-pack
-          # -p is crx3's key option; with any other flag it signs with a new,
-          # random key and the extension ID changes.
-          ./node_modules/.bin/crx3 -p key.pem \
-            -o "dist-pack/belz-extension-$VERSION.crx" \
-            build/chrome < /dev/null
-          # Derive the deterministic Chrome extension ID from the public key.
-          ID=$(node -e '
-            const {execSync}=require("child_process");const crypto=require("crypto");
-            const der=execSync("openssl rsa -in key.pem -pubout -outform DER 2>/dev/null");
-            const h=crypto.createHash("sha256").update(der).digest();
-            process.stdout.write([...h.subarray(0,16)].map(b=>
-              ("0123456789abcdef"[b>>4])+("0123456789abcdef"[b&15])).join("")
-              .replace(/[0-9a-f]/g,c=>"abcdefghijklmnop"[parseInt(c,16)]));
-          ')
-          if [ -z "$ID" ]; then echo "::error::could not derive the Chrome extension ID from CHROME_CRX_KEY"; exit 1; fi
-          echo "id=$ID" >> "$GITHUB_OUTPUT"
-          echo "Chrome extension ID: $ID"
+          ZIP="$PWD/dist-pack/belz-extension-$VERSION-chrome.zip"
+          # Zipped from inside the tree: manifest.json sits at the zip root.
+          (cd build/chrome && zip -q -r -X "$ZIP" .)
+          # The store rejects a package with a `key`; the version must be the tag's.
+          unzip -p "$ZIP" manifest.json | node -e '
+            const m = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            if ("key" in m) { console.log("::error::the Chrome package carries a key"); process.exit(1); }
+            if (m.version !== process.env.VERSION) {
+              console.log(`::error::the Chrome package has version ${m.version}, expected ${process.env.VERSION}`);
+              process.exit(1);
+            }'
 
-      - name: Remove the CRX key
-        if: always()
+      - name: Upload to the Chrome Web Store and submit for review
+        if: steps.stores.outputs.cws == 'true'
+        env:
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          if [ -f key.pem ]; then shred -u key.pem 2>/dev/null || rm -f key.pem; fi
+          set -euo pipefail
+          umask 077
+          WORK=$(mktemp -d)
+          trap 'rm -rf "$WORK"' EXIT
+          ZIP="dist-pack/belz-extension-$VERSION-chrome.zip"
+          ITEM="publishers/$CWS_PUBLISHER_ID/items/$CWS_EXTENSION_ID"
+          API="https://chromewebstore.googleapis.com/v2/$ITEM"
+          UPLOAD="https://chromewebstore.googleapis.com/upload/v2/$ITEM:upload"
+
+          # fail <what> <response file>: print the API's own error message, then stop.
+          fail() {
+            msg=$(jq -r '(.error | objects | .message) // .error_description // (.error | strings) // empty' "$2" 2>/dev/null || true)
+            echo "::error::Chrome Web Store: $1 failed: ${msg:-no error message in the response}"
+            exit 1
+          }
+
+          # 1. Exchange the refresh token for an access token. The secrets go
+          #    in the request body from a file, never on a command line.
+          jq -rn '"client_id=\(env.CWS_CLIENT_ID|@uri)&client_secret=\(env.CWS_CLIENT_SECRET|@uri)&refresh_token=\(env.CWS_REFRESH_TOKEN|@uri)&grant_type=refresh_token"' > "$WORK/token-request"
+          code=$(curl -sS -o "$WORK/token.json" -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data-binary "@$WORK/token-request" https://oauth2.googleapis.com/token)
+          [ "$code" = 200 ] || fail "the OAuth token exchange (HTTP $code)" "$WORK/token.json"
+          TOKEN=$(jq -r '.access_token // empty' "$WORK/token.json")
+          [ -n "$TOKEN" ] || fail "the OAuth token exchange (no access_token)" "$WORK/token.json"
+          echo "::add-mask::$TOKEN"
+          printf 'Authorization: Bearer %s\n' "$TOKEN" > "$WORK/auth-header"
+          rm -f "$WORK/token.json" "$WORK/token-request"
+
+          # 2. Upload the package.
+          code=$(curl -sS -o "$WORK/upload.json" -w '%{http_code}' -X POST \
+            -H "@$WORK/auth-header" -H 'Content-Type: application/zip' \
+            -T "$ZIP" "$UPLOAD")
+          [ "$code" = 200 ] || fail "upload (HTTP $code)" "$WORK/upload.json"
+          state=$(jq -r '.uploadState // empty' "$WORK/upload.json")
+          # An upload still being processed is polled until it settles (5 min at most).
+          tries=0
+          while { [ "$state" = IN_PROGRESS ] || [ "$state" = UPLOAD_IN_PROGRESS ]; } && [ "$tries" -lt 30 ]; do
+            sleep 10
+            tries=$((tries + 1))
+            code=$(curl -sS -o "$WORK/status.json" -w '%{http_code}' \
+              -H "@$WORK/auth-header" "$API:fetchStatus")
+            [ "$code" = 200 ] || fail "fetchStatus (HTTP $code)" "$WORK/status.json"
+            state=$(jq -r '.lastAsyncUploadState // empty' "$WORK/status.json")
+          done
+          if [ "$state" != SUCCEEDED ]; then
+            echo "::error::Chrome Web Store: the upload ended in state '${state:-none}' (each upload's version must be higher than the store's current one)"
+            exit 1
+          fi
+          echo "Uploaded version $VERSION to the Chrome Web Store."
+
+          # 3. Submit for review. Once approved, the store publishes it with the
+          #    visibility set in the dashboard.
+          code=$(curl -sS -o "$WORK/publish.json" -w '%{http_code}' -X POST \
+            -H "@$WORK/auth-header" -H 'Content-Type: application/json' \
+            -d '{}' "$API:publish")
+          [ "$code" = 200 ] || fail "publish (HTTP $code)" "$WORK/publish.json"
+          state=$(jq -r '.state // empty' "$WORK/publish.json")
+          case "$state" in
+            PENDING_REVIEW|STAGED|PUBLISHED|PUBLISHED_TO_TESTERS)
+              echo "Chrome Web Store: submitted, state $state." ;;
+            *)
+              echo "::error::Chrome Web Store: publish returned state '${state:-none}'"
+              exit 1 ;;
+          esac
 
       - name: Sign Firefox XPI via AMO
         id: xpi
+        if: steps.stores.outputs.amo == 'true'
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
+          set -euo pipefail
+          # AMO's checks for a self-distributed add-on, before anything is submitted.
+          ./node_modules/.bin/web-ext lint --source-dir=build/firefox --self-hosted
+          mkdir -p dist-pack/amo
           ./node_modules/.bin/web-ext sign \
             --source-dir=build/firefox \
             --channel=unlisted \
             --api-key="$AMO_JWT_ISSUER" \
             --api-secret="$AMO_JWT_SECRET" \
-            --artifacts-dir=dist-pack
+            --artifacts-dir=dist-pack/amo
           # A sign that "succeeded" without producing an XPI must not publish
           # an updates.json with an empty update_link.
-          XPI=$(find dist-pack -maxdepth 1 -name '*.xpi' | head -1)
-          if [ -z "$XPI" ]; then echo "::error::web-ext sign produced no .xpi"; exit 1; fi
+          SIGNED=$(find dist-pack/amo -maxdepth 1 -name '*.xpi' | head -1)
+          if [ -z "$SIGNED" ]; then echo "::error::web-ext sign produced no .xpi"; exit 1; fi
+          XPI="dist-pack/belz-extension-$VERSION-firefox.xpi"
+          mv "$SIGNED" "$XPI"
           echo "xpi=$XPI" >> "$GITHUB_OUTPUT"
 
-      - name: Generate update manifests
+      - name: Generate updates.json
+        if: steps.stores.outputs.amo == 'true'
         env:
-          V: ${{ steps.ver.outputs.version }}
+          VERSION: ${{ steps.ver.outputs.version }}
           XPI: ${{ steps.xpi.outputs.xpi }}
-          CRX_ID: ${{ steps.crx.outputs.id }}
         run: |
-          BASE="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
-          FF_ID=$(node -e 'console.log(require("./release.config.json").firefoxId)')
-          CRX="dist-pack/belz-extension-$V.crx"
-          XPI_NAME=$(basename "$XPI")
-          if [ -z "$XPI_NAME" ] || [ ! -f "$XPI" ]; then echo "::error::no signed XPI to publish"; exit 1; fi
-          if [ ! -f "$CRX" ]; then echo "::error::no CRX to publish"; exit 1; fi
+          set -euo pipefail
+          if [ -z "$XPI" ] || [ ! -f "$XPI" ]; then echo "::error::no signed XPI to publish"; exit 1; fi
           mkdir -p pages
-          cp "$CRX" "$XPI" pages/
-          # Stable "latest" copies — Firefox force-install points install_url here.
-          cp "$CRX" pages/belz-extension-latest.crx
+          # A stable link to the newest signed build.
           cp "$XPI" pages/belz-extension-latest.xpi
-          cat > pages/updates.xml <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
-            <app appid="$CRX_ID">
-              <updatecheck codebase="$BASE/belz-extension-$V.crx" version="$V"/>
-            </app>
-          </gupdate>
-          EOF
-          cat > pages/updates.json <<EOF
-          { "addons": { "$FF_ID": { "updates": [
-            { "version": "$V", "update_link": "$BASE/$XPI_NAME" } ] } } }
-          EOF
+          # Mozilla's update manifest: the add-on's id, then the version with
+          # the HTTPS link Firefox downloads it from (the XPI attached to this
+          # tag's GitHub Release) and the file's hash.
+          LINK="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$(basename "$XPI")"
+          HASH="sha256:$(sha256sum "$XPI" | cut -d' ' -f1)"
+          LINK="$LINK" HASH="$HASH" node -e '
+            const { firefoxId } = require("./release.config.json");
+            const update = { version: process.env.VERSION, update_link: process.env.LINK, update_hash: process.env.HASH };
+            const doc = { addons: { [firefoxId]: { updates: [update] } } };
+            require("fs").writeFileSync("pages/updates.json", JSON.stringify(doc, null, 2) + "\n");'
+          cat pages/updates.json
 
       - name: Publish packages to the GitHub Release
         env:
@@ -175,7 +296,10 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
           XPI: ${{ steps.xpi.outputs.xpi }}
         run: |
+          set -euo pipefail
           TAG="$GITHUB_REF_NAME"
+          FILES=("dist-pack/belz-extension-$VERSION-chrome.zip")
+          if [ -n "$XPI" ]; then FILES+=("$XPI"); fi
           # Re-running the workflow for a tag finds its release already there:
           # that is the one tolerated case. Any other failure fails the job.
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -183,15 +307,17 @@ jobs:
           else
             gh release create "$TAG" --title "$TAG" --notes "Automated release."
           fi
-          gh release upload "$TAG" "dist-pack/belz-extension-$VERSION.crx" "$XPI" --clobber
+          gh release upload "$TAG" "${FILES[@]}" --clobber
 
       - name: Upload Pages artifact
+        if: steps.stores.outputs.amo == 'true'
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: pages
 
   deploy-pages:
     needs: release
+    if: needs.release.outputs.amo == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

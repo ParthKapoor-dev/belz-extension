@@ -23,7 +23,23 @@ It runs on Chrome, Edge, Brave, Firefox and Zen. It only talks to the sites you 
 
 **Browsers:** Firefox 128 or newer (and Zen, which is built on it). On Chrome, Edge and Brave, use a current release; the extension sets no minimum Chrome version.
 
-Signed builds are attached to the project's [GitHub Releases](https://github.com/ParthKapoor-dev/belz-extension/releases) when they are published. To build it yourself, which takes about a minute:
+### Published builds (recommended)
+
+**Chrome, Edge, Brave:** open the Chrome Web Store link shared by the maintainer and click **Add to Chrome** (in Edge, first allow extensions from other stores when it asks). The store keeps the extension up to date.
+
+**Firefox, Zen:** download the signed `belz-extension-<version>-firefox.xpi` from the latest [GitHub Release](https://github.com/ParthKapoor-dev/belz-extension/releases/latest) and open it in the browser (or drag it onto a Firefox window), then confirm. It is signed by Mozilla, stays installed across restarts, and updates itself when a new version is released.
+
+Then go to [First-time setup](#first-time-setup).
+
+### Updates and your data
+
+- **Updates keep everything:** your allowed sites, their permissions and your settings carry over from one version to the next.
+- **Removing the extension deletes all of it.** Browsers delete an extension's data when it is uninstalled.
+- **Switching from a build you loaded yourself** (**Load unpacked**, or a Firefox temporary add-on) to the published version is a separate install: the two keep separate data. Remove the one you loaded, install the published one, and add your sites once more.
+
+### Build from source
+
+To build it yourself, which takes about a minute:
 
 **You need:** [Git](https://git-scm.com/), [Bun](https://bun.sh/) (CI and the release build use Bun 1.2.20), and [Node.js](https://nodejs.org/) 18 or newer to build (20 or newer for `bun run dev` on Linux, which needs recursive file watching; 22 or newer for the end-to-end tests, which use Node's built-in `WebSocket`).
 
@@ -42,13 +58,15 @@ That creates a ready-to-load extension for each browser family under `build/`. L
 2. Turn on **Developer mode** (top right).
 3. Click **Load unpacked** and choose the **`build/chrome`** folder.
 
+Each GitHub Release also carries the Chrome package as `belz-extension-<version>-chrome.zip`: unzip it and choose that folder in step 3 to load a released version without building.
+
 **Firefox, Zen**
 
 1. Open `about:debugging#/runtime/this-firefox`.
 2. Click **Load Temporary Add-on…**
 3. Choose **`build/firefox/manifest.json`**.
 
-> Firefox removes temporary add-ons when it closes, so you'll repeat these three steps after each restart. That's a Firefox rule for unsigned extensions, not a bug.
+> Firefox removes temporary add-ons when it closes, so you'll repeat these three steps after each restart. That's a Firefox rule for unsigned extensions, not a bug. The signed `.xpi` from a release stays installed.
 
 > **Load from `build/`, never from the repo root.** The root `manifest.json` is a template that the build splits per browser. It will not load in Firefox.
 
@@ -212,7 +230,7 @@ Browsers don't let extensions open DevTools or switch its tabs, so `Ctrl+Shift+A
 
 **Open in draft didn't fill in the inputs.** The designer host must be an allowed, granted site, and the tab must be opened from the panel: a copied or reopened link fills nothing. If the method's inputs take more than 30 seconds to appear, autofill gives up.
 
-**The extension disappeared in Firefox.** Temporary add-ons are removed when Firefox closes. Load it again (see [Install](#install)).
+**The extension disappeared in Firefox.** Temporary add-ons are removed when Firefox closes. Load it again, or install the signed `.xpi` from a release, which stays (see [Install](#install)).
 
 **A feature stopped working after an upstream UI change.** The extension relies on the AD/PD page structure, so that's the likeliest cause. Turn on **Debug Logging** in the Settings modal, reload, and check the console for `[belz:…]` messages. The page selectors all live in `src/config/selectors.ts`. Please [open an issue](https://github.com/ParthKapoor-dev/belz-extension/issues).
 
@@ -253,31 +271,49 @@ src/
   shared/             helpers shared by all of the above
 tests/                unit tests (mirroring src/), e2e/ for real browsers
 scripts/              build, per-browser packaging, dev watcher
+store/                Chrome Web Store listing text and privacy-form answers
 ```
 
 ---
 
 ## Releasing
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`. The tag sets the version that ships: `v1.2.3` builds version `1.2.3` (`scripts/pack.mjs --version`). The `version` in `manifest.json` and `package.json` is only what a local build carries. The workflow type-checks and runs the unit tests, then:
+Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml). The tag sets the version that ships: `v1.2.3` builds version `1.2.3` (`scripts/pack.mjs --version`); the `version` in `manifest.json` and `package.json` is only what a local build carries. The workflow type-checks and runs the unit tests, then:
 
-- Builds and signs a Chrome `.crx` and a Firefox `.xpi`.
-- Attaches both to a GitHub Release.
-- Publishes auto-update manifests to GitHub Pages.
+- **Chrome:** zips `build/chrome`, uploads it to the Chrome Web Store and submits it for review. The store publishes it once approved.
+- **Firefox:** has Mozilla sign `build/firefox` as a self-distributed (unlisted) add-on, and publishes `updates.json` to GitHub Pages so installed copies update themselves.
+- Attaches the Chrome `.zip` and the signed `.xpi` to the tag's GitHub Release.
 
-With a release published, browsers can install the extension by policy and keep it updated automatically.
+Either store can be left out: with its secrets unset, the workflow skips it with a notice. With neither set up, it fails.
 
-The workflow needs, once:
+### One-time setup
 
-- The repo secrets `CHROME_CRX_KEY` (make it once with `openssl genrsa 2048 > key.pem` and **never rotate it**, because it fixes the Chrome extension ID), plus `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` for Mozilla signing.
-- GitHub Pages enabled (Settings → Pages → Source: GitHub Actions).
-- After the first release, the printed Chrome extension ID copied into `chromeId` in `release.config.json`.
+1. **GitHub Pages:** Settings → Pages → Source: **GitHub Actions**.
+2. **Let tags deploy to Pages:** Settings → Environments → `github-pages` → Deployment branches and tags → add a tag rule `v*` (by default only the default branch may deploy, and a release runs on a tag).
+3. **Firefox:** on addons.mozilla.org, Tools → Manage API Keys, create a key, and add it as the repository secrets `AMO_JWT_ISSUER` (the key) and `AMO_JWT_SECRET` (the secret).
+4. **Chrome Web Store item:** register as a Chrome Web Store developer, then in the Developer Dashboard create the item by uploading a package once by hand (the Chrome `.zip` from a Firefox-only release, or `build/chrome` zipped so that `manifest.json` is at the top of the zip; leave `chromePublicKey` empty for that build). Fill in the listing from [`store/README.md`](store/README.md), give [`PRIVACY.md`](PRIVACY.md)'s URL as the privacy policy, set **Visibility** to **Unlisted** (or as you choose) under Distribution, and submit it. The first tag released after that must carry a higher version than this hand upload.
+5. **Chrome Web Store API:** in a Google Cloud project, enable the **Chrome Web Store API**, configure the OAuth consent screen and set it to **In production** (a refresh token of a project left in testing expires after 7 days), and create an OAuth client. Get a refresh token for the publisher account with the scope `https://www.googleapis.com/auth/chromewebstore` (for example through the OAuth 2.0 Playground with your own client).
+6. **Chrome secrets:** add `CWS_PUBLISHER_ID` (Developer Dashboard → Account), `CWS_EXTENSION_ID` (the item's ID), `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET` and `CWS_REFRESH_TOKEN`.
+7. **Optional, pin the unpacked Chrome ID:** copy the item's public key (Developer Dashboard → the item → Package → **Public key**, the base64 text between the `BEGIN`/`END` lines) into `chromePublicKey` in `release.config.json`. A local `build/chrome` then has the store item's ID wherever the folder lives. The Web Store package never carries it.
+
+### Each release
+
+1. Make sure `main` is green in CI.
+2. **Stored data:** if anything stored in `chrome.storage` changed shape since the last release (a setting's key or values, the site list, the method cache), it ships with a migration or under a new key. Installed copies keep their data across updates. See [`src/config/README.md`](src/config/README.md) ("Stored shapes").
+3. Pick a version **higher than the last release**: both stores refuse a version they have already seen or a lower one, and a failed release is retried with the next patch version.
+4. Tag and push:
+
+   ```bash
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+
+5. Watch the **release** workflow. Chrome users get the version after the store's review; Firefox users within a day (or at once via `about:addons` → Check for Updates).
 
 ---
 
 ## Privacy and permissions
 
-**No data leaves your own AD/PD instance.** There is no analytics, no telemetry and no companion server. Method names and page configurations come from the site you're on, using your existing sign-in.
+**No data leaves your own AD/PD instance.** There is no analytics, no telemetry and no companion server. Method names and page configurations come from the site you're on, using your existing sign-in. The full privacy policy is [`PRIVACY.md`](PRIVACY.md).
 
 What the extension asks for, and why:
 

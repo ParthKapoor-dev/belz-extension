@@ -1,5 +1,5 @@
 // Every directory in the repository explains itself in a README.md, and every
-// relative link in a README (or AGENTS.md) points at something that exists.
+// relative link in a README (or AGENTS.md, PRIVACY.md) points at something that exists.
 // A new folder without a README, or a README left pointing at a renamed file,
 // fails here instead of going stale quietly.
 import { describe, expect, test } from 'bun:test';
@@ -49,8 +49,8 @@ describe('documentation', () => {
     expect(missing).toEqual([]);
   });
 
-  test('relative links in READMEs and AGENTS.md resolve', () => {
-    const docs = files.filter((file) => /(^|\/)(README|AGENTS)\.md$/.test(file));
+  test('relative links in READMEs, AGENTS.md and PRIVACY.md resolve', () => {
+    const docs = files.filter((file) => /(^|\/)(README|AGENTS|PRIVACY)\.md$/.test(file));
     const broken: string[] = [];
     for (const doc of docs) {
       const dir = path.dirname(path.join(root, doc));

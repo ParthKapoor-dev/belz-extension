@@ -18,7 +18,9 @@ For both browsers:
 - `web_accessible_resources` exposes only `dist/modules/*`, to `https://*/*` pages.
 - The version passed in is the manifest's version.
 
-Per browser: Chromium has a `service_worker` background and no `browser_specific_settings`; Firefox has a `scripts` background, the gecko id from `release.config.json` and `strict_min_version` `128.0`.
+Per browser: Chromium has a `service_worker` background and no `browser_specific_settings`; Firefox has a `scripts` background, the gecko id and `update_url` from `release.config.json`, `strict_min_version` `128.0`, and `data_collection_permissions` `{ required: ['none'] }`.
+
+The Chrome Web Store public key (`chromePublicKey` in `release.config.json`): when set, it is the local Chromium manifest's `key`; it is absent from the Web Store package (`store: true`, what `pack.mjs --store` builds), from the Firefox manifest, and from every manifest when empty. The root `manifest.json` has no `key` of its own.
 
 `manifests.mjs` is a plain `.mjs` module without types, so the test imports it by path at run time.
 

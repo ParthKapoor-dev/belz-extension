@@ -1,8 +1,7 @@
 {
-  "_comment": "Single source of truth for the extension's published identity. Consumed by scripts/pack.mjs. The GitHub Actions workflow publishes the packages + update manifests to the URLs below.",
+  "_comment": "The extension's published identity, read by scripts/pack.mjs. firefoxId and firefoxUpdatesJsonUrl go into the Firefox manifest (the release workflow publishes updates.json there). chromePublicKey is optional: the Chrome Web Store item's public key (Developer Dashboard, Package, Public key); when set, the local build/chrome tree carries it as `key`, so an unpacked build has the store item's ID. The Web Store package never carries it.",
   "firefoxId": "belz-devtools@belz",
-  "chromeId": "REPLACE_WITH_CRX_KEY_DERIVED_ID",
+  "chromePublicKey": "",
   "pagesBaseUrl": "https://parthkapoor-dev.github.io/belz-extension",
-  "chromeUpdateXmlUrl": "https://parthkapoor-dev.github.io/belz-extension/updates.xml",
   "firefoxUpdatesJsonUrl": "https://parthkapoor-dev.github.io/belz-extension/updates.json"
 }

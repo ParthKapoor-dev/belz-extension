@@ -12,7 +12,11 @@ const release = readJson('release.config.json');
 // A plain .mjs module without types: imported by path at run time.
 const modulePath = path.join(root, 'scripts/manifests.mjs');
 const { browserManifest } = (await import(modulePath)) as {
-  browserManifest: (m: unknown, target: string, o: { version: string; release: unknown }) => Record<string, any>;
+  browserManifest: (
+    m: unknown,
+    target: string,
+    o: { version: string; release: unknown; store?: boolean }
+  ) => Record<string, any>;
 };
 
 describe.each(['chrome', 'firefox'])('the %s manifest', (target) => {
@@ -48,5 +52,44 @@ describe('per-browser differences', () => {
     expect(m.background).toEqual({ scripts: ['dist/background.js'] });
     expect(m.browser_specific_settings.gecko.id).toBe(release.firefoxId);
     expect(m.browser_specific_settings.gecko.strict_min_version).toBe('128.0');
+  });
+
+  test('Firefox: declares that it collects no data, as AMO requires of a new add-on', () => {
+    const m = browserManifest(manifest, 'firefox', { version: '1.0.0', release });
+    expect(m.browser_specific_settings.gecko.data_collection_permissions).toEqual({ required: ['none'] });
+  });
+
+  test('Firefox: auto-updates from the configured updates.json', () => {
+    const m = browserManifest(manifest, 'firefox', { version: '1.0.0', release });
+    expect(m.browser_specific_settings.gecko.update_url).toBe(release.firefoxUpdatesJsonUrl);
+  });
+});
+
+describe('the Chrome Web Store public key (chromePublicKey)', () => {
+  const withKey = { ...release, chromePublicKey: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtest' };
+
+  test('is the local Chromium tree\'s `key` when configured, so an unpacked build has the store ID', () => {
+    const m = browserManifest(manifest, 'chrome', { version: '1.0.0', release: withKey });
+    expect(m.key).toBe(withKey.chromePublicKey);
+  });
+
+  test('is left out of the Web Store package, which the store would reject', () => {
+    const m = browserManifest(manifest, 'chrome', { version: '1.0.0', release: withKey, store: true });
+    expect('key' in m).toBe(false);
+  });
+
+  test('is never in the Firefox manifest', () => {
+    const m = browserManifest(manifest, 'firefox', { version: '1.0.0', release: withKey });
+    expect('key' in m).toBe(false);
+  });
+
+  test('when empty, no tree carries a `key`', () => {
+    const m = browserManifest(manifest, 'chrome', { version: '1.0.0', release: { ...release, chromePublicKey: '' } });
+    expect('key' in m).toBe(false);
+  });
+
+  test('is a string in release.config.json, and the root manifest has no `key` of its own', () => {
+    expect(typeof release.chromePublicKey).toBe('string');
+    expect('key' in manifest).toBe(false);
   });
 });

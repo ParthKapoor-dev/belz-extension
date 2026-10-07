@@ -11,7 +11,7 @@ A browser extension that augments Automation Designer (AD), Page Designer (PD), 
 - TypeScript in strict mode, no framework. Bun bundles `.ts` directly; `tsc` only checks types (`noEmit`) and never produces the shipped code. Imports are extensionless (`moduleResolution: bundler`).
 - Manifest V3 (`manifest.json`).
 - Build: `scripts/build.mjs`, then `scripts/escape-non-ascii.mjs` over every output for extension-loader compatibility. The AD and PD content scripts are built together as **one code-split ES-module graph** into `dist/modules/`; every other entry is a standalone bundle. See "Content-script module graph" below.
-- Per-browser packaging: `scripts/pack.mjs` assembles `build/chrome/` and `build/firefox/` trees with the manifests `scripts/manifests.mjs` derives (`browserManifest()`); the Firefox one adds `browser_specific_settings.gecko` for AMO signing.
+- Per-browser packaging: `scripts/pack.mjs` assembles `build/chrome/` and `build/firefox/` trees with the manifests `scripts/manifests.mjs` derives (`browserManifest()`); the Firefox one adds `browser_specific_settings.gecko` (id, `update_url`, `data_collection_permissions: { required: ['none'] }`) for AMO signing and self-hosted updates. The Chrome one carries `key` (the Web Store item's public key, `chromePublicKey` in `release.config.json`, when set) in a local build only; `pack.mjs --store` leaves it out for the Web Store package.
 - Targets: **runtime-editable** — the manifest declares no static `host_permissions` at all; the user's granted hosts live in `chrome.storage.local` under `sdExtensionHostsV1` and are managed via the options page. `ContentScriptSync` (`src/background/content-scripts.ts`) reconciles `chrome.scripting.registerContentScripts` against that list.
 - **No external dependencies at runtime.** The extension talks only to the site the user is inspecting, reusing that page's own session. There is no companion server, CLI, or localhost service.
 
@@ -120,7 +120,7 @@ The page-side PD Inspector folder is `pd-inspector-page/` and the DevTools panel
 
 Load the per-browser tree from `build/`, never the repo root — the root `manifest.json` is a template carrying both background styles, split per browser by `browserManifest()` in `scripts/manifests.mjs` (which `scripts/pack.mjs` writes out).
 
-A `v*` tag pushed to the remote triggers `.github/workflows/release.yml`: type-check and unit tests, then build, sign and publish. The tag sets the shipped version (`pack.mjs --version`); the `version` in `manifest.json` and `package.json` is only what a local build carries. Its actions are pinned to commit SHAs, Bun to an exact version, and the signing tools (`crx3`, `web-ext`) are exact devDependencies; the CRX key exists on disk only in the signing step. Both workflows give the token read-only access by default, and grant more per job (`release`: `contents: write`; `deploy-pages`: `pages: write`, `id-token: write`); checkouts keep no credentials, and workflow expressions reach `run:` scripts only through `env:`. See [`.github/workflows/README.md`](.github/workflows/README.md) and the root README's Releasing section.
+A `v*` tag pushed to the remote triggers `.github/workflows/release.yml`: type-check and unit tests, then build (`pack.mjs --store`), zip `build/chrome` and upload + submit it to the **Chrome Web Store** (API v2 with `curl`; secrets `CWS_PUBLISHER_ID`, `CWS_EXTENSION_ID`, `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`), sign `build/firefox` as an **unlisted AMO** add-on (`AMO_JWT_ISSUER`, `AMO_JWT_SECRET`) and publish its `updates.json` on GitHub Pages, and attach the zip and the XPI to the GitHub Release. A store whose secrets are all unset is skipped; neither configured fails. The tag sets the shipped version (`pack.mjs --version`), which must be higher than the last one both stores saw; the `version` in `manifest.json` and `package.json` is only what a local build carries. Its actions are pinned to commit SHAs, Bun to an exact version, and the signing tool (`web-ext`) is an exact devDependency. Both workflows give the token read-only access by default, and grant more per job (`release`: `contents: write`; `deploy-pages`: `pages: write`, `id-token: write`); checkouts keep no credentials, and workflow expressions reach `run:` scripts only through `env:`. See [`.github/workflows/README.md`](.github/workflows/README.md) and the root README's Releasing section.
 
 ## Testing
 
@@ -321,9 +321,11 @@ To lazy-load something else, just use `import()` inside a module in this graph; 
 
 ## Safe-change checklist
 
+**Before every release tag:** anything stored in `chrome.storage` (the settings, the site list, the method cache) whose shape changed since the last published release ships with a migration or under a new key: installed copies keep their data across updates (`config/README.md`, "Stored shapes"). The version must be higher than the last release's. The full checklist is the root README's "Releasing".
+
 1. After selector edits, smoke test on a real AD page and a real PD page.
 2. After `sync.ts` changes, exercise boolean / date / structured-data paths manually.
-3. After manifest changes, validate both Chromium (`build/chrome/manifest.json`) and Firefox (`build/firefox/manifest.json`) outputs from `scripts/pack.mjs`, and update `tests/build/manifest.test.ts` and the root README's "Privacy and permissions".
+3. After manifest changes, validate both Chromium (`build/chrome/manifest.json`) and Firefox (`build/firefox/manifest.json`) outputs from `scripts/pack.mjs` (and `./node_modules/.bin/web-ext lint -s build/firefox --self-hosted`), and update `tests/build/manifest.test.ts`, the root README's "Privacy and permissions", [`PRIVACY.md`](PRIVACY.md) and the store listing's permission justifications in [`store/README.md`](store/README.md).
 4. After adding a new entry point, update `manifest.json`, `scripts/build.mjs`, `scripts/pack.mjs` SHARED list (if you're adding an HTML surface), `config/extension-files.ts` (if other code names its path), and the layout tree in "Layout" above. A new **content script** that shares code with AD/PD belongs in the split graph (`splitEntries` in `build.mjs`), not as a standalone bundle.
 5. Rebuild `dist/` before shipping any change that touches `src/`.
 6. When adding a hardcoded string that looks like a URL, path, storage key, or DOM identifier — put it in `src/config/` instead of inlining. Grep for existing entries there before adding a new file.
@@ -335,6 +337,7 @@ When you make a meaningful change — new feature, changed selectors, sync behav
 
 Documentation lives at three levels, all kept current in the same commit as the code:
 
+- **`PRIVACY.md` (root)** is the privacy policy the Chrome Web Store links to; it changes in the same commit as anything that changes what the extension reads, stores or sends. **`store/README.md`** holds the Web Store listing text and privacy-form answers.
 - **`README.md` (root)** is the user guide: what the extension does, how to install, set up and use it, and development basics. It describes the extension as it is now; it is never a changelog.
 - **A `README.md` in every directory** explains that directory: what it is for, what each file does, how it connects to the rest, its local conventions and how to change it. Adding, removing or renaming a file or folder means updating the README of the folder it is in (a new folder gets its own README). The template is the existing ones; parents stay a map, leaves carry the detail.
 - **This `AGENTS.md`** holds the repo-wide rules and the cross-cutting design (build graph, lifecycle contract, fragile areas). Directory READMEs link here rather than repeat it.

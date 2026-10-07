@@ -7,8 +7,8 @@ Build tooling. These Node scripts turn `src/` into loadable extensions: bundle t
 | File | What it does | Run by |
 |---|---|---|
 | [`build.mjs`](build.mjs) | Bundles every entry point into `dist/` with `bun build`, escapes non-ASCII, writes the content-script loaders, then runs the singleton check. | `bun run build:dist`; also called by `pack.mjs` and `tests/build/bundle.test.ts` |
-| [`pack.mjs`](pack.mjs) | Runs `build.mjs`, then writes `build/chrome/` and `build/firefox/`, each with its own manifest. | `bun run build`; also called by `dev.mjs`, `tests/e2e/run.mjs` and the release workflow |
-| [`manifests.mjs`](manifests.mjs) | `browserManifest(manifest, target, { version, release })`: the Chromium or Firefox manifest derived from `manifest.json`. Pure. | `pack.mjs`; `tests/build/manifest.test.ts` |
+| [`pack.mjs`](pack.mjs) | Runs `build.mjs`, then writes `build/chrome/` and `build/firefox/`, each with its own manifest. `--store` makes `build/chrome` the Chrome Web Store package (no `key`). | `bun run build`; also called by `dev.mjs`, `tests/e2e/run.mjs` and the release workflow (with `--store`) |
+| [`manifests.mjs`](manifests.mjs) | `browserManifest(manifest, target, { version, release, store })`: the Chromium or Firefox manifest derived from `manifest.json`. Pure. | `pack.mjs`; `tests/build/manifest.test.ts` |
 | [`dev.mjs`](dev.mjs) | Watches `src/`, `fonts/`, `manifest.json`, `release.config.json` and `sites.default.json`, and re-runs `pack.mjs` on every change. | `bun run dev` |
 | [`escape-non-ascii.mjs`](escape-non-ascii.mjs) | Rewrites one file in place, replacing every non-ASCII character with a `\uXXXX` escape (surrogate pairs above U+FFFF). | `build.mjs`, once per output file |
 | [`check-singletons.mjs`](check-singletons.mjs) | Fails the build if a stateful module is bundled more than once into the designer content scripts. | `build.mjs`, as its last step |
@@ -26,9 +26,10 @@ Build tooling. These Node scripts turn `src/` into loadable extensions: bundle t
    - runs `check-singletons.mjs`.
 3. **`check-singletons.mjs`** collects every `/*! belz-singleton: <name> */` marker in `src/`, and checks each appears in exactly one `dist/` file of the designer world. Files in its `OTHER_WORLDS` list (background, options, DevTools pages, `pd-inspector.js`) are skipped because they run with their own memory. It also fails on any module under `src/designer/`, `src/config/` or `src/shared/` that has top-level state (`let`/`var`, or a non-SCREAMING_CASE `const` built with `new`) but no marker, and prints the marker line to add.
 4. **`pack.mjs`** copies the `SHARED` list (`dist/`, `fonts/`, the four HTML pages, and `sites.default.json` if present) into each tree. The HTML pages move from `src/` to the tree root. It then writes a per-browser manifest, built by `browserManifest()` in `manifests.mjs`:
-   - `build/chrome/`: `background.scripts` and `browser_specific_settings` removed.
-   - `build/firefox/`: `background.service_worker` removed; `browser_specific_settings.gecko` added with `id` and `update_url` from `release.config.json` and `strict_min_version: '128.0'`.
+   - `build/chrome/`: `background.scripts` and `browser_specific_settings` removed. When `chromePublicKey` in `release.config.json` is set (the Chrome Web Store item's public key), it becomes the manifest's `key`, so an unpacked load of the tree has the store item's extension ID wherever the folder lives.
+   - `build/firefox/`: `background.service_worker` removed; `browser_specific_settings.gecko` added with `id` and `update_url` from `release.config.json`, `strict_min_version: '128.0'`, and `data_collection_permissions: { required: ['none'] }` (the declaration addons.mozilla.org requires of a new add-on: it collects nothing). Firefox before 140 ignores that key, which `web-ext lint` reports as a warning.
    - `--version X.Y.Z` overrides the manifest version in both (the release workflow passes the tag).
+   - `--store` leaves `key` out of the Chrome manifest: the Web Store rejects a package that carries one. The release workflow builds with it and zips `build/chrome` for the store; a local build without it keeps the `key`.
 
 **`dev.mjs`** does not use `bun build --watch`: one build is several bundler runs plus post-processing and packing. It debounces file events by 150 ms, never runs two builds at once (a change during a build queues one more), and keeps watching after a failed build. It does not reload the browser.
 

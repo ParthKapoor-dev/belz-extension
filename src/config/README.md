@@ -81,9 +81,11 @@ What is stored under a key is a contract with every installed copy: the settings
 `SETTINGS` keys, with the values each accepts), the site list (`HostEntry`), the method cache.
 Reading is forgiving: `sanitizeSettings()` gives a missing or invalid setting its default, and
 `readHosts()` drops a malformed entry. Before the first release there are no installed copies to
-keep, and these shapes change freely. From the first release on, an incompatible change (a renamed
-setting key, a narrower set of values, a different structure) needs either a new key, with its
-version suffix bumped, or a migration that reads the old shape and writes the new one.
+keep, and these shapes change freely. **From the first published release on** (the Chrome Web Store
+item and the signed Firefox add-on update installed copies in place, keeping their storage), an
+incompatible change (a renamed setting key, a narrower set of values, a different structure) needs
+either a new key, with its version suffix bumped, or a migration that reads the old shape and writes
+the new one. This is on the release checklist in the root README ("Releasing").
 
 ## Testing
 
