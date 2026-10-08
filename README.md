@@ -6,18 +6,25 @@ Productivity tools for engineers working in Service Designer's **Automation Desi
 
 ## Install
 
-**Chrome, Edge, Brave:**
+**Chrome, Edge, Brave (recommended: the Chrome Web Store):**
 
-> [!NOTE]
-> **Not on the Chrome Web Store yet.** It is waiting for Google's review, so the store link below doesn't work yet. Until then, use **Load a release by hand** below.
+1. Open [belz DevTools on the Chrome Web Store](https://chromewebstore.google.com/detail/heenggkonmlbicnokmkbeoodfmfjlgao).
+2. Click **Add to Chrome**, then **Add extension**. In Edge, click **Allow extensions from other stores** first when asked.
 
-Install it from the [Chrome Web Store](https://chromewebstore.google.com/detail/heenggkonmlbicnokmkbeoodfmfjlgao) and click **Add to Chrome** (in Edge, allow extensions from other stores when asked). The store keeps it up to date.
+The store keeps it up to date, and your sites and settings carry over to each new version.
 
-**Load a release by hand** (works now; it doesn't update itself, so switch to the store version once it's live):
+<details>
+<summary>Without the store: load a release by hand</summary>
 
-1. Download `belz-extension-<version>-chrome.zip` from the [latest release](https://github.com/ParthKapoor-dev/belz-extension/releases/latest) and unzip it.
+This copy doesn't update itself: for a new version, unzip the new release over the same folder and click **↻** on the extension.
+
+1. Download `belz-extension-<version>-chrome.zip` from the [latest release](https://github.com/ParthKapoor-dev/belz-extension/releases/latest) and unzip it into a folder you keep.
 2. Open `chrome://extensions` (or `edge://extensions`, `brave://extensions`) and turn on **Developer mode**.
 3. Click **Load unpacked** and choose the unzipped folder.
+
+Already loaded it by hand? Switch to the store version: remove this copy, install from the store, and add your sites again (the two keep separate data).
+
+</details>
 
 **Firefox, Zen** (Firefox 128 or newer; Zen is built on it):
 
